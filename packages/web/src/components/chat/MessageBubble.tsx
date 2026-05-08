@@ -8,6 +8,8 @@ import { DiffCard } from './DiffCard'
 import { ApprovalCard } from './ApprovalCard'
 import { UsageBadge } from './UsageBadge'
 import { CronIndicator } from './CronIndicator'
+import { MarkdownRenderer } from './MarkdownRenderer'
+import { useMessageStore } from '@/stores/message-store'
 
 interface MessageBubbleProps {
   message: Message
@@ -36,6 +38,10 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
   const isUser = message.role === 'user'
+  const streamingText = useMessageStore(
+    (s) => (message.status === 'streaming' ? s.streamingText[message.id] ?? '' : ''),
+  )
+  const isStreaming = message.status === 'streaming' && isLast && !isUser && streamingText.length > 0
   const time = new Date(message.started_at).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
@@ -89,8 +95,13 @@ export function MessageBubble({
             />
           ))}
 
+          {/* Streaming markdown */}
+          {isStreaming && (
+            <MarkdownRenderer content={streamingText} isStreaming />
+          )}
+
           {/* Streaming indicator */}
-          {message.status === 'streaming' && isLast && !isUser && (
+          {message.status === 'streaming' && isLast && !isUser && !isStreaming && (
             <span className="inline-block ml-1 animate-pulse" style={{ color: 'var(--fg-dim)' }}>
               ...
             </span>
@@ -130,11 +141,7 @@ function MessagePartRenderer({
   if (part.kind === 'text') {
     const text = safeParseContent<string>(part.content_json)
     if (!text) return null
-    return (
-      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-        {text}
-      </div>
-    )
+    return <MarkdownRenderer content={text} />
   }
 
   if (part.kind === 'thinking') {

@@ -8,6 +8,8 @@ interface MessageState {
   byTopic: Record<string, Message[]>
   partsByMessage: Record<string, MessagePart[]>
   loading: boolean
+  streamingText: Record<string, string>
+  streamingMessageId: string | null
 }
 
 interface MessageActions {
@@ -17,6 +19,9 @@ interface MessageActions {
   appendPart: (messageId: string, part: MessagePart) => void
   setMessages: (topicId: string, messages: Message[]) => void
   removeMessagesByTopic: (topicId: string) => void
+  startStreaming: (messageId: string) => void
+  appendDelta: (messageId: string, text: string) => void
+  endStreaming: (messageId: string) => void
 }
 
 export const useMessageStore = create<MessageState & MessageActions>()(
@@ -24,6 +29,8 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     byTopic: {},
     partsByMessage: {},
     loading: false,
+    streamingText: {},
+    streamingMessageId: null,
 
     fetchMessages: (_topicId) => {
       // Loading is done via WS; placeholder for store-level logic
@@ -68,6 +75,31 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     removeMessagesByTopic: (topicId) => {
       set((s) => {
         delete s.byTopic[topicId]
+      })
+    },
+
+    startStreaming: (messageId) => {
+      set((s) => {
+        s.streamingMessageId = messageId
+        if (!s.streamingText[messageId]) {
+          s.streamingText[messageId] = ''
+        }
+      })
+    },
+
+    appendDelta: (messageId, text) => {
+      set((s) => {
+        const prev = s.streamingText[messageId] ?? ''
+        s.streamingText[messageId] = prev + text
+      })
+    },
+
+    endStreaming: (messageId) => {
+      set((s) => {
+        if (s.streamingMessageId === messageId) {
+          s.streamingMessageId = null
+        }
+        delete s.streamingText[messageId]
       })
     },
   })),

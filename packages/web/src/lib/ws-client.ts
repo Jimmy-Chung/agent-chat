@@ -139,23 +139,48 @@ class WsClient {
           stop_reason: null,
           cron_run_id: null,
         })
+        if (event.data.role !== 'user') {
+          messageStore.startStreaming(event.data.messageId)
+        }
         break
       case 'message.end':
+        if (messageStore.streamingMessageId === event.data.messageId) {
+          // Finalize the streaming text as a text part before ending
+          const streamText = messageStore.streamingText[event.data.messageId]
+          if (streamText) {
+            messageStore.appendPart(event.data.messageId, {
+              id: `${event.data.messageId}-text-final`,
+              message_id: event.data.messageId,
+              ordinal: 0,
+              kind: 'text',
+              content_json: JSON.stringify(streamText),
+            })
+          }
+          messageStore.endStreaming(event.data.messageId)
+        }
         messageStore.updateMessage(event.data.messageId, {
           status: event.data.stopReason === 'aborted' ? 'aborted' : 'done',
           finished_at: Date.now(),
           stop_reason: event.data.stopReason,
         })
         break
-      case 'message.delta':
-        messageStore.appendPart(event.data.messageId, {
-          id: `${event.data.messageId}-${Date.now()}`,
-          message_id: event.data.messageId,
-          ordinal: 0,
-          kind: 'text',
-          content_json: JSON.stringify(event.data.part),
-        })
+      case 'message.delta': {
+        const part = event.data.part
+        if (part.kind === 'text') {
+          messageStore.appendDelta(event.data.messageId, part.content)
+        } else if (part.kind === 'thinking') {
+          messageStore.appendPart(event.data.messageId, {
+            id: `${event.data.messageId}-${Date.now()}`,
+            message_id: event.data.messageId,
+            ordinal: 0,
+            kind: 'thinking',
+            content_json: JSON.stringify(part.content),
+          })
+        } else if (part.kind === 'tool_input') {
+          // tool_input deltas are accumulated and handled by tool.call events
+        }
         break
+      }
       case 'error':
         console.error('[ws] server error:', event.data)
         break
