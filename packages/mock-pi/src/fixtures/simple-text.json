@@ -1,0 +1,23 @@
+[
+  {
+    "payload": { "kind": "message.start", "messageId": "msg-simple-1", "role": "assistant" }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-simple-1", "part": { "kind": "text", "content": "Hello! " } }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-simple-1", "part": { "kind": "text", "content": "I'm your " } }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-simple-1", "part": { "kind": "text", "content": "AI assistant. " } }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-simple-1", "part": { "kind": "text", "content": "How can I help you today?" } }
+  },
+  {
+    "payload": { "kind": "message.end", "messageId": "msg-simple-1", "stopReason": "end_turn" }
+  },
+  {
+    "payload": { "kind": "usage.delta", "messageId": "msg-simple-1", "model": "mock-model", "inputTokens": 10, "outputTokens": 20, "cacheReadTokens": 0, "cacheCreateTokens": 0 }
+  }
+]
