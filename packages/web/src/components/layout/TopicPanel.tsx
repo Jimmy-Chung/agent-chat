@@ -1,20 +1,27 @@
 'use client'
 
 import { useTopicStore } from '@/stores/topic-store'
+import { useMessageStore } from '@/stores/message-store'
 import { useUiStore } from '@/stores/ui-store'
 import { EmptyState } from './EmptyState'
 import { MessageInput } from './MessageInput'
+import { MessageList } from '@/components/chat/MessageList'
 
 export function TopicPanel() {
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const topics = useTopicStore((s) => s.topics)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
 
+  const byTopic = useMessageStore((s) => s.byTopic)
+  const partsByMessage = useMessageStore((s) => s.partsByMessage)
+
   const activeTopic = topics.find((t) => t.id === activeTopicId)
 
   if (!activeTopic) {
     return <EmptyState onToggleSidebar={toggleSidebar} />
   }
+
+  const messages = byTopic[activeTopic.id] ?? []
 
   return (
     <div className="flex h-full flex-col">
@@ -44,13 +51,15 @@ export function TopicPanel() {
         </div>
       </div>
 
-      {/* Message area — placeholder */}
-      <div
-        className="flex-1 flex items-center justify-center"
-        style={{ color: 'var(--fg-dim)' }}
-      >
-        <p className="text-sm">Messages will appear here</p>
-      </div>
+      {/* Message area */}
+      <MessageList
+        messages={messages}
+        partsByMessage={partsByMessage}
+        toolResults={{}}
+        usageByMessage={{}}
+        approvalsByMessage={{}}
+        cronByMessage={{}}
+      />
 
       {/* Input */}
       <MessageInput topicId={activeTopic.id} />
