@@ -1,5 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "files": {
+    "ignore": [
+      ".next",
+      ".omc",
+      "node_modules",
+      "dist",
+      "*.db",
+      "pnpm-lock.yaml"
+    ]
+  },
   "organizeImports": { "enabled": true },
   "formatter": {
     "enabled": true,

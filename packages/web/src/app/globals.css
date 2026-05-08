@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — 占位值, 等 Part 2 设计稿定稿后替换
+ * 所有 visual 值通过 CSS 变量引用, 组件不写死
+ */
+:root {
+  /* 背景 */
+  --bg-0: #0b0c0f;
+  --bg-1: #15171c;
+  --bg-glass: rgba(28, 30, 36, 0.55);
+
+  /* 文本 */
+  --fg-strong: #f2f3f5;
+  --fg-regular: #c7cad0;
+  --fg-dim: #7a7e88;
+  --fg-code: #e1e4ea;
+
+  /* Role accent */
+  --role-user: #0a84ff;
+  --role-user-end: #0064d8;
+  --role-assistant: rgba(255, 255, 255, 0.1);
+  --role-system: #8e8cff;
+  --role-cron: #f7c26b;
+  --state-warning: #ff9f0a;
+  --state-danger: #ff453a;
+
+  /* Glass */
+  --glass-1: rgba(255, 255, 255, 0.06);
+  --glass-2: rgba(255, 255, 255, 0.1);
+  --glass-3: rgba(255, 255, 255, 0.14);
+  --divider: rgba(255, 255, 255, 0.08);
+  --stroke-inner: rgba(255, 255, 255, 0.08);
+
+  /* 圆角 */
+  --radius-bubble: 18px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --radius-modal: 24px;
+
+  /* 模糊 */
+  --blur-panel: 40px;
+  --blur-modal: 60px;
+
+  /* 字体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  --font-cjk: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  background-color: var(--bg-0);
+  color: var(--fg-strong);
+  font-family: var(--font-ui), var(--font-cjk);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}

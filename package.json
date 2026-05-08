@@ -7,10 +7,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "format": "biome format --write .",
-    "format:check": "biome format --check .",
-    "lint": "biome lint --write .",
-    "lint:check": "biome lint .",
+    "format": "biome check --write .",
+    "lint": "biome check --write .",
     "check": "biome check ."
   },
   "devDependencies": {

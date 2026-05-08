@@ -1,0 +1,28 @@
+{
+  "name": "@agent-chat/mock-pi",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@agent-chat/protocol": "workspace:*",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.0",
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.1.1"
+  }
+}
