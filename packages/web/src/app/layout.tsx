@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { WsProvider } from '@/components/WsProvider'
 
 export const metadata: Metadata = {
   title: 'agent-chat',
@@ -20,7 +21,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <WsProvider>{children}</WsProvider>
+      </body>
     </html>
   )
 }
