@@ -3,7 +3,7 @@
 | 项目 | 值 |
 |---|---|
 | 当前版本 | v1.0.0 |
-| 状态 | 开发中 (Part 1) |
+| 状态 | Part 1 已完成 |
 | 更新时间 | 2026-05-09 |
 
 ---
@@ -18,7 +18,7 @@
 |---|---|
 | ID | FEAT-001 |
 | 标题 | pnpm monorepo 脚手架 |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 初始化 pnpm monorepo: packages/protocol, server, web, mock-pi。含 tsconfig.base.json, biome.json, .gitignore, .npmrc, CI (GitHub Actions), README |
@@ -33,7 +33,7 @@
 |---|---|
 | ID | FEAT-002 |
 | 标题 | 协议层类型定义 (packages/protocol) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 定义所有跨进程消息的 TypeScript 类型 + zod schema: PIEvent (message/tool/file/todo/plan/interaction/cron/usage), PI RPC 方法签名, 前后端 WS 事件, 领域类型, WS 帧编解码 |
@@ -49,7 +49,7 @@
 |---|---|
 | ID | FEAT-003 |
 | 标题 | Mock PI Server (packages/mock-pi) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 本地 WebSocket 服务模拟 PI Adapter 全部 RPC + 事件流。含 fixture 事件流 (simple-text / tool-use / file-edit / approval / cron-trigger), scenario runner 按 content 关键词匹配 fixture 并按真实节奏推流, Bearer 鉴权 |
@@ -64,7 +64,7 @@
 |---|---|
 | ID | FEAT-004 |
 | 标题 | 后端核心服务 (packages/server) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | Fastify + SQLite (drizzle) + WebSocket Hub + PI Adapter 客户端 + R2 presigned URL + Token 鉴权 + 系统话题 seed。包含: DB schema (users/topics/messages/message_parts/FTS5/artifacts/cron_jobs/cron_runs/interactions/usage_records/audit_log), WS handler (topic/message/interaction/cron/artifact/search), PI client 自动重连 + seq 续传, 流式 delta 100ms/32KB/end batch flush |
@@ -79,7 +79,7 @@
 |---|---|
 | ID | FEAT-005 |
 | 标题 | 前端骨架 + 状态管理 (packages/web) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | App Router + 主布局三栏 (TopicSidebar / 对话主区 / RightPanel) + Zustand stores (topics/messages/agent-status/todos/plan/artifacts/interactions/usage) + WS client 自动重连 + seq 续传 + Token 鉴权页。视觉粗糙,不打磨细节,所有值用 CSS 变量占位 |
@@ -94,7 +94,7 @@
 |---|---|
 | ID | FEAT-006 |
 | 标题 | 核心消息组件 (MessageBubble / ToolCard / DiffCard / ApprovalCard / ThinkingBlock / AgentStatusBar / TodoPanel / PlanPanel) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 所有 message_part 类型的渲染组件骨架。MessageBubble 根据 role 切样式 (user 右蓝 / assistant 左玻璃 / system 居中紫 / cron 顶部金条), 内部按 part.kind 渲染 MarkdownContent / ThinkingBlock / ToolCard / DiffCard。ApprovalCard 三状态 (pending/approved/rejected) |
@@ -109,7 +109,7 @@
 |---|---|
 | ID | FEAT-007 |
 | 标题 | 流式逻辑 + stream-safe Markdown |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 流式 delta 合并到同一气泡不刷屏不闪烁。message-aggregator 累加 delta, stream-safe-markdown 状态机检测未闭合代码块/列表/表格并虚拟补全。ESC + StopButton abort。性能: 1k delta 期间 FPS ≥50 |
