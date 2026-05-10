@@ -1,0 +1,23 @@
+[
+  {
+    "payload": { "kind": "message.start", "messageId": "msg-tool-1", "role": "assistant" }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-tool-1", "part": { "kind": "text", "content": "Let me list the files for you." } }
+  },
+  {
+    "payload": { "kind": "tool.call", "toolUseId": "tu-1", "messageId": "msg-tool-1", "name": "Glob", "input": { "pattern": "**/*" } }
+  },
+  {
+    "payload": { "kind": "tool.result", "toolUseId": "tu-1", "messageId": "msg-tool-1", "output": "src/index.ts\nsrc/config.ts\nsrc/server.ts", "isError": false }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-tool-1", "part": { "kind": "text", "content": "I found 3 files in the project." } }
+  },
+  {
+    "payload": { "kind": "message.end", "messageId": "msg-tool-1", "stopReason": "end_turn" }
+  },
+  {
+    "payload": { "kind": "usage.delta", "messageId": "msg-tool-1", "model": "mock-model", "inputTokens": 50, "outputTokens": 80, "cacheReadTokens": 0, "cacheCreateTokens": 0 }
+  }
+]

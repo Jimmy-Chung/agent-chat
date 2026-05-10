@@ -25,6 +25,14 @@ agent-chat/
 └── .omc/plans/           ← 设计文档 (只读参考)
 ```
 
+## 外部系统标记
+
+涉及 PI Agent 侧改动的需求，在 `project_feature_list.md` 中用 `[external]` 标记，格式：
+```
+[external] TODO: 具体改动内容
+```
+便于搜索 `grep "\[external\]" project_feature_list.md` 快速定位所有外部依赖。
+
 ## 开发约定
 
 - 所有 visual 值用 CSS 变量 (design tokens),颜色/圆角/间距/字号/阴影一律 `var(--xxx)`
@@ -37,6 +45,17 @@ agent-chat/
   - `pi-agent-requirements.md` — PI Agent 侧改动需求 (**本仓库不实现,另仓库处理**)
   - `ui-brief.md` — UI 视觉与交互规范
   - `test-plan.md` — 测试计划
+
+## PI Agent 现状
+
+现在已有真实 PI Agent 可连接。默认使用真实 PI Agent（通过 `PI_ADAPTER_URL` 环境变量），除非用户手动指定使用 mock-pi。
+
+- **真实 PI Agent**: 生产环境，server 通过 `PI_ADAPTER_URL` 连接
+- **mock-pi** (`packages/mock-pi`): 仅在用户明确要求或单元测试/E2E 测试时使用
+
+启动开发环境时：
+- 连真实 PI: 只启动 server + web（`pnpm -F server dev & pnpm -F web dev`）
+- 用 mock-pi: 启动全部三个服务（`pnpm dev`）
 
 ## 端口约定
 
@@ -96,3 +115,16 @@ pnpm dev                   # 三服务同时启动
 - 合并：--no-ff merge 到 master
 - Tag：annotated tag 打在 merge commit 上
 - 新版本由用户主动声明开启，Claude 不自行开新版本
+
+## 回归测试（强制）
+
+每次提交版本（合并到 master / 打 tag）前，**必须**通过回归测试集（`test-plan.md` 中的 R-001 ~ R-005），全绿才能发版。
+
+回归测试必须以单元测试（vitest）或 E2E 测试（Playwright）的形式存在，不允许纯手工验证。
+
+```bash
+pnpm -r test       # 单元测试必须全绿
+pnpm test:e2e      # E2E 测试必须全绿
+```
+
+当前回归覆盖：鉴权 (R-001)、消息链路 (R-002)、话题独立 WS (R-003)、删话题清理 (R-004)、断线重连 (R-005)。详见 `.omc/plans/test-plan.md`。

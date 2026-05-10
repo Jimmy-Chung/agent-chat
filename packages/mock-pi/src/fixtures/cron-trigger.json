@@ -1,0 +1,17 @@
+[
+  {
+    "payload": { "kind": "message.start", "messageId": "msg-cron-1", "role": "assistant" }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-cron-1", "part": { "kind": "text", "content": "Running scheduled task..." } }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-cron-1", "part": { "kind": "text", "content": " All checks passed." } }
+  },
+  {
+    "payload": { "kind": "message.end", "messageId": "msg-cron-1", "stopReason": "end_turn" }
+  },
+  {
+    "payload": { "kind": "usage.delta", "messageId": "msg-cron-1", "model": "mock-model", "inputTokens": 30, "outputTokens": 40, "cacheReadTokens": 0, "cacheCreateTokens": 0 }
+  }
+]

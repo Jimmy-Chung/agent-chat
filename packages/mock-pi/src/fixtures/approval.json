@@ -1,0 +1,29 @@
+[
+  {
+    "payload": { "kind": "message.start", "messageId": "msg-approval-1", "role": "assistant" }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-approval-1", "part": { "kind": "text", "content": "I need your approval to proceed." } }
+  },
+  {
+    "payload": { "kind": "interaction.request", "interactionId": "int-1", "messageId": "msg-approval-1", "interactionKind": "approval", "prompt": "Allow editing /src/app.ts?", "options": ["Approve", "Reject"], "defaultTimeoutMs": 30000 }
+  },
+  {
+    "payload": { "kind": "tool.call", "toolUseId": "tu-approval-1", "messageId": "msg-approval-1", "name": "Edit", "input": { "file_path": "/src/app.ts", "old_string": "old content", "new_string": "new content" } }
+  },
+  {
+    "payload": { "kind": "file.diff", "messageId": "msg-approval-1", "path": "/src/app.ts", "before": "old content", "after": "new content" }
+  },
+  {
+    "payload": { "kind": "tool.result", "toolUseId": "tu-approval-1", "messageId": "msg-approval-1", "output": "File updated successfully.", "isError": false }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "msg-approval-1", "part": { "kind": "text", "content": "Done! Edit applied." } }
+  },
+  {
+    "payload": { "kind": "message.end", "messageId": "msg-approval-1", "stopReason": "end_turn" }
+  },
+  {
+    "payload": { "kind": "usage.delta", "messageId": "msg-approval-1", "model": "mock-model", "inputTokens": 80, "outputTokens": 120, "cacheReadTokens": 0, "cacheCreateTokens": 0 }
+  }
+]

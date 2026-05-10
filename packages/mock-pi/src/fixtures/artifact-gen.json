@@ -1,0 +1,38 @@
+[
+  {
+    "payload": { "kind": "message.start", "messageId": "{{MSG_ID}}", "role": "assistant" }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "{{MSG_ID}}", "part": { "kind": "text", "content": "我来帮你生成数据报告。" } }
+  },
+  {
+    "payload": { "kind": "tool.call", "toolUseId": "{{TU1_ID}}", "messageId": "{{MSG_ID}}", "name": "Write", "input": { "file_path": "/output/data-report.csv", "content": "name,value,date\nAlice,100,2025-01\nBob,200,2025-02\nCarol,150,2025-03" } }
+  },
+  {
+    "payload": { "kind": "artifact.created", "artifactId": "{{ART1_ID}}", "name": "data-report.csv", "mime": "text/csv", "sizeBytes": 256 }
+  },
+  {
+    "payload": { "kind": "tool.result", "toolUseId": "{{TU1_ID}}", "messageId": "{{MSG_ID}}", "output": "File written successfully.", "isError": false }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "{{MSG_ID}}", "part": { "kind": "text", "content": "数据报告已生成。接下来我画一张图表。" } }
+  },
+  {
+    "payload": { "kind": "tool.call", "toolUseId": "{{TU2_ID}}", "messageId": "{{MSG_ID}}", "name": "Write", "input": { "file_path": "/output/analysis-chart.png", "content": "<binary data>" } }
+  },
+  {
+    "payload": { "kind": "artifact.created", "artifactId": "{{ART2_ID}}", "name": "analysis-chart.png", "mime": "image/png", "sizeBytes": 52000 }
+  },
+  {
+    "payload": { "kind": "tool.result", "toolUseId": "{{TU2_ID}}", "messageId": "{{MSG_ID}}", "output": "Chart saved.", "isError": false }
+  },
+  {
+    "payload": { "kind": "message.delta", "messageId": "{{MSG_ID}}", "part": { "kind": "text", "content": "完成了！已生成 2 个产物：\n- data-report.csv（数据表格）\n- analysis-chart.png（可视化图表）\n\n你可以在右侧「产物」标签页查看。" } }
+  },
+  {
+    "payload": { "kind": "message.end", "messageId": "{{MSG_ID}}", "stopReason": "end_turn" }
+  },
+  {
+    "payload": { "kind": "usage.delta", "messageId": "{{MSG_ID}}", "model": "mock-model", "inputTokens": 120, "outputTokens": 350, "cacheReadTokens": 0, "cacheCreateTokens": 0 }
+  }
+]
