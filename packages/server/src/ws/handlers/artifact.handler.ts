@@ -1,63 +1,53 @@
-import type { WSFrame } from '@agent-chat/protocol'
-import { artifactUploadInitSchema, artifactUploadCompleteSchema } from '@agent-chat/protocol'
+import type { WSFrame, Artifact } from '@agent-chat/protocol'
+import { topicSelectSchema } from '@agent-chat/protocol'
 import type { WsHub } from '../hub'
 import * as artifactRepo from '../../db/repos/artifact.repo'
-import * as r2 from '../../r2/client'
-import { logger } from '../../logger'
+
+function artifactToPayload(a: Artifact) {
+  return {
+    id: a.id,
+    topic_id: a.topic_id,
+    origin_topic_id: a.origin_topic_id,
+    name: a.name,
+    mime: a.mime,
+    size_bytes: a.size_bytes,
+    source: a.source,
+    created_at: a.created_at,
+  }
+}
 
 export function registerArtifactHandlers(hub: WsHub): void {
-  hub.on('client:artifact.upload.init', async (conn, frame: WSFrame) => {
-    const data = artifactUploadInitSchema.parse(frame.d)
-
-    try {
-      const { uploadId, url, key } = await r2.createPresignedUrl(
-        data.name,
-        data.mime,
-      )
-
-      // Send presigned URL back to requesting client
-      hub.sendToClient(conn.ws, {
-        type: 'error', // reuse error as response — client expects uploadId + url
-        data: {
-          code: 'ARTIFACT_UPLOAD_READY',
-          message: JSON.stringify({ uploadId, url, key, topicId: data.topicId }),
-        },
-      })
-    } catch (err) {
-      logger.error({ err }, 'Failed to create presigned URL')
-      hub.sendToClient(conn.ws, {
-        type: 'error',
-        data: {
-          code: 'ARTIFACT_UPLOAD_FAILED',
-          message: 'R2 not configured or presigned URL generation failed',
-        },
-      })
-    }
-  })
-
-  hub.on('client:artifact.upload.complete', (_conn, frame: WSFrame) => {
-    const data = artifactUploadCompleteSchema.parse(frame.d)
-
-    // For now, create artifact record with the uploadId as r2_key
-    // In production, verify the upload succeeded with R2 head request
-    const artifact = artifactRepo.createArtifact({
-      topicId: data.topicId ?? null,
-      name: data.uploadId, // client should send actual name
-      r2Key: `uploads/${data.uploadId}`,
-      source: 'uploaded',
-    })
-
-    hub.broadcast({
-      type: 'artifact.added',
+  hub.on('client:artifact.upload.init', async (conn, _frame: WSFrame) => {
+    hub.sendToClient(conn.ws, {
+      type: 'error',
       data: {
-        id: artifact.id,
-        topic_id: artifact.topic_id,
-        name: artifact.name,
-        mime: artifact.mime,
-        size_bytes: artifact.size_bytes,
-        source: artifact.source,
-        created_at: artifact.created_at,
+        code: 'ARTIFACT_UPLOAD_UNAVAILABLE',
+        message: 'File upload is not available in this version',
       },
     })
+  })
+
+  hub.on('client:artifact.upload.complete', (_conn, _frame: WSFrame) => {
+    // v1.0.0: no-op
+  })
+
+  hub.on('client:topic.select', (conn, frame: WSFrame) => {
+    const data = topicSelectSchema.parse(frame.d)
+
+    if (data.topicId === 'system_artifact_pool') {
+      const artifacts = artifactRepo.listPoolArtifacts()
+      hub.sendToClient(conn.ws, {
+        type: 'artifact.list',
+        data: { artifacts: artifacts.map(artifactToPayload) },
+      })
+    } else {
+      const artifacts = artifactRepo.listArtifactsByTopic(data.topicId)
+      if (artifacts.length > 0) {
+        hub.sendToClient(conn.ws, {
+          type: 'artifact.list',
+          data: { artifacts: artifacts.map(artifactToPayload) },
+        })
+      }
+    }
   })
 }

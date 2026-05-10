@@ -12,6 +12,9 @@ import {
 import { useWsStore } from '@/stores/ws-store'
 import { useTopicStore } from '@/stores/topic-store'
 import { useMessageStore } from '@/stores/message-store'
+import { useArtifactStore } from '@/stores/artifact-store'
+import { useCronStore } from '@/stores/cron-store'
+import { useSopTemplateStore } from '@/stores/sop-template-store'
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://127.0.0.1:8080/ws'
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
@@ -139,9 +142,7 @@ class WsClient {
           stop_reason: null,
           cron_run_id: null,
         })
-        if (event.data.role !== 'user') {
-          messageStore.startStreaming(event.data.messageId)
-        }
+        messageStore.startStreaming(event.data.messageId)
         break
       case 'message.end':
         if (messageStore.streamingMessageId === event.data.messageId) {
@@ -167,24 +168,209 @@ class WsClient {
       case 'message.delta': {
         const part = event.data.part
         if (part.kind === 'text') {
+          // PI sends incremental text deltas — each delta is a new chunk to append
           messageStore.appendDelta(event.data.messageId, part.content)
-        } else if (part.kind === 'thinking') {
-          messageStore.appendPart(event.data.messageId, {
-            id: `${event.data.messageId}-${Date.now()}`,
-            message_id: event.data.messageId,
-            ordinal: 0,
-            kind: 'thinking',
-            content_json: JSON.stringify(part.content),
-          })
-        } else if (part.kind === 'tool_input') {
-          // tool_input deltas are accumulated and handled by tool.call events
         }
         break
       }
       case 'error':
         console.error('[ws] server error:', event.data)
         break
-      // Other events handled in future features
+
+      // Artifact events
+      case 'artifact.added': {
+        const a = event.data as Record<string, unknown>
+        useArtifactStore.getState().addArtifact({
+          id: a.id as string,
+          topic_id: (a.topic_id as string) ?? null,
+          origin_topic_id: null,
+          name: a.name as string,
+          mime: (a.mime as string) ?? null,
+          size_bytes: (a.size_bytes as number) ?? null,
+          r2_key: '',
+          source: a.source as 'generated' | 'uploaded',
+          created_at: a.created_at as number,
+          metadata_json: null,
+        })
+        break
+      }
+      case 'artifact.deleted':
+        useArtifactStore.getState().removeArtifact(event.data.id)
+        break
+      case 'artifact.moved':
+        useArtifactStore.getState().moveArtifact(
+          event.data.id,
+          event.data.fromTopicId,
+          event.data.toTopicId,
+        )
+        break
+      case 'artifact.list': {
+        const rawList = (event.data as { artifacts: unknown[] }).artifacts
+        const artifacts = rawList.map((a) => ({
+          id: (a as Record<string, unknown>).id as string,
+          topic_id: ((a as Record<string, unknown>).topic_id as string) ?? null,
+          origin_topic_id: null,
+          name: (a as Record<string, unknown>).name as string,
+          mime: ((a as Record<string, unknown>).mime as string) ?? null,
+          size_bytes: ((a as Record<string, unknown>).size_bytes as number) ?? null,
+          r2_key: '',
+          source: (a as Record<string, unknown>).source as 'generated' | 'uploaded',
+          created_at: (a as Record<string, unknown>).created_at as number,
+          metadata_json: null,
+        }))
+        const activeTopicId = useTopicStore.getState().activeTopicId
+        if (activeTopicId === 'system_artifact_pool') {
+          useArtifactStore.getState().setPoolArtifacts(artifacts)
+        } else if (activeTopicId) {
+          useArtifactStore.getState().setTopicArtifacts(activeTopicId, artifacts)
+        }
+        break
+      }
+
+      // Cron events
+      case 'cron.list': {
+        const crons = (event.data as { crons: unknown[] }).crons.map((c) => {
+          const r = c as Record<string, unknown>
+          return {
+            cronId: r.cronId as string,
+            originTopicId: r.originTopicId as string,
+            cronExpr: r.cronExpr as string,
+            prompt: r.prompt as string,
+            status: r.status as 'active' | 'paused' | 'error',
+            lastRunAt: r.lastRunAt as number | undefined,
+            nextRunAt: r.nextRunAt as number | undefined,
+          }
+        })
+        useCronStore.getState().setCrons(crons)
+        break
+      }
+      case 'cron.upserted':
+        useCronStore.getState().upsertCron({
+          cronId: (event.data as Record<string, unknown>).cronId as string,
+          originTopicId: (event.data as Record<string, unknown>).originTopicId as string,
+          cronExpr: (event.data as Record<string, unknown>).cronExpr as string,
+          prompt: (event.data as Record<string, unknown>).prompt as string,
+          status: (event.data as Record<string, unknown>).status as 'active' | 'paused' | 'error',
+        })
+        break
+      case 'cron.triggered':
+        useCronStore.getState().addRun({
+          id: (event.data as Record<string, unknown>).runId as string,
+          cronId: (event.data as Record<string, unknown>).cronId as string,
+          triggeredAt: (event.data as Record<string, unknown>).firedAt as number,
+          firedAt: (event.data as Record<string, unknown>).firedAt as number,
+        })
+        break
+
+      // SOP template events
+      case 'sop_template.list': {
+        const templates = (event.data as { templates: unknown[] }).templates.map((t) => {
+          const r = t as Record<string, unknown>
+          return {
+            id: r.id as string,
+            name: r.name as string,
+            icon: (r.icon as string) ?? null,
+            description: (r.description as string) ?? null,
+            agent_type: r.agent_type as 'programming' | 'general' | 'any',
+            workflow_mode: r.workflow_mode as 'lazy' | 'eager' | 'off',
+            builtin: r.builtin as boolean,
+            created_at: r.created_at as number,
+            updated_at: r.updated_at as number,
+          }
+        })
+        useSopTemplateStore.getState().setTemplates(templates)
+        break
+      }
+
+      // Tool / file events
+      case 'tool.call': {
+        const d = event.data as Record<string, unknown>
+        const msgId = d.messageId as string
+        messageStore.appendPart(msgId, {
+          id: `${msgId}-tool-${d.toolUseId}`,
+          message_id: msgId,
+          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
+          kind: 'tool_use',
+          content_json: JSON.stringify({ toolUseId: d.toolUseId, name: d.name, input: d.input }),
+        })
+        break
+      }
+      case 'tool.result': {
+        const d = event.data as Record<string, unknown>
+        const msgId = d.messageId as string
+        messageStore.appendPart(msgId, {
+          id: `${msgId}-result-${d.toolUseId}`,
+          message_id: msgId,
+          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
+          kind: 'tool_result',
+          content_json: JSON.stringify({ toolUseId: d.toolUseId, output: d.output, isError: d.isError }),
+        })
+        break
+      }
+      case 'file.diff': {
+        const d = event.data as Record<string, unknown>
+        const msgId = d.messageId as string
+        messageStore.appendPart(msgId, {
+          id: `${msgId}-diff-${d.path}`,
+          message_id: msgId,
+          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
+          kind: 'file_diff',
+          content_json: JSON.stringify({ path: d.path, before: d.before, after: d.after }),
+        })
+        break
+      }
+
+      // Agent state events
+      case 'todo.update': {
+        const d = event.data as Record<string, unknown>
+        messageStore.setTodos(d.topicId as string, d.items as Array<{ id: string; content: string; status: string; activeForm?: string }>)
+        break
+      }
+      case 'plan.update': {
+        const d = event.data as Record<string, unknown>
+        messageStore.setPlan(d.topicId as string, d.plan as string)
+        break
+      }
+      case 'interaction.request': {
+        const d = event.data as Record<string, unknown>
+        const msgId = (d.messageId as string) ?? ''
+        messageStore.setInteraction(d.interactionId as string, {
+          interactionId: d.interactionId as string,
+          messageId: msgId,
+          topicId: d.topicId as string,
+          interactionKind: d.interactionKind as string,
+          prompt: d.prompt as string,
+          options: d.options as string[] | undefined,
+        })
+        break
+      }
+      case 'agent.status': {
+        const d = event.data as Record<string, unknown>
+        messageStore.setAgentStatus(d.topicId as string, d.state as string)
+        break
+      }
+      case 'usage.snapshot': {
+        const d = event.data as Record<string, unknown>
+        messageStore.setUsage(d.messageId as string, { model: d.model as string, inputTokens: d.inputTokens as number, outputTokens: d.outputTokens as number })
+        break
+      }
+
+      // Session / cron completion events
+      case 'session.health': {
+        const d = event.data as Record<string, unknown>
+        useWsStore.getState().setSessionHealth(d.topicId as string, d.state as string, d.lastError as string | undefined)
+        break
+      }
+      case 'cron.run.completed': {
+        const d = event.data as Record<string, unknown>
+        useCronStore.getState().completeRun(d.runId as string, {
+          status: d.status as string,
+          summary: (d.summary as string | null) ?? null,
+          duration: (d.duration as number | null) ?? null,
+          completedAt: d.completedAt as number,
+        })
+        break
+      }
     }
   }
 

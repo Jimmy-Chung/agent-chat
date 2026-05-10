@@ -53,7 +53,7 @@ function collectEvents(ws: WebSocket, matchFn: (payload: any) => boolean, timeou
     const handler = (raw: Buffer) => {
       const f = decodeFrame(raw.toString())
       const data = f.d as Record<string, any>
-      if (f.t === 'pi.event') {
+      if (f.t === 'event') {
         events.push(data)
         if (matchFn(data.payload)) {
           clearTimeout(timer)

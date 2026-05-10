@@ -35,6 +35,11 @@ describe('MessageStore', () => {
       loading: false,
       streamingText: {},
       streamingMessageId: null,
+      todosByTopic: {},
+      planByTopic: {},
+      agentStatusByTopic: {},
+      usageByMessage: {},
+      interactions: {},
     })
   })
 
@@ -151,6 +156,29 @@ describe('MessageStore', () => {
       useMessageStore.getState().startStreaming('m1')
       useMessageStore.getState().endStreaming('m2')
       expect(useMessageStore.getState().streamingMessageId).toBe('m1')
+    })
+  })
+
+  describe('enrichment actions', () => {
+    it('setTodos updates todosByTopic', () => {
+      const items = [{ id: 't1', content: 'Task 1', status: 'pending' }]
+      useMessageStore.getState().setTodos('topic1', items)
+      expect(useMessageStore.getState().todosByTopic['topic1']).toEqual(items)
+    })
+
+    it('setPlan updates planByTopic', () => {
+      useMessageStore.getState().setPlan('topic1', 'Step 1\nStep 2')
+      expect(useMessageStore.getState().planByTopic['topic1']).toBe('Step 1\nStep 2')
+    })
+
+    it('setAgentStatus updates agentStatusByTopic', () => {
+      useMessageStore.getState().setAgentStatus('topic1', 'thinking')
+      expect(useMessageStore.getState().agentStatusByTopic['topic1']).toBe('thinking')
+    })
+
+    it('setUsage updates usageByMessage', () => {
+      useMessageStore.getState().setUsage('m1', { model: 'gpt-4', inputTokens: 100, outputTokens: 50 })
+      expect(useMessageStore.getState().usageByMessage['m1']).toEqual({ model: 'gpt-4', inputTokens: 100, outputTokens: 50 })
     })
   })
 })

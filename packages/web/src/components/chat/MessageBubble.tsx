@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useDeferredValue } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCard, type ToolCallInfo, type ToolResultInfo } from './ToolCard'
@@ -38,9 +38,10 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
   const isUser = message.role === 'user'
-  const streamingText = useMessageStore(
+  const rawStreamingText = useMessageStore(
     (s) => (message.status === 'streaming' ? s.streamingText[message.id] ?? '' : ''),
   )
+  const streamingText = useDeferredValue(rawStreamingText)
   const isStreaming = message.status === 'streaming' && isLast && !isUser && streamingText.length > 0
   const time = new Date(message.started_at).toLocaleTimeString([], {
     hour: '2-digit',

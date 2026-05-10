@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws'
 import type { ScenarioRunner } from './scenario-runner'
+import { encodeFrame, createFrame } from '@agent-chat/protocol'
 import pino from 'pino'
 
 const log = pino({ name: 'cron-simulator' })
@@ -65,6 +66,7 @@ export function createCronSimulator(
 
     const seq = getSeq(entry.originSessionId)
     const runId = `run-${Date.now()}`
+    const startTime = Date.now()
     const newSeq = await runner.runCron(
       entry.originSessionId,
       ws,
@@ -73,6 +75,27 @@ export function createCronSimulator(
       seq,
     )
     setSeq(entry.originSessionId, newSeq)
+
+    // Emit cron.run.completed
+    const completedPayload = {
+      kind: 'cron.run.completed' as const,
+      cronId,
+      runId,
+      status: 'success' as const,
+      summary: `Cron job completed: ${entry.prompt}`,
+      duration: Date.now() - startTime,
+      completedAt: Date.now(),
+    }
+    if (ws.readyState === 1) {
+      const frame = createFrame('event', {
+        seq: newSeq,
+        sessionId: entry.originSessionId,
+        ts: Date.now(),
+        payload: completedPayload,
+      }, undefined, newSeq)
+      ws.send(encodeFrame(frame))
+      setSeq(entry.originSessionId, newSeq + 1)
+    }
 
     entry.lastRunAt = Date.now()
     scheduleNext(entry)

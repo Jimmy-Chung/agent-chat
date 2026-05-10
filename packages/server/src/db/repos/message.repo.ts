@@ -11,9 +11,10 @@ export function createMessage(input: {
   role: Message['role']
   status?: Message['status']
   cronRunId?: string | null
+  id?: string
 }): Message {
   const row = {
-    id: ulid(),
+    id: input.id ?? ulid(),
     topicId: input.topicId,
     role: input.role,
     status: input.status ?? 'streaming',

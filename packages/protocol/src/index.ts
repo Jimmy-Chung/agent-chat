@@ -33,7 +33,10 @@ export {
   agentStatusPayloadSchema,
   cronTriggeredPayloadSchema,
   usageDeltaPayloadSchema,
+  artifactCreatedPayloadSchema,
   errorPayloadSchema,
+  sessionHealthPayloadSchema,
+  cronRunCompletedPayloadSchema,
   todoItemSchema,
 } from './pi-events'
 
@@ -56,7 +59,10 @@ export type {
   AgentStatusPayload,
   CronTriggeredPayload,
   UsageDeltaPayload,
+  ArtifactCreatedPayload,
   ErrorPayload,
+  SessionHealthPayload,
+  CronRunCompletedPayload,
   TodoItemZ,
 } from './pi-events'
 
@@ -158,8 +164,12 @@ export {
   artifactAddedSchema,
   artifactDeletedSchema,
   artifactMovedSchema,
+  artifactListSchema,
+  sopTemplateListSchema,
   usageSnapshotSchema,
   errorSchema,
+  sessionHealthSchema,
+  cronRunCompletedSchema,
   serverEventDataSchemas,
   topicCreateSchema,
   topicDeleteSchema,
@@ -174,6 +184,8 @@ export {
   artifactUploadInitSchema,
   artifactUploadCompleteSchema,
   searchQuerySchema,
+  topicResumeSchema,
+  topicSelectSchema,
   clientEventDataSchemas,
 } from './ws-events'
 

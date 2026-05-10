@@ -47,7 +47,7 @@ export function listCronJobs(): CronJob[] {
 export function updateCronJob(
   id: string,
   data: Partial<
-    Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt'>
+    Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id'>
   >,
 ): CronJob | undefined {
   const updates: Record<string, unknown> = { updatedAt: Date.now() }
@@ -55,6 +55,7 @@ export function updateCronJob(
   if (data.next_run_at !== undefined) updates.nextRunAt = data.next_run_at
   if (data.cron_expr !== undefined) updates.cronExpr = data.cron_expr
   if (data.prompt !== undefined) updates.prompt = data.prompt
+  if (data.pi_cron_id !== undefined) updates.piCronId = data.pi_cron_id
 
   getDb()
     .update(cronJobs)

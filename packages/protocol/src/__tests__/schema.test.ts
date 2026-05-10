@@ -29,11 +29,14 @@ import {
   artifactUploadInitSchema,
   clientEventDataSchemas,
   cronListSchema,
+  cronRunCompletedSchema,
   cronUpsertedSchema,
   errorSchema,
   serverEventDataSchemas,
+  sessionHealthSchema,
   topicCreateSchema,
   topicDeleteSchema,
+  topicResumeSchema,
   usageSnapshotSchema,
   userActionSchema,
   userMessageSchema,
@@ -332,6 +335,76 @@ describe('PIEvent — positive parsing', () => {
     expect(event.payload.kind).toBe('error')
     if (event.payload.kind === 'error') {
       expect(event.payload.recoverable).toBe(true)
+    }
+  })
+
+  it('parses session.health', () => {
+    const event = piEventSchema.parse({
+      ...baseEvent,
+      payload: {
+        kind: 'session.health',
+        state: 'connected',
+        piSessionId: 'sess-1',
+      },
+    })
+    expect(event.payload.kind).toBe('session.health')
+    if (event.payload.kind === 'session.health') {
+      expect(event.payload.state).toBe('connected')
+      expect(event.payload.piSessionId).toBe('sess-1')
+    }
+  })
+
+  it('parses session.health with lastError', () => {
+    const event = piEventSchema.parse({
+      ...baseEvent,
+      payload: {
+        kind: 'session.health',
+        state: 'disconnected',
+        piSessionId: 'sess-1',
+        lastError: 'connection reset',
+      },
+    })
+    if (event.payload.kind === 'session.health') {
+      expect(event.payload.lastError).toBe('connection reset')
+    }
+  })
+
+  it('parses cron.run.completed', () => {
+    const event = piEventSchema.parse({
+      ...baseEvent,
+      payload: {
+        kind: 'cron.run.completed',
+        cronId: 'cron-1',
+        runId: 'run-1',
+        status: 'success',
+        summary: 'Done',
+        duration: 5000,
+        completedAt: 1700000005000,
+      },
+    })
+    expect(event.payload.kind).toBe('cron.run.completed')
+    if (event.payload.kind === 'cron.run.completed') {
+      expect(event.payload.status).toBe('success')
+      expect(event.payload.duration).toBe(5000)
+    }
+  })
+
+  it('parses cron.run.completed with null fields', () => {
+    const event = piEventSchema.parse({
+      ...baseEvent,
+      payload: {
+        kind: 'cron.run.completed',
+        cronId: 'cron-1',
+        runId: 'run-2',
+        status: 'failed',
+        summary: null,
+        duration: null,
+        completedAt: 1700000005000,
+      },
+    })
+    if (event.payload.kind === 'cron.run.completed') {
+      expect(event.payload.status).toBe('failed')
+      expect(event.payload.summary).toBeNull()
     }
   })
 })
@@ -1026,5 +1099,204 @@ describe('Individual payload schemas', () => {
       defaultTimeoutMs: 60000,
     })
     expect(result.options).toEqual(['A', 'B', 'C'])
+  })
+})
+
+// ─── session.health schema ───────────────────────────────────────
+
+describe('session.health schema', () => {
+  it('parses connected state', () => {
+    const result = sessionHealthSchema.parse({
+      topicId: 't1',
+      state: 'connected',
+      piSessionId: 'sess-1',
+    })
+    expect(result.state).toBe('connected')
+    expect(result.piSessionId).toBe('sess-1')
+    expect(result.lastError).toBeUndefined()
+  })
+
+  it('parses disconnected state with lastError', () => {
+    const result = sessionHealthSchema.parse({
+      topicId: 't1',
+      state: 'disconnected',
+      piSessionId: null,
+      lastError: 'PI WS closed unexpectedly',
+    })
+    expect(result.state).toBe('disconnected')
+    expect(result.piSessionId).toBeNull()
+    expect(result.lastError).toBe('PI WS closed unexpectedly')
+  })
+
+  it('parses reconnecting state', () => {
+    const result = sessionHealthSchema.parse({
+      topicId: 't1',
+      state: 'reconnecting',
+      piSessionId: 'sess-1',
+    })
+    expect(result.state).toBe('reconnecting')
+  })
+
+  it('accepts all valid states', () => {
+    for (const state of ['connected', 'disconnected', 'reconnecting'] as const) {
+      const result = sessionHealthSchema.parse({
+        topicId: 't1',
+        state,
+        piSessionId: null,
+      })
+      expect(result.state).toBe(state)
+    }
+  })
+
+  it('rejects invalid state', () => {
+    expect(() =>
+      sessionHealthSchema.parse({
+        topicId: 't1',
+        state: 'unknown',
+        piSessionId: null,
+      }),
+    ).toThrow()
+  })
+
+  it('rejects without topicId', () => {
+    expect(() =>
+      sessionHealthSchema.parse({
+        state: 'connected',
+        piSessionId: 'sess-1',
+      }),
+    ).toThrow()
+  })
+
+  it('is in serverEventDataSchemas', () => {
+    const schema = serverEventDataSchemas['session.health']
+    expect(schema).toBeDefined()
+    const result = schema.parse({
+      topicId: 't1',
+      state: 'connected',
+      piSessionId: 'sess-1',
+    })
+    expect(result.state).toBe('connected')
+  })
+})
+
+// ─── cron.run.completed schema ────────────────────────────────────
+
+describe('cron.run.completed schema', () => {
+  it('parses successful run', () => {
+    const result = cronRunCompletedSchema.parse({
+      cronId: 'c1',
+      runId: 'r1',
+      originTopicId: 't1',
+      status: 'success',
+      summary: 'Report generated',
+      duration: 5000,
+      completedAt: 1700000000000,
+    })
+    expect(result.status).toBe('success')
+    expect(result.duration).toBe(5000)
+  })
+
+  it('parses failed run with null fields', () => {
+    const result = cronRunCompletedSchema.parse({
+      cronId: 'c1',
+      runId: 'r2',
+      originTopicId: 't1',
+      status: 'failed',
+      summary: null,
+      duration: null,
+      completedAt: 1700000000000,
+    })
+    expect(result.status).toBe('failed')
+    expect(result.summary).toBeNull()
+    expect(result.duration).toBeNull()
+  })
+
+  it('parses timeout run', () => {
+    const result = cronRunCompletedSchema.parse({
+      cronId: 'c1',
+      runId: 'r3',
+      originTopicId: 't1',
+      status: 'timeout',
+      summary: 'Exceeded 30s limit',
+      duration: 30000,
+      completedAt: 1700000000000,
+    })
+    expect(result.status).toBe('timeout')
+  })
+
+  it('accepts all valid statuses', () => {
+    for (const status of ['success', 'failed', 'timeout'] as const) {
+      const result = cronRunCompletedSchema.parse({
+        cronId: 'c1',
+        runId: 'r1',
+        originTopicId: 't1',
+        status,
+        summary: null,
+        duration: null,
+        completedAt: 1700000000000,
+      })
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('rejects invalid status', () => {
+    expect(() =>
+      cronRunCompletedSchema.parse({
+        cronId: 'c1',
+        runId: 'r1',
+        originTopicId: 't1',
+        status: 'running',
+        summary: null,
+        duration: null,
+        completedAt: 1700000000000,
+      }),
+    ).toThrow()
+  })
+
+  it('rejects without required fields', () => {
+    expect(() =>
+      cronRunCompletedSchema.parse({
+        cronId: 'c1',
+        runId: 'r1',
+        status: 'success',
+      }),
+    ).toThrow()
+  })
+
+  it('is in serverEventDataSchemas', () => {
+    const schema = serverEventDataSchemas['cron.run.completed']
+    expect(schema).toBeDefined()
+    const result = schema.parse({
+      cronId: 'c1',
+      runId: 'r1',
+      originTopicId: 't1',
+      status: 'success',
+      summary: null,
+      duration: null,
+      completedAt: 1700000000000,
+    })
+    expect(result.cronId).toBe('c1')
+  })
+})
+
+// ─── topic.resume schema ─────────────────────────────────────────
+
+describe('topic.resume schema', () => {
+  it('parses valid resume', () => {
+    const result = topicResumeSchema.parse({
+      topicId: 't1',
+    })
+    expect(result.topicId).toBe('t1')
+  })
+
+  it('rejects without topicId', () => {
+    expect(() => topicResumeSchema.parse({})).toThrow()
+  })
+
+  it('is in clientEventDataSchemas', () => {
+    const schema = clientEventDataSchemas['topic.resume']
+    expect(schema).toBeDefined()
+    const result = schema.parse({ topicId: 't1' })
+    expect(result.topicId).toBe('t1')
   })
 })

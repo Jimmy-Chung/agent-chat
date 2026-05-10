@@ -161,6 +161,26 @@ export const artifactMovedSchema = z.object({
   toTopicId: z.string().nullable(),
 })
 
+export const artifactListSchema = z.object({
+  artifacts: z.array(artifactSchema),
+})
+
+const sopTemplateSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  icon: z.string().nullable(),
+  description: z.string().nullable(),
+  agent_type: z.enum(['programming', 'general', 'any']),
+  workflow_mode: z.enum(['lazy', 'eager', 'off']),
+  builtin: z.boolean(),
+  created_at: z.number(),
+  updated_at: z.number(),
+})
+
+export const sopTemplateListSchema = z.object({
+  templates: z.array(sopTemplateSummarySchema),
+})
+
 export const usageSnapshotSchema = z.object({
   topicId: z.string().optional(),
   totalInputTokens: z.number(),
@@ -173,6 +193,23 @@ export const usageSnapshotSchema = z.object({
       costMicroUsd: z.number().optional(),
     }),
   ),
+})
+
+export const sessionHealthSchema = z.object({
+  topicId: z.string(),
+  state: z.enum(['connected', 'disconnected', 'reconnecting']),
+  piSessionId: z.string().nullable(),
+  lastError: z.string().optional(),
+})
+
+export const cronRunCompletedSchema = z.object({
+  cronId: z.string(),
+  runId: z.string(),
+  originTopicId: z.string(),
+  status: z.enum(['success', 'failed', 'timeout']),
+  summary: z.string().nullable(),
+  duration: z.number().nullable(),
+  completedAt: z.number(),
 })
 
 export const errorSchema = z.object({
@@ -206,7 +243,11 @@ export type ServerEvent =
   | { type: 'artifact.added'; data: z.infer<typeof artifactAddedSchema> }
   | { type: 'artifact.deleted'; data: z.infer<typeof artifactDeletedSchema> }
   | { type: 'artifact.moved'; data: z.infer<typeof artifactMovedSchema> }
+  | { type: 'artifact.list'; data: z.infer<typeof artifactListSchema> }
+  | { type: 'sop_template.list'; data: z.infer<typeof sopTemplateListSchema> }
   | { type: 'usage.snapshot'; data: z.infer<typeof usageSnapshotSchema> }
+  | { type: 'session.health'; data: z.infer<typeof sessionHealthSchema> }
+  | { type: 'cron.run.completed'; data: z.infer<typeof cronRunCompletedSchema> }
   | { type: 'error'; data: z.infer<typeof errorSchema> }
 
 export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
@@ -230,7 +271,11 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'artifact.added': artifactAddedSchema,
   'artifact.deleted': artifactDeletedSchema,
   'artifact.moved': artifactMovedSchema,
+  'artifact.list': artifactListSchema,
+  'sop_template.list': sopTemplateListSchema,
   'usage.snapshot': usageSnapshotSchema,
+  'session.health': sessionHealthSchema,
+  'cron.run.completed': cronRunCompletedSchema,
   error: errorSchema,
 }
 
@@ -243,7 +288,7 @@ export const topicCreateSchema = z.object({
     .object({
       extension: z.enum(['claude-code', 'codex']),
       yolo: z.boolean(),
-      cwd: z.string(),
+      cwd: z.string().optional(),
       permissionMode: z.enum([
         'default',
         'acceptEdits',
@@ -283,7 +328,7 @@ export const userMessageSchema = z.object({
       name: z.string(),
       downloadUrl: z.string().optional(),
     }),
-  ),
+  ).optional().default([]),
 })
 
 export const userActionSchema = z.object({
@@ -323,6 +368,14 @@ export const searchQuerySchema = z.object({
   topicId: z.string().optional(),
 })
 
+export const topicResumeSchema = z.object({
+  topicId: z.string(),
+})
+
+export const topicSelectSchema = z.object({
+  topicId: z.string(),
+})
+
 // ─── Client event type + schema ───────────────────────────────────
 
 export type ClientEvent =
@@ -348,6 +401,8 @@ export type ClientEvent =
       data: z.infer<typeof artifactUploadCompleteSchema>
     }
   | { type: 'search.query'; data: z.infer<typeof searchQuerySchema> }
+  | { type: 'topic.resume'; data: z.infer<typeof topicResumeSchema> }
+  | { type: 'topic.select'; data: z.infer<typeof topicSelectSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -363,4 +418,6 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'artifact.upload.init': artifactUploadInitSchema,
   'artifact.upload.complete': artifactUploadCompleteSchema,
   'search.query': searchQuerySchema,
+  'topic.resume': topicResumeSchema,
+  'topic.select': topicSelectSchema,
 }

@@ -41,6 +41,7 @@ export class WsHub extends EventEmitter {
     ws.on('message', (raw: WebSocket.Data) => {
       try {
         const frame = decodeFrame(raw.toString())
+        logger.info({ type: frame.t }, 'Client frame received')
         this.handleClientFrame(conn, frame)
       } catch (err) {
         logger.warn({ err }, 'Invalid WS frame from client')

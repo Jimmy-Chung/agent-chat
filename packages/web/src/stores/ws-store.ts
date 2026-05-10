@@ -9,6 +9,7 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 interface WsState {
   status: ConnectionStatus
   lastSeq: number | null
+  sessionHealthByTopic: Record<string, { state: string; lastError?: string }>
 }
 
 interface WsActions {
@@ -17,12 +18,14 @@ interface WsActions {
   sendEvent: (event: ClientEvent) => void
   setStatus: (status: ConnectionStatus) => void
   setLastSeq: (seq: number) => void
+  setSessionHealth: (topicId: string, state: string, lastError?: string) => void
 }
 
 export const useWsStore = create<WsState & WsActions>()(
   immer((set) => ({
     status: 'disconnected' as ConnectionStatus,
     lastSeq: null,
+    sessionHealthByTopic: {},
 
     connect: () => {
       // Actual connection is managed by ws-client; this updates state
@@ -50,6 +53,12 @@ export const useWsStore = create<WsState & WsActions>()(
     setLastSeq: (seq) => {
       set((s) => {
         s.lastSeq = seq
+      })
+    },
+
+    setSessionHealth: (topicId, state, lastError) => {
+      set((s) => {
+        s.sessionHealthByTopic[topicId] = { state, lastError }
       })
     },
   })),

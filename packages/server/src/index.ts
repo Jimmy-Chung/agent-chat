@@ -13,6 +13,7 @@ import { registerInteractionHandlers } from './ws/handlers/interaction.handler'
 import { registerCronHandlers } from './ws/handlers/cron.handler'
 import { registerArtifactHandlers } from './ws/handlers/artifact.handler'
 import { registerSearchHandlers } from './ws/handlers/search.handler'
+import { registerSopTemplateHandlers } from './ws/handlers/sop_template.handler'
 import { registerHealthRoute } from './routes/health'
 import { seedSystemTopics } from './seed'
 import * as topicRepo from './db/repos/topic.repo'
@@ -68,6 +69,7 @@ async function main() {
   registerCronHandlers(wsHub, piClient)
   registerArtifactHandlers(wsHub)
   registerSearchHandlers(wsHub)
+  registerSopTemplateHandlers(wsHub)
 
   // Start heartbeat
   wsHub.startHeartbeat()
@@ -75,13 +77,30 @@ async function main() {
   // Route PI events to WS hub
   routePiEvents(piClient, wsHub)
 
-  // Connect to PI
-  piClient.connect()
-
   // Start server
   server.listen(config.port, config.host, () => {
     logger.info(`Server listening on ${config.host}:${config.port}`)
+
+    // Restore PI sessions for existing topics
+    restorePiSessions()
   })
+
+  async function restorePiSessions() {
+    const topics = topicRepo.listTopics()
+    const withSession = topics.filter((t) => t.pi_session_id && t.kind === 'normal')
+    if (withSession.length === 0) return
+
+    logger.info({ count: withSession.length }, 'Restoring PI sessions...')
+    for (const topic of withSession) {
+      try {
+        await piClient.reconnectSession(topic.pi_session_id!)
+        logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'PI session restored')
+      } catch (err) {
+        logger.warn({ err, topicId: topic.id, sessionId: topic.pi_session_id }, 'Failed to restore PI session, clearing stale session ID')
+        topicRepo.updateTopic(topic.id, { pi_session_id: null })
+      }
+    }
+  }
 
   // Graceful shutdown
   const shutdown = async () => {

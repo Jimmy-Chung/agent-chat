@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
+import { makeStreamSafe } from '@/lib/stream-safe-markdown'
 
 let highlighterPromise: Promise<import('shiki').Highlighter> | null = null
 
@@ -34,37 +35,6 @@ function getHighlighter(): Promise<import('shiki').Highlighter> {
     )
   }
   return highlighterPromise
-}
-
-/**
- * Pre-process streaming text to close unclosed markdown syntax.
- * Handles: triple-backtick code blocks, single-backtick inline code, bold (**).
- */
-function makeStreamSafe(raw: string): string {
-  let text = raw
-
-  // Triple backtick code blocks: if odd count, append closing fence
-  const fenceMatches = text.match(/```/g)
-  if (fenceMatches && fenceMatches.length % 2 !== 0) {
-    text += '\n```'
-  }
-
-  // Single backtick (inline code): if odd count (ignoring triple backticks by working on text
-  // that already has balanced triple backticks), append a closing backtick.
-  // We count single backticks that are not part of a triple fence.
-  // Simpler approach: count all backtick runs, then check if inline backticks are balanced.
-  const singleBacktickCount = (text.match(/(?<!`)`(?!`)/g) || []).length
-  if (singleBacktickCount % 2 !== 0) {
-    text += '`'
-  }
-
-  // Bold (**): if odd count, append closing **
-  const boldCount = (text.match(/\*\*/g) || []).length
-  if (boldCount % 2 !== 0) {
-    text += '**'
-  }
-
-  return text
 }
 
 /** React component for lazy syntax-highlighted code blocks. */

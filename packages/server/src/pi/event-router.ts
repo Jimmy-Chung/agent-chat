@@ -3,14 +3,26 @@ import type { PiClient } from './client'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import * as artifactRepo from '../db/repos/artifact.repo'
 import * as usageRepo from '../db/repos/usage.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import type { WsHub } from '../ws/hub'
 import { logger } from '../logger'
 
+const lastSeqBySession = new Map<string, number>()
+
 export function routePiEvents(pi: PiClient, hub: WsHub): void {
   pi.on('event', (event: PIEvent) => {
-    routeEvent(event, hub)
+    const lastSeq = lastSeqBySession.get(event.sessionId) ?? 0
+    if (event.seq <= lastSeq) return
+    lastSeqBySession.set(event.sessionId, event.seq)
+
+    logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
+    try {
+      routeEvent(event, hub)
+    } catch (err) {
+      logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
+    }
   })
 }
 
@@ -28,15 +40,20 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
   switch (payload.kind) {
     case 'message.start': {
       if (!topicId) return
-      const msg = messageRepo.createMessage({
-        topicId,
-        role: 'assistant',
-      })
+      // Idempotent: skip if message already exists (duplicate event from PI)
+      let msg = messageRepo.getMessage(payload.messageId)
+      if (!msg) {
+        msg = messageRepo.createMessage({
+          topicId,
+          role: 'assistant',
+          id: payload.messageId,
+        })
+      }
       hub.broadcast({
         type: 'message.start',
         data: {
           topicId,
-          messageId: payload.messageId || msg.id,
+          messageId: msg.id,
           role: 'assistant',
         },
       })
@@ -55,6 +72,8 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
             : 'tool_use',
         JSON.stringify(payload.part),
       )
+      // Only broadcast text deltas to clients; thinking is buffered server-side only
+      if (kind === 'thinking') break
       hub.broadcast({
         type: 'message.delta',
         data: {
@@ -87,6 +106,7 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
 
     case 'tool.call': {
       if (!topicId) return
+      if (!messageRepo.getMessage(payload.messageId)) break
       messageRepo.createMessagePart({
         messageId: payload.messageId,
         kind: 'tool_use',
@@ -111,6 +131,7 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
 
     case 'tool.result': {
       if (!topicId) return
+      if (!messageRepo.getMessage(payload.messageId)) break
       messageRepo.createMessagePart({
         messageId: payload.messageId,
         kind: 'tool_result',
@@ -256,12 +277,86 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
       break
     }
 
+    case 'artifact.created': {
+      if (artifactRepo.getArtifact(payload.artifactId)) break
+      const artifact = artifactRepo.createArtifact({
+        id: payload.artifactId,
+        topicId,
+        originTopicId: topicId,
+        name: payload.name,
+        mime: payload.mime,
+        sizeBytes: payload.sizeBytes,
+        r2Key: '',
+        source: 'generated',
+        metadataJson: payload.metadata
+          ? JSON.stringify(payload.metadata)
+          : undefined,
+      })
+      hub.broadcast({
+        type: 'artifact.added',
+        data: {
+          id: artifact.id,
+          topic_id: artifact.topic_id,
+          name: artifact.name,
+          mime: artifact.mime,
+          size_bytes: artifact.size_bytes,
+          source: artifact.source,
+          created_at: artifact.created_at,
+        },
+      })
+      break
+    }
+
     case 'error': {
       hub.broadcast({
         type: 'error',
         data: {
           code: payload.code,
           message: payload.message,
+        },
+      })
+      break
+    }
+
+    case 'session.health': {
+      if (!topicId) return
+      hub.broadcast({
+        type: 'session.health',
+        data: {
+          topicId,
+          state: payload.state,
+          piSessionId: payload.piSessionId,
+          lastError: payload.lastError,
+        },
+      })
+      break
+    }
+
+    case 'cron.run.completed': {
+      const job = cronRepo.getCronJob(payload.cronId)
+      if (!job) {
+        logger.warn({ cronId: payload.cronId }, 'cron.run.completed: cron job not found')
+        return
+      }
+      // Update the latest running cron run for this job
+      const runs = cronRepo.listCronRuns(payload.cronId)
+      const runningRun = runs.find((r) => r.status === 'running')
+      if (runningRun) {
+        cronRepo.updateCronRun(runningRun.id, {
+          status: payload.status,
+          finished_at: payload.completedAt,
+        })
+      }
+      hub.broadcast({
+        type: 'cron.run.completed',
+        data: {
+          cronId: payload.cronId,
+          runId: payload.runId,
+          originTopicId: job.origin_topic_id,
+          status: payload.status,
+          summary: payload.summary,
+          duration: payload.duration,
+          completedAt: payload.completedAt,
         },
       })
       break

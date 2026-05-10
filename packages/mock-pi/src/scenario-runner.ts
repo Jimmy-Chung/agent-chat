@@ -14,6 +14,22 @@ async function loadFixture(name: string): Promise<FixtureEntry[]> {
   return fixtures[name]
 }
 
+function injectDynamicIds(entries: FixtureEntry[]): FixtureEntry[] {
+  const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+  const msgId = `msg-art-${suffix}`
+  const tu1 = `tu-art1-${suffix}`
+  const tu2 = `tu-art2-${suffix}`
+  const art1 = `art-csv-${suffix}`
+  const art2 = `art-png-${suffix}`
+  const json = JSON.stringify(entries)
+    .replace(/\{\{MSG_ID\}\}/g, msgId)
+    .replace(/\{\{TU1_ID\}\}/g, tu1)
+    .replace(/\{\{TU2_ID\}\}/g, tu2)
+    .replace(/\{\{ART1_ID\}\}/g, art1)
+    .replace(/\{\{ART2_ID\}\}/g, art2)
+  return JSON.parse(json)
+}
+
 export type ScenarioRunner = {
   run(
     sessionId: string,
@@ -39,6 +55,7 @@ export function createScenarioRunner(): ScenarioRunner {
     if (/\b(edit|modify|修改)\b/.test(lower)) return 'file-edit'
     if (/\b(approval|权限|允许)\b/.test(lower)) return 'approval'
     if (/\b(cron|定时|schedule)\b/.test(lower)) return 'cron-trigger'
+    if (/(artifact|生成|报告|report|generate|产物)/.test(lower)) return 'artifact-gen'
     return 'simple-text'
   }
 
@@ -59,7 +76,8 @@ export function createScenarioRunner(): ScenarioRunner {
     onEvent?: (payload: PIPayload) => void,
   ): Promise<number> {
     const fixtureName = matchFixture(content)
-    const entries = await loadFixture(fixtureName)
+    const rawEntries = await loadFixture(fixtureName)
+    const entries = fixtureName === 'artifact-gen' ? injectDynamicIds(rawEntries) : rawEntries
     let seq = seqStart
 
     for (const entry of entries) {
@@ -70,7 +88,7 @@ export function createScenarioRunner(): ScenarioRunner {
         payload: entry.payload,
       }
 
-      const frame = createFrame('pi.event', event, undefined, seq)
+      const frame = createFrame('event', event, undefined, seq)
       ws.send(encodeFrame(frame))
       onEvent?.(entry.payload)
       seq++
@@ -107,7 +125,7 @@ export function createScenarioRunner(): ScenarioRunner {
         firedAt: Date.now(),
       },
     }
-    const triggeredFrame = createFrame('pi.event', triggeredEvent, undefined, seq)
+    const triggeredFrame = createFrame('event', triggeredEvent, undefined, seq)
     ws.send(encodeFrame(triggeredFrame))
     seq++
     await delay()
@@ -119,7 +137,7 @@ export function createScenarioRunner(): ScenarioRunner {
         ts: Date.now(),
         payload: entry.payload,
       }
-      const frame = createFrame('pi.event', event, undefined, seq)
+      const frame = createFrame('event', event, undefined, seq)
       ws.send(encodeFrame(frame))
       seq++
       await delay()

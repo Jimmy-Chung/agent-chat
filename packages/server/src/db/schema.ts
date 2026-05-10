@@ -147,7 +147,7 @@ export const cronRuns = sqliteTable('cron_runs', {
   triggeredAt: integer('triggered_at').notNull(),
   finishedAt: integer('finished_at'),
   status: text('status', {
-    enum: ['running', 'success', 'failed'],
+    enum: ['running', 'success', 'failed', 'timeout'],
   }).notNull(),
   resultMessageId: text('result_message_id'),
 })

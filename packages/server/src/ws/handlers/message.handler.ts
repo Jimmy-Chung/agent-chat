@@ -42,6 +42,14 @@ export function registerMessageHandlers(hub: WsHub, pi: PiClient): void {
       },
     })
     hub.broadcast({
+      type: 'message.delta',
+      data: {
+        topicId: data.topicId,
+        messageId: msg.id,
+        part: { kind: 'text', content: data.content },
+      },
+    })
+    hub.broadcast({
       type: 'message.end',
       data: {
         topicId: data.topicId,
@@ -52,19 +60,38 @@ export function registerMessageHandlers(hub: WsHub, pi: PiClient): void {
 
     // Forward to PI
     if (topic.pi_session_id) {
+      const rpcParams = {
+        sessionId: topic.pi_session_id,
+        content: data.content,
+        mentionedArtifacts: data.mentions?.map((m) => ({
+          id: m.id,
+          name: m.name,
+          downloadUrl: m.downloadUrl ?? '',
+        })),
+      }
+      logger.info({ rpcParams }, 'Sending sendUserMessage RPC to PI')
       try {
-        await pi.rpc('sendUserMessage', {
-          sessionId: topic.pi_session_id,
-          content: data.content,
-          mentionedArtifacts: data.mentions?.map((m) => ({
-            id: m.id,
-            name: m.name,
-            downloadUrl: m.downloadUrl ?? '',
-          })),
-        })
+        const rpcResult = await pi.rpc('sendUserMessage', rpcParams)
+        logger.info({ rpcResult }, 'sendUserMessage RPC result received')
       } catch (err) {
         logger.error({ err }, 'Failed to send user message to PI')
+        hub.broadcast({
+          type: 'error',
+          data: {
+            code: 'PI_UNAVAILABLE',
+            message: 'Agent session is not available. Please create a new topic.',
+          },
+        })
       }
+    } else {
+      logger.warn({ topicId: data.topicId }, 'Topic has no PI session, skipping sendUserMessage')
+      hub.broadcast({
+        type: 'error',
+        data: {
+          code: 'NO_PI_SESSION',
+          message: 'This topic has no agent session. Please create a new topic.',
+        },
+      })
     }
   })
 }

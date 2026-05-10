@@ -96,7 +96,7 @@ export interface CronRun {
   cron_id: string
   triggered_at: number
   finished_at: number | null
-  status: 'running' | 'success' | 'failed'
+  status: 'running' | 'success' | 'failed' | 'timeout'
   result_message_id: string | null
 }
 

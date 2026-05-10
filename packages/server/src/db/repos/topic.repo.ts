@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import type { Topic } from '@agent-chat/protocol'
 import { topics } from '../schema'
 import { getDb } from '../migrate'
@@ -38,6 +38,15 @@ export function getTopic(id: string): Topic | undefined {
   return rows[0] ? toDomain(rows[0]) : undefined
 }
 
+export function getTopicByName(name: string): Topic | undefined {
+  const rows = getDb()
+    .select()
+    .from(topics)
+    .where(and(eq(topics.name, name), eq(topics.archived, false)))
+    .all()
+  return rows[0] ? toDomain(rows[0]) : undefined
+}
+
 export function listTopics(): Topic[] {
   const rows = getDb()
     .select()
@@ -45,6 +54,16 @@ export function listTopics(): Topic[] {
     .where(eq(topics.archived, false))
     .all()
   return rows.map(toDomain)
+}
+
+const topicKeyMap: Record<string, string> = {
+  name: 'name',
+  pi_session_id: 'piSessionId',
+  agent_type: 'agentType',
+  current_model: 'currentModel',
+  history_frozen_at: 'historyFrozenAt',
+  programming_spec_json: 'programmingSpecJson',
+  general_spec_json: 'generalSpecJson',
 }
 
 export function updateTopic(
@@ -69,7 +88,7 @@ export function updateTopic(
   const updates: Record<string, unknown> = { updatedAt: Date.now() }
   for (const [k, v] of Object.entries(data)) {
     if (v !== undefined) {
-      const col = k as string
+      const col = topicKeyMap[k] ?? k
       updates[col] = v
     }
   }

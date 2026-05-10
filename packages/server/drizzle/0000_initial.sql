@@ -131,9 +131,3 @@ CREATE TABLE IF NOT EXISTS sop_templates (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sop_templates_type ON sop_templates(agent_type);
-
-CREATE TABLE IF NOT EXISTS __drizzle_migrations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  hash TEXT NOT NULL UNIQUE,
-  created_at INTEGER
-);

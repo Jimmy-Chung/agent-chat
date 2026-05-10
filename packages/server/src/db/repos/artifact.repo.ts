@@ -5,6 +5,7 @@ import { getDb } from '../migrate'
 import { ulid } from 'ulid'
 
 export function createArtifact(input: {
+  id?: string
   topicId?: string | null
   originTopicId?: string | null
   name: string
@@ -15,7 +16,7 @@ export function createArtifact(input: {
   metadataJson?: string | null
 }): Artifact {
   const row = {
-    id: ulid(),
+    id: input.id ?? ulid(),
     topicId: input.topicId ?? null,
     originTopicId: input.originTopicId ?? null,
     name: input.name,

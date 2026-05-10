@@ -134,11 +134,37 @@ export const usageDeltaPayloadSchema = z.object({
   cacheCreateTokens: z.number().optional(),
 })
 
+export const artifactCreatedPayloadSchema = z.object({
+  kind: z.literal('artifact.created'),
+  artifactId: z.string(),
+  name: z.string(),
+  mime: z.string().optional(),
+  sizeBytes: z.number().optional(),
+  metadata: z.record(z.unknown()).optional(),
+})
+
 export const errorPayloadSchema = z.object({
   kind: z.literal('error'),
   code: z.string(),
   message: z.string(),
   recoverable: z.boolean(),
+})
+
+export const sessionHealthPayloadSchema = z.object({
+  kind: z.literal('session.health'),
+  state: z.enum(['connected', 'disconnected', 'reconnecting']),
+  piSessionId: z.string(),
+  lastError: z.string().optional(),
+})
+
+export const cronRunCompletedPayloadSchema = z.object({
+  kind: z.literal('cron.run.completed'),
+  cronId: z.string(),
+  runId: z.string(),
+  status: z.enum(['success', 'failed', 'timeout']),
+  summary: z.string().nullable(),
+  duration: z.number().nullable(),
+  completedAt: z.number(),
 })
 
 // ─── Payload type exports ─────────────────────────────────────────
@@ -157,7 +183,10 @@ export type InteractionRequestPayload = z.infer<
 export type AgentStatusPayload = z.infer<typeof agentStatusPayloadSchema>
 export type CronTriggeredPayload = z.infer<typeof cronTriggeredPayloadSchema>
 export type UsageDeltaPayload = z.infer<typeof usageDeltaPayloadSchema>
+export type ArtifactCreatedPayload = z.infer<typeof artifactCreatedPayloadSchema>
 export type ErrorPayload = z.infer<typeof errorPayloadSchema>
+export type SessionHealthPayload = z.infer<typeof sessionHealthPayloadSchema>
+export type CronRunCompletedPayload = z.infer<typeof cronRunCompletedPayloadSchema>
 
 // ─── PIEvent ──────────────────────────────────────────────────────
 
@@ -174,7 +203,10 @@ export type PIPayload =
   | AgentStatusPayload
   | CronTriggeredPayload
   | UsageDeltaPayload
+  | ArtifactCreatedPayload
   | ErrorPayload
+  | SessionHealthPayload
+  | CronRunCompletedPayload
 
 const payloadSchema = z.discriminatedUnion('kind', [
   messageStartPayloadSchema,
@@ -189,7 +221,10 @@ const payloadSchema = z.discriminatedUnion('kind', [
   agentStatusPayloadSchema,
   cronTriggeredPayloadSchema,
   usageDeltaPayloadSchema,
+  artifactCreatedPayloadSchema,
   errorPayloadSchema,
+  sessionHealthPayloadSchema,
+  cronRunCompletedPayloadSchema,
 ])
 
 export const piEventSchema = z.object({

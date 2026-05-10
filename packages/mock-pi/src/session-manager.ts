@@ -55,7 +55,7 @@ export function createSessionManager(
       ts: Date.now(),
       payload,
     }
-    const frame = createFrame('pi.event', event, undefined, session.seq)
+    const frame = createFrame('event', event, undefined, session.seq)
     session.ws.send(encodeFrame(frame))
     session.seq++
   }
@@ -83,6 +83,8 @@ export function createSessionManager(
     session.ws = ws
     log.info({ sessionId }, 'session attached')
 
+    // Send session.health connected
+    emitEvent(session, { kind: 'session.health', state: 'connected', piSessionId: sessionId })
     // Send agent.status = idle on attach
     emitEvent(session, { kind: 'agent.status', state: 'idle' })
   }
