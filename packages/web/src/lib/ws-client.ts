@@ -32,8 +32,7 @@ class WsClient {
     if (this.ws?.readyState === WebSocket.OPEN) return
     this.disposed = false
 
-    const token =
-      typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
+    const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
     const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL
 
     useWsStore.getState().setStatus('connecting')
@@ -107,6 +106,7 @@ class WsClient {
       sop_template_id: null,
       current_model: (raw.current_model as string) ?? null,
       history_frozen_at: (raw.history_frozen_at as number) ?? null,
+      plan_mode: Boolean(raw.plan_mode),
       created_at: raw.created_at as number,
       updated_at: raw.updated_at as number,
       archived: (raw.archived as boolean) ?? false,
@@ -121,16 +121,20 @@ class WsClient {
       case 'topics.list':
         topicStore.setTopics(event.data.topics.map((t) => this.toTopic(t as Record<string, unknown>)))
         break
+
       case 'topic.created':
         topicStore.upsertTopic(this.toTopic(event.data as Record<string, unknown>))
         break
+
       case 'topic.updated':
         topicStore.upsertTopic(this.toTopic(event.data as Record<string, unknown>))
         break
+
       case 'topic.deleted':
         topicStore.removeTopic(event.data.id)
         messageStore.removeMessagesByTopic(event.data.id)
         break
+
       case 'message.start':
         messageStore.addMessage(event.data.topicId, {
           id: event.data.messageId,
@@ -141,22 +145,41 @@ class WsClient {
           finished_at: null,
           stop_reason: null,
           cron_run_id: null,
+          turn_id: (event.data as { turnId?: string }).turnId ?? null,
         })
         messageStore.startStreaming(event.data.messageId)
         break
+
+      case 'message.delta': {
+        const part = event.data.part
+        if (part.kind === 'text') {
+          messageStore.appendDelta(event.data.messageId, part.content)
+          const nextText = `${useMessageStore.getState().streamingText[event.data.messageId] ?? ''}`
+          messageStore.upsertSnapshotPart(
+            event.data.messageId,
+            'text',
+            JSON.stringify({ content: nextText }),
+            `${event.data.messageId}-text`,
+          )
+        }
+        if (part.kind === 'thinking') {
+          messageStore.appendThinkingDelta(event.data.messageId, part.content)
+          const nextThinking = `${useMessageStore.getState().streamingThinking[event.data.messageId] ?? ''}`
+          messageStore.upsertSnapshotPart(
+            event.data.messageId,
+            'thinking',
+            JSON.stringify({ content: nextThinking }),
+            `${event.data.messageId}-thinking`,
+          )
+        }
+        if (part.kind === 'tool_input') {
+          messageStore.appendToolInputDelta(event.data.messageId, part.toolUseId, part.partial)
+        }
+        break
+      }
+
       case 'message.end':
         if (messageStore.streamingMessageId === event.data.messageId) {
-          // Finalize the streaming text as a text part before ending
-          const streamText = messageStore.streamingText[event.data.messageId]
-          if (streamText) {
-            messageStore.appendPart(event.data.messageId, {
-              id: `${event.data.messageId}-text-final`,
-              message_id: event.data.messageId,
-              ordinal: 0,
-              kind: 'text',
-              content_json: JSON.stringify(streamText),
-            })
-          }
           messageStore.endStreaming(event.data.messageId)
         }
         messageStore.updateMessage(event.data.messageId, {
@@ -165,19 +188,52 @@ class WsClient {
           stop_reason: event.data.stopReason,
         })
         break
-      case 'message.delta': {
-        const part = event.data.part
-        if (part.kind === 'text') {
-          // PI sends incremental text deltas — each delta is a new chunk to append
-          messageStore.appendDelta(event.data.messageId, part.content)
-        }
-        break
-      }
+
       case 'error':
         console.error('[ws] server error:', event.data)
         break
 
-      // Artifact events
+      case 'tool.call': {
+        const d = event.data as Record<string, unknown>
+        messageStore.upsertSnapshotPart(
+          d.messageId as string,
+          'tool_use',
+          JSON.stringify({
+            toolUseId: d.toolUseId,
+            name: d.name,
+            input: d.input,
+          }),
+          `tool-${String(d.toolUseId)}`,
+        )
+        break
+      }
+
+      case 'tool.result': {
+        const d = event.data as Record<string, unknown>
+        messageStore.upsertSnapshotPart(
+          d.messageId as string,
+          'tool_result',
+          JSON.stringify({
+            toolUseId: d.toolUseId,
+            output: d.output,
+            isError: d.isError,
+          }),
+          `tool-result-${String(d.toolUseId)}`,
+        )
+        break
+      }
+
+      case 'file.diff': {
+        const d = event.data as Record<string, unknown>
+        messageStore.upsertSnapshotPart(
+          d.messageId as string,
+          'file_diff',
+          JSON.stringify({ path: d.path, before: d.before, after: d.after }),
+          `diff-${String(d.path)}`,
+        )
+        break
+      }
+
       case 'artifact.added': {
         const a = event.data as Record<string, unknown>
         useArtifactStore.getState().addArtifact({
@@ -194,9 +250,11 @@ class WsClient {
         })
         break
       }
+
       case 'artifact.deleted':
         useArtifactStore.getState().removeArtifact(event.data.id)
         break
+
       case 'artifact.moved':
         useArtifactStore.getState().moveArtifact(
           event.data.id,
@@ -204,6 +262,7 @@ class WsClient {
           event.data.toTopicId,
         )
         break
+
       case 'artifact.list': {
         const rawList = (event.data as { artifacts: unknown[] }).artifacts
         const artifacts = rawList.map((a) => ({
@@ -227,7 +286,6 @@ class WsClient {
         break
       }
 
-      // Cron events
       case 'cron.list': {
         const crons = (event.data as { crons: unknown[] }).crons.map((c) => {
           const r = c as Record<string, unknown>
@@ -244,6 +302,7 @@ class WsClient {
         useCronStore.getState().setCrons(crons)
         break
       }
+
       case 'cron.upserted':
         useCronStore.getState().upsertCron({
           cronId: (event.data as Record<string, unknown>).cronId as string,
@@ -253,6 +312,7 @@ class WsClient {
           status: (event.data as Record<string, unknown>).status as 'active' | 'paused' | 'error',
         })
         break
+
       case 'cron.triggered':
         useCronStore.getState().addRun({
           id: (event.data as Record<string, unknown>).runId as string,
@@ -262,7 +322,6 @@ class WsClient {
         })
         break
 
-      // SOP template events
       case 'sop_template.list': {
         const templates = (event.data as { templates: unknown[] }).templates.map((t) => {
           const r = t as Record<string, unknown>
@@ -282,55 +341,18 @@ class WsClient {
         break
       }
 
-      // Tool / file events
-      case 'tool.call': {
-        const d = event.data as Record<string, unknown>
-        const msgId = d.messageId as string
-        messageStore.appendPart(msgId, {
-          id: `${msgId}-tool-${d.toolUseId}`,
-          message_id: msgId,
-          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
-          kind: 'tool_use',
-          content_json: JSON.stringify({ toolUseId: d.toolUseId, name: d.name, input: d.input }),
-        })
-        break
-      }
-      case 'tool.result': {
-        const d = event.data as Record<string, unknown>
-        const msgId = d.messageId as string
-        messageStore.appendPart(msgId, {
-          id: `${msgId}-result-${d.toolUseId}`,
-          message_id: msgId,
-          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
-          kind: 'tool_result',
-          content_json: JSON.stringify({ toolUseId: d.toolUseId, output: d.output, isError: d.isError }),
-        })
-        break
-      }
-      case 'file.diff': {
-        const d = event.data as Record<string, unknown>
-        const msgId = d.messageId as string
-        messageStore.appendPart(msgId, {
-          id: `${msgId}-diff-${d.path}`,
-          message_id: msgId,
-          ordinal: (messageStore.partsByMessage[msgId]?.length ?? 0) + 1,
-          kind: 'file_diff',
-          content_json: JSON.stringify({ path: d.path, before: d.before, after: d.after }),
-        })
-        break
-      }
-
-      // Agent state events
       case 'todo.update': {
         const d = event.data as Record<string, unknown>
         messageStore.setTodos(d.topicId as string, d.items as Array<{ id: string; content: string; status: string; activeForm?: string }>)
         break
       }
+
       case 'plan.update': {
         const d = event.data as Record<string, unknown>
         messageStore.setPlan(d.topicId as string, d.plan as string)
         break
       }
+
       case 'interaction.request': {
         const d = event.data as Record<string, unknown>
         const msgId = (d.messageId as string) ?? ''
@@ -344,23 +366,29 @@ class WsClient {
         })
         break
       }
+
       case 'agent.status': {
         const d = event.data as Record<string, unknown>
         messageStore.setAgentStatus(d.topicId as string, d.state as string)
         break
       }
+
       case 'usage.snapshot': {
         const d = event.data as Record<string, unknown>
-        messageStore.setUsage(d.messageId as string, { model: d.model as string, inputTokens: d.inputTokens as number, outputTokens: d.outputTokens as number })
+        messageStore.setUsage(d.messageId as string, {
+          model: d.model as string,
+          inputTokens: d.inputTokens as number,
+          outputTokens: d.outputTokens as number,
+        })
         break
       }
 
-      // Session / cron completion events
       case 'session.health': {
         const d = event.data as Record<string, unknown>
         useWsStore.getState().setSessionHealth(d.topicId as string, d.state as string, d.lastError as string | undefined)
         break
       }
+
       case 'cron.run.completed': {
         const d = event.data as Record<string, unknown>
         useCronStore.getState().completeRun(d.runId as string, {
@@ -369,6 +397,37 @@ class WsClient {
           duration: (d.duration as number | null) ?? null,
           completedAt: d.completedAt as number,
         })
+        break
+      }
+
+      case 'messages.history': {
+        const d = event.data as { topicId: string; messages: unknown[]; partsByMessage: Record<string, unknown[]> }
+        const msgs = d.messages.map((m) => {
+          const r = m as Record<string, unknown>
+          return {
+            id: r.id as string,
+            topic_id: r.topic_id as string,
+            role: r.role as 'user' | 'assistant' | 'system' | 'cron',
+            status: r.status as 'aborted' | 'error' | 'streaming' | 'done',
+            started_at: (r.started_at as number) ?? Date.now(),
+            finished_at: r.finished_at as number | null,
+            stop_reason: r.stop_reason as string | null,
+            cron_run_id: r.cron_run_id as string | null,
+            turn_id: (r.turn_id as string) ?? null,
+          }
+        })
+        messageStore.setMessages(d.topicId, msgs)
+        for (const [msgId, parts] of Object.entries(d.partsByMessage)) {
+          for (const p of parts) {
+            const r = p as Record<string, unknown>
+            messageStore.upsertSnapshotPart(
+              msgId,
+              r.kind as 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'file_diff',
+              r.content_json as string,
+              r.id as string,
+            )
+          }
+        }
         break
       }
     }
@@ -387,7 +446,6 @@ class WsClient {
   }
 }
 
-// Singleton instance
 let instance: WsClient | null = null
 
 export function getWsClient(): WsClient {

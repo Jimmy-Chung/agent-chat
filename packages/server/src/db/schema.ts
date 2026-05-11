@@ -38,6 +38,7 @@ export const topics = sqliteTable('topics', {
   sopTemplateId: text('sop_template_id'),
   currentModel: text('current_model'),
   historyFrozenAt: integer('history_frozen_at'),
+  planMode: integer('plan_mode', { mode: 'boolean' }).default(false).notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   archived: integer('archived', { mode: 'boolean' }).default(false).notNull(),
@@ -62,6 +63,7 @@ export const messages = sqliteTable(
     finishedAt: integer('finished_at'),
     stopReason: text('stop_reason'),
     cronRunId: text('cron_run_id'),
+    turnId: text('turn_id'),
   },
   (table) => [index('idx_messages_topic').on(table.topicId, table.startedAt)],
 )

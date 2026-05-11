@@ -1,5 +1,5 @@
 import type { WSFrame } from '@agent-chat/protocol'
-import { cronPauseSchema, cronDeleteSchema, cronEditSchema, topicSelectSchema } from '@agent-chat/protocol'
+import { cronPauseSchema, cronDeleteSchema, cronEditSchema, cronSyncSchema, topicSelectSchema } from '@agent-chat/protocol'
 import type { WsHub } from '../hub'
 import type { PiClient } from '../../pi/client'
 import * as cronRepo from '../../db/repos/cron.repo'
@@ -26,56 +26,77 @@ function cronJobToPayload(job: ReturnType<typeof cronRepo.getCronJob>) {
   }
 }
 
+async function syncCronsFromPi(pi: PiClient): Promise<void> {
+  const result = await pi.rpcGlobal('listCrons', {}) as Array<{
+    cronId: string
+    originSessionId: string
+    cronExpr: string
+    prompt: string
+    status: string
+    lastRunAt?: number
+    nextRunAt?: number
+  }>
+
+  for (const c of result) {
+    const originTopicId = findTopicByPiSessionId(c.originSessionId)
+    const existing = cronRepo.getCronJobByPiCronId(c.cronId)
+    if (existing) {
+      cronRepo.updateCronJob(existing.id, {
+        status: c.status as 'active' | 'paused' | 'error',
+        cron_expr: c.cronExpr,
+        prompt: c.prompt,
+        next_run_at: c.nextRunAt,
+      })
+    } else if (originTopicId) {
+      cronRepo.createCronJob({
+        originTopicId,
+        piCronId: c.cronId,
+        cronExpr: c.cronExpr,
+        prompt: c.prompt,
+        status: c.status as 'active' | 'paused' | 'error',
+        nextRunAt: c.nextRunAt,
+      })
+    } else {
+      logger.warn({ cronId: c.cronId, originSessionId: c.originSessionId }, 'Cron missing origin topic during sync')
+    }
+  }
+}
+
+function sendCronList(hub: WsHub, ws: Parameters<WsHub['sendToClient']>[0]): void {
+  const jobs = cronRepo.listCronJobs()
+  hub.sendToClient(ws, {
+    type: 'cron.list',
+    data: {
+      crons: jobs.map((j) => cronJobToPayload(j)),
+    },
+  })
+}
+
 export function registerCronHandlers(hub: WsHub, pi: PiClient): void {
   // Send cron list when client opens cron admin topic
   hub.on('client:topic.select', async (conn, frame: WSFrame) => {
     const data = topicSelectSchema.parse(frame.d)
     if (data.topicId !== 'system_cron_admin') return
 
-    // Sync crons from PI
     try {
-      const result = await pi.rpc('listCrons', {}) as Array<{
-        cronId: string
-        originSessionId: string
-        cronExpr: string
-        prompt: string
-        status: string
-        lastRunAt?: number
-        nextRunAt?: number
-      }>
-
-      for (const c of result) {
-        const originTopicId = findTopicByPiSessionId(c.originSessionId)
-        const existing = cronRepo.getCronJobByPiCronId(c.cronId)
-        if (existing) {
-          cronRepo.updateCronJob(existing.id, {
-            status: c.status as 'active' | 'paused' | 'error',
-            cron_expr: c.cronExpr,
-            prompt: c.prompt,
-            next_run_at: c.nextRunAt,
-          })
-        } else if (originTopicId) {
-          cronRepo.createCronJob({
-            originTopicId,
-            piCronId: c.cronId,
-            cronExpr: c.cronExpr,
-            prompt: c.prompt,
-            status: c.status as 'active' | 'paused' | 'error',
-            nextRunAt: c.nextRunAt,
-          })
-        }
-      }
+      await syncCronsFromPi(pi)
     } catch (err) {
       logger.warn({ err }, 'Failed to sync crons from PI')
     }
 
-    const jobs = cronRepo.listCronJobs()
-    hub.sendToClient(conn.ws, {
-      type: 'cron.list',
-      data: {
-        crons: jobs.map((j) => cronJobToPayload(j)),
-      },
-    })
+    sendCronList(hub, conn.ws)
+  })
+
+  hub.on('client:cron.sync', async (conn, frame: WSFrame) => {
+    cronSyncSchema.parse(frame.d)
+
+    try {
+      await syncCronsFromPi(pi)
+    } catch (err) {
+      logger.warn({ err }, 'Failed to sync crons from PI')
+    }
+
+    sendCronList(hub, conn.ws)
   })
 
   hub.on('client:cron.pause', async (_conn, frame: WSFrame) => {

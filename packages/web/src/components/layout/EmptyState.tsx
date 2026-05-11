@@ -9,30 +9,33 @@ export function EmptyState({ onToggleSidebar }: EmptyStateProps) {
     <div className="flex h-full flex-col items-center justify-center gap-4">
       <div
         className="flex h-16 w-16 items-center justify-center rounded-2xl"
-        style={{ backgroundColor: 'var(--glass-1)' }}
+        style={{
+          background: 'var(--glass-1)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          border: '1px solid var(--hairline)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+        }}
       >
         <ChatIcon />
       </div>
       <div className="text-center">
-        <h2
-          className="text-lg font-semibold"
-          style={{ color: 'var(--fg-strong)' }}
-        >
-          Welcome to agent-chat
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--fg-strong)' }}>
+          agent-chat
         </h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--fg-dim)' }}>
-          Select a topic or create a new one to get started.
+          选择或创建一个话题开始对话
         </p>
       </div>
       <button
         onClick={onToggleSidebar}
         className="mt-2 rounded-lg px-4 py-2 text-sm font-medium lg:hidden"
         style={{
-          backgroundColor: 'var(--glass-2)',
+          background: 'var(--glass-2)',
           color: 'var(--fg-regular)',
         }}
       >
-        Browse Topics
+        浏览话题
       </button>
     </div>
   )

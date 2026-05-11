@@ -20,6 +20,8 @@ export function registerInteractionHandlers(hub: WsHub, pi: PiClient): void {
           logger.warn({ err }, 'Failed to abort session on PI')
         }
       }
+      // Broadcast idle so frontend stops showing "aborting" and re-enables input
+      hub.broadcast({ type: 'agent.status', data: { topicId: data.topicId, state: 'idle' } })
       return
     }
 

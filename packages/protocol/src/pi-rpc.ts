@@ -212,6 +212,17 @@ export const setSessionModelResultSchema = okResultSchema
 export type SetSessionModelParams = z.infer<typeof setSessionModelParamsSchema>
 export type SetSessionModelResult = z.infer<typeof setSessionModelResultSchema>
 
+// setPlanMode — toggle session into read-only (Plan) mode
+export const setPlanModeParamsSchema = z.object({
+  sessionId: z.string(),
+  planMode: z.boolean(),
+})
+
+export const setPlanModeResultSchema = okResultSchema
+
+export type SetPlanModeParams = z.infer<typeof setPlanModeParamsSchema>
+export type SetPlanModeResult = z.infer<typeof setPlanModeResultSchema>
+
 // getUsage
 export const getUsageParamsSchema = z.object({
   sessionId: z.string().optional(),
@@ -320,6 +331,10 @@ export type PiRpcMethod = {
   setSessionModel: {
     params: SetSessionModelParams
     result: SetSessionModelResult
+  }
+  setPlanMode: {
+    params: SetPlanModeParams
+    result: SetPlanModeResult
   }
   getUsage: {
     params: GetUsageParams

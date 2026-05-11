@@ -2,9 +2,9 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.0.0 |
-| 状态 | Part 1 已完成 |
-| 更新时间 | 2026-05-09 |
+| 当前版本 | v1.1.0 |
+| 状态 | UI 视觉升级 + 交互增强 + Turn ID |
+| 更新时间 | 2026-05-12 |
 
 ---
 
@@ -143,14 +143,14 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-015 |
 | 标题 | 话题 rename / delete 前端交互 |
-| 状态 | 待讨论 |
-| 版本 | v1.2.0 |
+| 状态 | 开发中 |
+| 版本 | v1.0.0 |
 | 提出时间 | 2026-05-10 |
-| 描述 | 补充话题侧边栏的 rename 和 delete 交互。后端 + 协议 + store 已有完整支持，缺前端 UI 入口（编辑按钮/右键菜单/双击编辑 rename，删除按钮/滑动删除 + 确认弹窗含产物策略选择） |
+| 描述 | 补充话题侧边栏的 rename 和 delete 交互。后端 + 协议 + store 已有完整支持，缺前端 UI 入口（编辑按钮/右键菜单/双击编辑 rename，删除按钮/滑动删除 + 确认弹窗含产物策略选择）。Delete 部分已在 FEAT-026 实现，rename 待补充 |
 | 验收标准 | 侧边栏可 rename 话题（ID 不变）、可 delete 话题（普通话题软删除、系统话题不可删），删除时弹窗选择产物处理策略（转池/删除） |
 | 测试用例 | TBD |
 | 影响模块 | packages/web (Sidebar 组件) |
-| 备注 | 未计划（v1.0.0 需求审查时发现前端交互缺口，后端已完整实现） |
+| 备注 | Delete 部分由 FEAT-026 (S9) 覆盖，rename 交互待补充 |
 
 ### FEAT-008: 产物系统
 
@@ -166,6 +166,36 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 测试用例 | `packages/server/src/__tests__/artifact.repo.test.ts` (8) + `packages/web/src/__tests__/artifact-store.test.ts` (12)，handler 逻辑待补充 |
 | 影响模块 | server, web |
 | 对应步骤 | 设计文档 Phase 5 |
+
+### FEAT-027: 会话历史一致性优化（PI 原始会话为事实源）
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-027 |
+| 标题 | 会话历史一致性优化（PI 原始会话为事实源） |
+| 状态 | 待讨论 |
+| 版本 | TBD（下个版本讨论） |
+| 提出时间 | 2026-05-12 |
+| 描述 | 优化 topic 历史记录的一致性模型，评估将 PI / Claude Code 原始会话作为事实源、SQLite 作为缓存 / 投影视图的方案。重点讨论：1) 刷新或恢复 topic 时，是否需要从 PI 补偿缺失历史；2) 是否需要基于 seq / offset 的增量同步，而非每次全量回放 jsonl；3) 如何避免 server 重启、断线、漏事件导致数据库历史与 PI 原始会话分叉；4) 在一致性提升的前提下控制长会话下的性能与存储成本 |
+| 验收标准 | TBD |
+| 测试用例 | TBD |
+| 影响模块 | packages/server, packages/protocol, packages/web, [external] PI Adapter |
+| 备注 | 当前实现以 SQLite 历史为 UI 读取源，存在与 PI 原始会话不一致的风险；本需求先做方案讨论，不在当前版本落地 |
+
+### FEAT-028: 消息 hover 时间戳布局微调
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-028 |
+| 标题 | 消息 hover 时间戳布局微调 |
+| 状态 | 待讨论 |
+| 版本 | TBD（后续版本讨论） |
+| 提出时间 | 2026-05-12 |
+| 描述 | 优化消息 hover 时显示的时间戳布局，使其更接近 iMessage 风格的气泡内侧水平贴边样式。重点讨论：1) user / assistant 气泡内时间戳的精确位置与对齐；2) 与 UsageBadge 共存时的布局策略；3) hover 态出现时是否应避免额外撑高消息气泡；4) 多行消息、流式消息、含 ToolCard / DiffCard 时的视觉一致性 |
+| 验收标准 | TBD |
+| 测试用例 | TBD |
+| 影响模块 | packages/web |
+| 备注 | 当前已做一版内侧右下角布局，但位置与交互细节仍需继续打磨 |
 
 ### FEAT-016: R2 云端产物上传下载
 
@@ -237,15 +267,206 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-012 |
 | 标题 | 视觉打磨 + 响应式 + 移动端适配 (Part 2) |
-| 状态 | 待讨论 |
+| 状态 | 已回归 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | 替换占位 design tokens 为设计稿最终值, Liquid Glass 工具类, PWA, 响应式断点 + iPhone 抽屉/sheet/大标题 |
-| 验收标准 | TBD (需等设计稿) |
+| 描述 | 替换占位 design tokens 为设计稿最终值, Liquid Glass 工具类, 响应式断点。设计稿已喂入，token/globals.css/核心组件已改造完成。移动端和交互增强拆到 FEAT-019 ~ FEAT-023 |
+| 验收标准 | 桌面端三栏 Liquid Glass 视觉与设计稿一致，CSS 变量覆盖全部 design tokens |
 | 测试用例 | TBD |
 | 影响模块 | packages/web |
 | 对应步骤 | autopilot-execution-plan.md Step 8 |
-| 备注 | **必须等用户手动喂入设计稿后才能启动** |
+| 备注 | 设计稿已喂入，基础视觉改造已完成，交互增强见子需求 |
+
+### FEAT-017: 创建话题 Glass Modal
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-017 |
+| 标题 | 创建话题改为 Glass Modal 弹窗 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S3 显示创建话题为 glass-3 毛玻璃模态弹窗（带半透明遮罩层），当前实现为 Sidebar 内嵌表单。需将创建话题从内联表单改为独立 Modal，包含：1) glass-3 背景 + backdrop blur 遮罩；2) 居中弹出动画；3) 点击遮罩或 ESC 关闭 |
+| 验收标准 | 点击「新建话题」按钮弹出 glass modal，填写后创建成功，ESC/遮罩关闭 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (Sidebar + 新 Modal 组件) |
+| 设计稿 | S3 创建话题 |
+| 备注 | 从设计稿审查发现。FEAT-010 已回归 inline form，本需求升级为 modal 形态 |
+
+### FEAT-018: 创建话题高级选项交互
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-018 |
+| 标题 | 创建话题高级选项 — Segmented Control / YOLO 开关 / Permission Mode |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S3 包含以下高级交互控件，当前实现为简陋的 select/checkbox，需升级为设计稿形态：1) Agent 类型选择：Segmented control 分段选择器 + 选中 glow 效果；2) YOLO Mode：iOS 风格 switch toggle（非 checkbox）；3) Permission Mode：Radio button 列表 + 每项描述文字（Default: 需审批/Accept Edits: 自动接受编辑/Plan Only: 仅规划/Bypass: 全自动）；4) Working Directory：Folder picker 按钮（非文本输入框） |
+| 验收标准 | Agent 类型用 segmented control、YOLO 用 switch toggle、Permission 用 radio list + 描述 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (创建话题表单组件) |
+| 设计稿 | S3 创建话题 |
+| 备注 | 从设计稿审查发现。当前 select/checkbox 功能正确但视觉不达标 |
+
+### FEAT-019: AgentStatusBar 完整交互
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-019 |
+| 标题 | AgentStatusBar 完整交互 — 状态指示 + 计时器 + 快捷键 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S2 显示话题顶部有 AgentStatusBar 组件，当前仅有骨架但未细化。需补充：1) Agent 状态文字 (Thinking / Using tool / Idle) + 金色 pulse 动画；2) 已用时间计时器 (0:42 格式)；3) Stop 按钮 + ⌘. 快捷键提示；4) 状态跟随 agent.status 事件变化 |
+| 验收标准 | 流式回复时顶部显示状态条（Thinking → Using tool → Idle），计时器实时更新，⌘. 可中止 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (TopicPanel + AgentStatusBar 组件) |
+| 设计稿 | S2 流式生成中 |
+| 备注 | 从设计稿审查发现。FEAT-006 提到 AgentStatusBar 骨架但未细化交互 |
+
+### FEAT-020: Cron 管理卡片增强
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-020 |
+| 标题 | Cron 管理卡片增强 — 筛选 / 错误展示 / Resume |
+| 状态 | 待讨论 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S7 显示定时任务管理有丰富的卡片交互，当前实现简陋。需补充：1) 筛选 chips (全部 / Active / Paused / Error)；2) Cron 卡片增强：来源话题 chip + 上次/下次执行时间 + 状态 badge；3) Error banner：显示错误详情 + 红色背景；4) 操作按钮增加 Resume / Retry（不仅仅是 Pause/Delete）；5) Hover 状态：蓝色边框 glow |
+| 验收标准 | 筛选可切换、Error cron 显示错误详情、Pause 的 cron 可 Resume |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (CronAdminView + cron-store) |
+| 设计稿 | S7 定时任务管理 |
+| 备注 | 从设计稿审查发现。FEAT-009 基础已回归，本需求为 UI 增强 |
+
+### FEAT-021: 消息列表日期分割线
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-021 |
+| 标题 | 消息列表日期分割线 |
+| 状态 | 待讨论 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S13 显示消息列表中有日期标签（如"今天 · 14:32"），按天分组消息。当前消息列表无日期分割，连续消息无法区分日期边界。需在 MessageList 中按 started_at 日期分组，渲染居中的日期分割线 |
+| 验收标准 | 不同日期的消息之间显示日期标签，同一天内不重复显示 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (MessageList 组件) |
+| 设计稿 | S13 iPhone |
+| 备注 | 从设计稿审查发现 |
+
+### FEAT-022: Plan Tab 进度追踪
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-022 |
+| 标题 | Inspector Plan Tab 进度追踪 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S2 显示 Inspector 面板 Plan tab 有：1) Markdown 渲染的计划内容；2) Checkbox 进度追踪（可勾选已完成项）；3) 进度百分比显示；4) 预估时间 (est. time)。当前 PlanTab 仅渲染纯文本 plan 字符串 |
+| 验收标准 | Plan 内容以 Markdown 渲染，checkbox 可交互，进度条/百分比实时更新 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (InspectorPanel PlanTab) |
+| 设计稿 | S2 流式生成中 Inspector 面板 |
+| 备注 | 从设计稿审查发现 |
+
+### FEAT-023: iPhone 移动端专属布局
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-023 |
+| 标题 | iPhone 移动端专属布局 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S13 显示 iPhone 专属布局，需单独适配：1) 抽屉式 Sidebar（左滑打开，覆盖在主面板上方）；2) 大标题导航栏 (Large Title)；3) 底部固定 Composer；4) Agent 状态条（顶部窄条）；5) Dynamic Island 适配（顶部 safe area）；6) Home Indicator Bar 适配（底部 safe area）；7) Inspector 面板改为底部 sheet |
+| 验收标准 | iPhone 上打开体验与设计稿 S13 一致，sidebar 为抽屉式、composer 固定底部 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (ChatLayout + Sidebar + TopicPanel 响应式) |
+| 设计稿 | S13 iPhone |
+| 备注 | 从设计稿审查发现。与 FEAT-011 PWA 配合实施 |
+
+### FEAT-024: Permission Mode UI 重构
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-024 |
+| 标题 | Permission Mode UI 重构 — YOLO/普通 简化 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 创建编程话题时权限模式简化为两个选项：YOLO（跳过所有权限检查，Agent 自由操作）和 普通（Agent 修改文件时需逐一确认）。Default/AcceptEdits 由 PI Agent 在会话中动态决定（每次修改发 interaction.request），不在创建时选择。Plan 模式作为话题内可切换的独立开关（见 FEAT-025）。去掉了原来冗余的 permissionMode 下拉框 + YOLO checkbox + Plan checkbox |
+| 验收标准 | 创建编程话题时只有 YOLO/普通 两个选项，带描述文字，交互清晰 |
+| 测试用例 | 手动验证 |
+| 影响模块 | packages/web (Sidebar 组件) |
+| 备注 | 用户反馈：Default/AcceptEdits 是会话中动态行为，不应在创建时预设 |
+
+### FEAT-025: Plan 模式话题内切换
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-025 |
+| 标题 | Plan 模式话题内切换 — 编程话题 header 开关 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 编程话题进入后，在话题 header 提供 Plan 模式切换按钮。Plan 模式开启时 Agent 只读不修改文件；关闭时 Agent 按原始权限模式（default/acceptEdits/yolo）操作。按钮用金色高亮标识 Plan 状态。当前仅实现前端 UI，PI Agent 侧需配合支持动态切换（见 pi-agent-requirements.md C16） |
+| 验收标准 | 编程话题 header 显示 Plan 切换按钮，点击切换高亮状态，PI Agent 收到模式切换指令 |
+| 测试用例 | TBD |
+| 影响模块 | packages/web (TopicPanel), packages/server, [external] PI Agent |
+| 备注 | 用户需求：Plan 模式不应仅在创建时选，话题内也应可随时切换。PI 侧需求已写入 pi-agent-requirements.md §3.2 setPlanMode RPC + §10 AC |
+
+### FEAT-026: S9 删除话题弹窗
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-026 |
+| 标题 | S9 删除话题弹窗 — Glass modal + 产物策略选择 |
+| 状态 | 已回归 |
+| 版本 | v1.0.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S9 实现：删除话题时弹出 Liquid Glass modal，包含红色垃圾桶 glyph、话题名称、产物数量摘要、mime chip 预览行。Radio 选项：「转入产物池(保留)」(带绿色推荐 badge) vs「跟随话题一起删除」(红色警告)。底栏 Esc 快捷键 + 确认删除按钮(红色渐变)。TopicItem hover 显示垃圾桶图标，系统话题不可删 |
+| 验收标准 | Sidebar hover 普通话题出现删除图标 → 点击弹 glass modal → 产物预览 + radio 选择 → 确认删除 → 话题消失。系统话题不显示删除按钮 |
+| 测试用例 | 手动验证 |
+| 影响模块 | packages/web (DeleteTopicModal, TopicItem, Sidebar) |
+| 设计稿 | S9 删除话题弹窗 |
+| 备注 | 覆盖 FEAT-015 的 delete 部分 |
+
+### FEAT-027: S6 @产物选择器升级
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-027 |
+| 标题 | S6 @产物选择器升级 — Filter pills + Mime 图标 + 键盘导航 |
+| 状态 | 已回归 |
+| 版本 | v1.0.0 |
+| 提出时间 | 2026-05-10 |
+| 描述 | 设计稿 S6 实现：MessageInput 输入 @ 弹出升级版产物选择器 popover (640px glass modal)。Tab 栏（当前话题/产物池）含蓝色 count badge；搜索框 + filter pills（全部/表格/图片/文档）；分组列表（最近用过/本话题其它）；每行含 mime 色块图标 + 名称 + 来源话题 + 时间 + 大小；选中行高亮 + ↵ 引用提示；键盘导航（↑↓ 移动、Enter 选中、Tab 切 Tab、Esc 关闭）；底栏快捷键提示 |
+| 验收标准 | 输入 @ 弹出选择器、↑↓ 键盘导航、Enter 选中插入 @mention、Tab 切换、filter pills 过滤、搜索正常 |
+| 测试用例 | 手动验证 |
+| 影响模块 | packages/web (MessageInput) |
+| 设计稿 | S6 @产物选择器 |
+| 备注 | 升级 FEAT-005/FEAT-008 的基础 @ mention picker |
+
+---
+
+### FEAT-028: Turn ID — 消息轮次聚合（server + 前端）
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-028 |
+| 标题 | Turn ID — 消息轮次聚合（server + 前端） |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
+| 提出时间 | 2026-05-11 |
+| 描述 | 适配层（PI Adapter）v1.2.0 C19 会在每轮 user message 时生成 `turnId`，该轮所有事件都携带该字段。本系统需配合改造：1) server 首次收到某个 `turnId` 时建立 turnId↔topicId 映射，后续同一 turnId 的事件直接归入对应 topic；2) `messages.history` 返回时同一 turnId 的 message 归为一组；3) 前端按 turnId 将相邻 assistant message 合并渲染，纯 thinking + stopReason=tool_use 的过渡 message 不再单独渲染成空泡；4) `artifact.created` 在主聊天流中展示产物创建卡片 |
+| 验收标准 | 1) 编程 agent 对话不再出现纯 thinking 空白气泡；2) 同一轮 assistant 工作被聚合成一个连续工作流；3) artifact.created 在主聊天流可见；4) 刷新历史后聚合结构不变 |
+| 测试用例 | TBD |
+| 影响模块 | packages/protocol (PIEvent 增 turnId 字段), packages/server (event-router → turnId 映射, message.handler → history 按 turn 聚合), packages/web (MessageList → turn 合并渲染, MessageBubble → 过渡消息过滤, ws-client → turnId 消费) |
+| 外部依赖 | PI Adapter v1.2.0 C19 (`.omc/plans/pi-agent-requirements.md` §2 v1.2.0) |
 
 ---
 
@@ -289,17 +510,17 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 > 架构：普通对话走 PI Agent 直接处理；编程对话走 PI Adapter → Claude Code（透传）。
 
 ### E1: 增量 delta 模式
-- **状态**: PI 已确认会改
+- **状态**: 已完成
 - **当前**: `message.delta` 发送 snapshot 式全量文本
 - **要求**: 改为增量 delta（每次只发新增文本片段，前端累加拼接）
 
 ### E2: edit 工具调用 → file.diff 事件翻译
-- **状态**: 待改
+- **状态**: 已完成
 - **背景**: 编程对话中，Claude Code 已有 `edit` 内建工具，PI adapter 需拦截该 tool call
 - **要求**: 提取 `path`/`before`/`after`，翻译为 `{ kind: 'file.diff', path, before, after, messageId }` 事件推给 server
 
 ### E3: write 工具调用 → artifact.created 事件翻译
-- **状态**: 待改
+- **状态**: 已完成
 - **背景**: 编程对话中，Claude Code 已有 `write` 内建工具，PI adapter 需拦截该 tool call
 - **要求**: 翻译为 `{ kind: 'artifact.created', artifactId, name, mime, sizeBytes, metadata }` 事件推给 server；产物系统依赖此能力
 
@@ -308,12 +529,17 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 - **要求**: 每次 `message.end` 后发送 `{ kind: 'usage.delta', messageId, model, inputTokens, outputTokens, cacheReadTokens?, cacheCreateTokens? }`
 
 ### E5: WORKSPACE_ROOT 环境变量 (FEAT-010 外部依赖)
-- **状态**: 待改
+- **状态**: 已完成 (PI v1.1.0 C15)
 - **要求**: 收到 `createSession` 时自动在 `{WORKSPACE_ROOT}/{topicId}` 创建工作目录
+
+### E6: Turn ID — 每轮 assistant 工作聚合标识
+- **状态**: 待改 (PI v1.2.0 C19, 本系统 FEAT-028)
+- **要求**: 详见 `.omc/plans/pi-agent-requirements.md` §2 v1.2.0 C19 + 本文件 FEAT-028
 
 ### 其他已有外部需求
 - PI Adapter 接口 (WebSocket + JSON-RPC)
 - Claude Code SDK event → PIEvent 映射
 - 通用 Workflow Tools 注入 (workflow_set_plan / workflow_upsert_todos / workflow_report_step)
+- [external] TODO: PI Agent / Adapter 在正文输出计划或待办时，同步产生结构化 `plan.update` / `todo.update` 事件；不能只显示主聊天文本而不更新右侧 Inspector 面板
 - Cron 集成 (触发回到原 session)
 - 健康检查 /healthz

@@ -38,23 +38,57 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
   const isUser = message.role === 'user'
+  const isSystem = message.role === 'system'
   const rawStreamingText = useMessageStore(
     (s) => (message.status === 'streaming' ? s.streamingText[message.id] ?? '' : ''),
   )
   const streamingText = useDeferredValue(rawStreamingText)
-  const isStreaming = message.status === 'streaming' && isLast && !isUser && streamingText.length > 0
+  const hasPersistedTextPart = parts.some((part) => {
+    if (part.kind !== 'text') return false
+    const parsed = safeParseContent<unknown>(part.content_json)
+    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    return Boolean(text?.trim())
+  })
+  const visiblePartCount = parts.filter((part) => hasVisibleContent(part, isUser)).length
+  const hasStreamingContent = message.status === 'streaming' && isLast && !isUser && !hasPersistedTextPart && streamingText.trim().length > 0
+  const shouldShowBubble = !isUser ? visiblePartCount > 0 || hasStreamingContent || !!approval || !!cronTriggered : true
   const time = new Date(message.started_at).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   })
 
+  if (!isSystem && !shouldShowBubble) {
+    return null
+  }
+
+  const isStreaming = hasStreamingContent
+  const showInlineStreamingPulse = message.status === 'streaming' && isLast && !isUser && !hasStreamingContent && visiblePartCount > 0
+  const hasVisibleBody = visiblePartCount > 0 || hasStreamingContent
+  const showTimestampRow = hovered && hasVisibleBody
+
+  // System messages: inline purple text, no bubble
+  if (isSystem) {
+    return (
+      <div className="flex justify-center px-4 py-1">
+        <div className="role-bubble-system text-xs">{parts.map((p) => {
+          if (p.kind === 'text') {
+            const parsed = safeParseContent<unknown>(p.content_json)
+            const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+            return text ? <span key={p.id}>{text}</span> : null
+          }
+          return null
+        })}</div>
+      </div>
+    )
+  }
+
   return (
     <div
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'} px-4 py-0.5`}
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} px-6 py-0.5`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
+      <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {/* Cron indicator */}
         {cronTriggered && !isUser && (
           <CronIndicator
@@ -77,54 +111,62 @@ export function MessageBubble({
         )}
 
         {/* Bubble */}
-        <div
-          className="rounded-2xl px-3.5 py-2.5"
-          style={{
-            backgroundColor: isUser
-              ? 'var(--role-user)'
-              : 'var(--role-assistant)',
-            border: isUser ? 'none' : '1px solid var(--stroke-inner)',
-          }}
-        >
-          {/* Message parts */}
-          {parts.map((part) => (
-            <MessagePartRenderer
-              key={part.id}
-              part={part}
-              toolResults={toolResults}
-              isUser={isUser}
-            />
-          ))}
+        {hasVisibleBody && (
+          <div className="relative">
+            <div
+              className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}
+              style={{ paddingBottom: showTimestampRow ? (isUser ? 26 : 30) : undefined }}
+            >
+              {/* Message parts */}
+              {parts.map((part) => (
+                <MessagePartRenderer
+                  key={part.id}
+                  part={part}
+                  toolResults={toolResults}
+                  isUser={isUser}
+                />
+              ))}
 
-          {/* Streaming markdown */}
-          {isStreaming && (
-            <MarkdownRenderer content={streamingText} isStreaming />
-          )}
+              {/* Streaming markdown */}
+              {isStreaming && (
+                <MarkdownRenderer content={streamingText} isStreaming />
+              )}
 
-          {/* Streaming indicator */}
-          {message.status === 'streaming' && isLast && !isUser && !isStreaming && (
-            <span className="inline-block ml-1 animate-pulse" style={{ color: 'var(--fg-dim)' }}>
-              ...
-            </span>
-          )}
-        </div>
+              {/* Streaming indicator */}
+              {showInlineStreamingPulse && (
+                <span className="stream-pulse" />
+              )}
+            </div>
 
-        {/* Timestamp + usage */}
-        <div
-          className="mt-0.5 flex items-center gap-2 transition-opacity"
-          style={{ opacity: hovered ? 1 : 0 }}
-        >
-          <span className="text-[10px]" style={{ color: 'var(--fg-dim)' }}>
-            {time}
-          </span>
-          {usage && !isUser && (
-            <UsageBadge
-              inputTokens={usage.inputTokens}
-              outputTokens={usage.outputTokens}
-              model={usage.model}
-            />
-          )}
-        </div>
+            {showTimestampRow && (
+              <>
+                <span
+                  className="pointer-events-none absolute bottom-2 right-3 text-[10px] transition-opacity"
+                  style={{
+                    opacity: hovered ? 1 : 0,
+                    color: isUser ? 'rgba(255,255,255,0.78)' : 'var(--fg-dim)',
+                    fontFeatureSettings: '"tnum"',
+                  }}
+                >
+                  {time}
+                </span>
+                {usage && !isUser && (
+                  <div
+                    className="pointer-events-none absolute bottom-1.5 left-3 transition-opacity"
+                    style={{ opacity: hovered ? 1 : 0 }}
+                  >
+                    <UsageBadge
+                      inputTokens={usage.inputTokens}
+                      outputTokens={usage.outputTokens}
+                      model={usage.model}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   )
@@ -140,20 +182,22 @@ function MessagePartRenderer({
   isUser: boolean
 }) {
   if (part.kind === 'text') {
-    const text = safeParseContent<string>(part.content_json)
-    if (!text) return null
+    const parsed = safeParseContent<unknown>(part.content_json)
+    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    if (!text?.trim()) return null
     return <MarkdownRenderer content={text} />
   }
 
   if (part.kind === 'thinking') {
-    const content = safeParseContent<string>(part.content_json)
-    if (!content) return null
+    const parsed = safeParseContent<unknown>(part.content_json)
+    const content = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    if (!content?.trim()) return null
     return <ThinkingBlock content={content} />
   }
 
   if (part.kind === 'tool_use') {
     const call = safeParseContent<ToolCallInfo>(part.content_json)
-    if (!call) return null
+    if (!call?.toolUseId || !call.name) return null
     const result = toolResults[call.toolUseId]
     return (
       <ToolCard
@@ -165,17 +209,40 @@ function MessagePartRenderer({
   }
 
   if (part.kind === 'tool_result') {
-    // Tool results are displayed inline in their corresponding tool_use ToolCard
     return null
   }
 
   if (part.kind === 'file_diff' && !isUser) {
     const diff = safeParseContent<{ path: string; before: string; after: string }>(part.content_json)
-    if (!diff) return null
+    if (!diff?.path) return null
     return <DiffCard path={diff.path} before={diff.before} after={diff.after} />
   }
 
   return null
+}
+
+function hasVisibleContent(part: MessagePart, isUser: boolean): boolean {
+  if (part.kind === 'text') {
+    const parsed = safeParseContent<unknown>(part.content_json)
+    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    return Boolean(text?.trim())
+  }
+
+  if (part.kind === 'thinking') {
+    const parsed = safeParseContent<unknown>(part.content_json)
+    const content = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    return Boolean(content?.trim())
+  }
+
+  if (part.kind === 'tool_use') {
+    return true
+  }
+
+  if (part.kind === 'file_diff') {
+    return !isUser
+  }
+
+  return false
 }
 
 function safeParseContent<T>(json: string): T | null {

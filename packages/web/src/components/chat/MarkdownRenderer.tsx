@@ -164,7 +164,7 @@ export function MarkdownRenderer({ content, isStreaming = false }: MarkdownRende
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: 'var(--accent, #4a9eff)', textDecoration: 'underline' }}
+            style={{ color: 'var(--accent, #4a9eff)', textDecoration: 'underline', overflowWrap: 'break-word', wordBreak: 'break-all' }}
             {...props}
           >
             {children}

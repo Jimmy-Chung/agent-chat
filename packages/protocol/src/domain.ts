@@ -42,6 +42,7 @@ export interface Topic {
   sop_template_id: string | null
   current_model: string | null
   history_frozen_at: number | null
+  plan_mode: boolean
   created_at: number
   updated_at: number
   archived: boolean
@@ -56,6 +57,7 @@ export interface Message {
   finished_at: number | null
   stop_reason: string | null
   cron_run_id: string | null
+  turn_id: string | null
 }
 
 export interface MessagePart {

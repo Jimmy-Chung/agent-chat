@@ -259,6 +259,19 @@ export class PiClient extends EventEmitter {
     return conn.rpc(method, params)
   }
 
+  /** Send an RPC that doesn't belong to a specific session (e.g. listCrons).
+   *  Uses the first available session connection. */
+  async rpcGlobal<K extends keyof PiRpcMethod>(
+    method: K,
+    params: PiRpcMethod[K]['params'],
+  ): Promise<PiRpcMethod[K]['result']> {
+    const conn = this.sessions.values().next().value as PiSessionConn | undefined
+    if (!conn) {
+      throw new Error(`No PI session available for ${method}`)
+    }
+    return conn.rpc(method, params)
+  }
+
   disconnectSession(sessionId: string): void {
     const conn = this.sessions.get(sessionId)
     if (conn) {

@@ -1,63 +1,378 @@
 @import "tailwindcss";
 
-/*
- * Design tokens — 占位值, 等 Part 2 设计稿定稿后替换
- * 所有 visual 值通过 CSS 变量引用, 组件不写死
- */
+/* =============================================================
+   agent-chat — globals.css
+   Liquid-glass dark UI. Design tokens + glass utilities + animations.
+   ============================================================= */
+
 :root {
-  /* 背景 */
-  --bg-0: #0b0c0f;
-  --bg-1: #15171c;
-  --bg-glass: rgba(28, 30, 36, 0.55);
+  /* safe area (iPhone notch / home indicator) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 
-  /* 文本 */
-  --fg-strong: #f2f3f5;
-  --fg-regular: #c7cad0;
-  --fg-dim: #7a7e88;
-  --fg-code: #e1e4ea;
+  /* surfaces */
+  --bg-0: #0B0C0F;
+  --bg-1: #15171C;
+  --bg-2: #1C1F26;
+  --bg-elevated: #1F2229;
+  --bg-glass: rgba(20, 22, 27, 0.55);
 
-  /* Role accent */
-  --role-user: #0a84ff;
-  --role-user-end: #0064d8;
-  --role-assistant: rgba(255, 255, 255, 0.1);
-  --role-system: #8e8cff;
-  --role-cron: #f7c26b;
-  --state-warning: #ff9f0a;
-  --state-danger: #ff453a;
+  /* foreground */
+  --fg-strong: #F2F3F5;
+  --fg-regular: #C7CAD0;
+  --fg-dim: #7A7E88;
+  --fg-muted: #5A5E68;
+  --fg-code: #E1E4EA;
+  /* backward-compat aliases (some components use these) */
+  --fg-primary: #F2F3F5;
+  --surface-secondary: #15171C;
+  --surface-tertiary: #1C1F26;
 
-  /* Glass */
+  /* roles */
+  --role-user: #0A84FF;
+  --role-user-2: #2090FF;
+  --role-user-3: #0064D8;
+  --role-user-end: #0064D8;
+  --role-assistant: rgba(255, 255, 255, 0.06);
+  --role-assistant-hover: rgba(255, 255, 255, 0.09);
+  --role-system: #8E8CFF;
+  --role-cron: #F7C26B;
+  --role-cron-end: #E5A24A;
+
+  /* state */
+  --state-ok: #30D158;
+  --state-ok-soft: rgba(48, 209, 88, 0.14);
+  --state-warning: #FF9F0A;
+  --state-warning-soft: rgba(255, 159, 10, 0.14);
+  --state-danger: #FF453A;
+  --state-danger-soft: rgba(255, 69, 58, 0.14);
+  --state-info: #0A84FF;
+  --state-paused: #8A8E96;
+
+  /* glass + strokes */
   --glass-1: rgba(255, 255, 255, 0.06);
-  --glass-2: rgba(255, 255, 255, 0.1);
+  --glass-2: rgba(255, 255, 255, 0.10);
   --glass-3: rgba(255, 255, 255, 0.14);
+  --glass-panel: rgba(21, 23, 28, 0.55);
+  --glass-modal: rgba(20, 22, 27, 0.72);
   --divider: rgba(255, 255, 255, 0.08);
   --stroke-inner: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-2: rgba(255, 255, 255, 0.14);
 
-  /* 圆角 */
+  /* radii */
   --radius-bubble: 18px;
   --radius-card: 16px;
   --radius-panel: 20px;
   --radius-modal: 24px;
+  --radius-pill: 9999px;
+  --r-bubble: 18px;
+  --r-card: 16px;
+  --r-panel: 20px;
+  --r-modal: 24px;
 
-  /* 模糊 */
+  /* blur */
   --blur-panel: 40px;
   --blur-modal: 60px;
+  --blur-card: 28px;
+  --blur-subtle: 16px;
 
-  /* 字体 */
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
-  --font-cjk: "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* motion */
+  --ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --ease-morph: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* fonts */
+  --font-ui: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
 body {
   background-color: var(--bg-0);
   color: var(--fg-strong);
-  font-family: var(--font-ui), var(--font-cjk);
+  font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
-code,
-pre {
+code, pre {
   font-family: var(--font-mono);
+}
+
+/* =============================================================
+   Glass surfaces
+   ============================================================= */
+
+.glass-1 {
+  background: var(--glass-1);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+          backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-radius: var(--r-card);
+  transition: background 180ms var(--ease-morph), border-color 180ms var(--ease-morph);
+}
+.glass-1:hover  { background: rgba(255, 255, 255, 0.08); border-color: var(--hairline-2); }
+.glass-1:active { background: rgba(255, 255, 255, 0.05); }
+
+.glass-2 {
+  background: var(--glass-2);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+          backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid var(--hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: var(--r-panel);
+  transition: background 180ms var(--ease-morph);
+}
+.glass-2:hover  { background: rgba(255, 255, 255, 0.13); }
+.glass-2:active { background: rgba(255, 255, 255, 0.09); }
+
+.glass-3 {
+  background: var(--glass-modal);
+  -webkit-backdrop-filter: blur(60px) saturate(200%);
+          backdrop-filter: blur(60px) saturate(200%);
+  border: 1px solid var(--hairline-2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 30px 80px rgba(0, 0, 0, 0.60);
+  border-radius: var(--r-modal);
+}
+
+.hairline   { border-color: var(--hairline); }
+.hairline-t { border-top:    1px solid var(--hairline); }
+.hairline-b { border-bottom: 1px solid var(--hairline); }
+.hairline-l { border-left:   1px solid var(--hairline); }
+.hairline-r { border-right:  1px solid var(--hairline); }
+
+/* =============================================================
+   Role bubbles
+   ============================================================= */
+
+.role-bubble-user {
+  background: linear-gradient(180deg, var(--role-user-2) 0%, var(--role-user) 50%, var(--role-user-3) 100%);
+  color: #FFFFFF;
+  border-radius: var(--r-bubble);
+  padding: 9px 14px;
+  letter-spacing: -0.01em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    0 4px 14px rgba(10, 132, 255, 0.35);
+  -webkit-font-smoothing: antialiased;
+  transition: transform 120ms var(--ease-spring), box-shadow 180ms var(--ease-morph);
+}
+.role-bubble-user:hover  { box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.18), 0 6px 18px rgba(10,132,255,0.45); }
+.role-bubble-user:active { transform: scale(0.985); }
+
+.role-bubble-assistant {
+  background: var(--glass-1);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+          backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-bubble);
+  padding: 10px 14px;
+  color: var(--fg-strong);
+  letter-spacing: -0.005em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 180ms var(--ease-morph);
+}
+.role-bubble-assistant:hover { background: rgba(255, 255, 255, 0.08); }
+
+.role-bubble-system {
+  background: transparent;
+  color: var(--role-system);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  padding: 2px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.role-bubble-system::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  opacity: 0.65;
+}
+
+.role-bubble-cron {
+  position: relative;
+  background: var(--glass-1);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+          backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-bubble);
+  padding: 28px 14px 14px;
+  color: var(--fg-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 18px rgba(247, 194, 107, 0.10);
+  overflow: hidden;
+}
+.role-bubble-cron::before {
+  content: attr(data-cron-meta);
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: linear-gradient(180deg, rgba(247, 194, 107, 0.18), rgba(247, 194, 107, 0.06));
+  border-bottom: 1px solid rgba(247, 194, 107, 0.22);
+  color: var(--role-cron);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+/* =============================================================
+   Stream pulse — tail of an in-flight assistant bubble
+   ============================================================= */
+
+@keyframes stream-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+
+.stream-pulse {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--role-user);
+  box-shadow: 0 0 10px var(--role-user);
+  animation: stream-pulse 1.2s ease-in-out infinite;
+  vertical-align: -1px;
+  margin-left: 6px;
+}
+
+/* AgentStatusBar morph */
+@keyframes status-morph {
+  0%   { opacity: 0; transform: translateY(-4px); }
+  60%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.status-morph { animation: status-morph 260ms var(--ease-morph); }
+
+/* RightPanel gold attention pulse (one-shot on first plan/todo write) */
+@keyframes gold-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 194, 107, 0); }
+  50%      { box-shadow: 0 0 0 6px rgba(247, 194, 107, 0.35); }
+}
+.gold-pulse { animation: gold-pulse 1.6s ease-in-out 1; }
+
+/* danger pulse — failed cron tile, rejected permission */
+@keyframes danger-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 69, 58, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 69, 58, 0.32); }
+}
+.danger-pulse { animation: danger-pulse 1.6s ease-in-out infinite; }
+
+/* warning pulse — pending ApprovalCard */
+@keyframes attention-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 159, 10, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(255, 159, 10, 0.32); }
+}
+.attention-pulse { animation: attention-pulse 1.6s ease-in-out infinite; }
+
+/* =============================================================
+   Focus ring (system blue)
+   ============================================================= */
+
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(10, 132, 255, 0.55),
+    0 0 30px rgba(10, 132, 255, 0.15);
+}
+
+/* =============================================================
+   Ambient blobs — background color for glass refraction
+   ============================================================= */
+
+.ambient-blob-blue {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.55;
+  background: radial-gradient(closest-side, rgba(10, 132, 255, 0.55), transparent 70%);
+  pointer-events: none;
+}
+.ambient-blob-purple {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.5;
+  background: radial-gradient(closest-side, rgba(142, 140, 255, 0.40), transparent 70%);
+  pointer-events: none;
+}
+.ambient-blob-gold {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.55;
+  background: radial-gradient(closest-side, rgba(247, 194, 107, 0.22), transparent 70%);
+  pointer-events: none;
+}
+.ambient-blob-teal {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.5;
+  background: radial-gradient(closest-side, rgba(48, 176, 199, 0.20), transparent 70%);
+  pointer-events: none;
+}
+
+/* =============================================================
+   Reduced motion — respect system setting
+   ============================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-pulse,
+  .status-morph,
+  .gold-pulse,
+  .danger-pulse,
+  .attention-pulse {
+    animation: none !important;
+  }
+}
+
+/* =============================================================
+   Scrollbar styling
+   ============================================================= */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* =============================================================
+   Mobile overlay animations
+   ============================================================= */
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }

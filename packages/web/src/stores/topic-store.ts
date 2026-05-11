@@ -1,8 +1,12 @@
 'use client'
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 import type { Topic } from '@agent-chat/protocol'
+import { getWsClient } from '@/lib/ws-client'
+
+const ACTIVE_TOPIC_STORAGE_KEY = 'AGENT_CHAT_ACTIVE_TOPIC_ID'
 
 interface TopicState {
   topics: Topic[]
@@ -21,64 +25,89 @@ interface TopicActions {
   removeTopic: (id: string) => void
 }
 
+const requestTopicData = (topicId: string) => {
+  const client = getWsClient()
+  client.send({ type: 'messages.load', data: { topicId } })
+  client.send({ type: 'topic.resume', data: { topicId } })
+  client.send({ type: 'topic.select', data: { topicId } })
+}
+
 export const useTopicStore = create<TopicState & TopicActions>()(
-  immer((set) => ({
-    topics: [],
-    activeTopicId: null,
-    loading: false,
+  persist(
+    immer((set, get) => ({
+      topics: [],
+      activeTopicId: null,
+      loading: false,
 
-    fetchTopics: async () => {
-      set((s) => {
-        s.loading = true
-      })
-      // Actual fetching is done via WS; this sets loading state
-      set((s) => {
-        s.loading = false
-      })
-    },
+      fetchTopics: async () => {
+        set((s) => {
+          s.loading = true
+        })
+        set((s) => {
+          s.loading = false
+        })
+      },
 
-    selectTopic: (id) => {
-      set((s) => {
-        s.activeTopicId = id
-      })
-    },
+      selectTopic: (id) => {
+        set((s) => {
+          s.activeTopicId = id
+        })
+        requestTopicData(id)
+      },
 
-    createTopic: (_name, _agentType) => {
-      // Dispatched via WS client — placeholder for store-level logic
-    },
+      createTopic: (_name, _agentType) => {
+        // Dispatched via WS client — placeholder for store-level logic
+      },
 
-    deleteTopic: (_id) => {
-      // Dispatched via WS client — placeholder for store-level logic
-    },
+      deleteTopic: (_id) => {
+        // Dispatched via WS client — placeholder for store-level logic
+      },
 
-    renameTopic: (_id, _name) => {
-      // Dispatched via WS client — placeholder for store-level logic
-    },
+      renameTopic: (id, name) => {
+        getWsClient().send({ type: 'topic.rename', data: { id, name } })
+      },
 
-    setTopics: (topics) => {
-      set((s) => {
-        s.topics = topics
-      })
-    },
+      setTopics: (topics) => {
+        const activeTopicId = get().activeTopicId
+        const hasActiveTopic = activeTopicId
+          ? topics.some((topic) => topic.id === activeTopicId)
+          : false
 
-    upsertTopic: (topic) => {
-      set((s) => {
-        const idx = s.topics.findIndex((t) => t.id === topic.id)
-        if (idx >= 0) {
-          s.topics[idx] = topic
-        } else {
-          s.topics.push(topic)
+        set((s) => {
+          s.topics = topics
+          if (s.activeTopicId && !hasActiveTopic) {
+            s.activeTopicId = null
+          }
+        })
+
+        if (hasActiveTopic && activeTopicId) {
+          requestTopicData(activeTopicId)
         }
-      })
-    },
+      },
 
-    removeTopic: (id) => {
-      set((s) => {
-        s.topics = s.topics.filter((t) => t.id !== id)
-        if (s.activeTopicId === id) {
-          s.activeTopicId = null
-        }
-      })
+      upsertTopic: (topic) => {
+        set((s) => {
+          const idx = s.topics.findIndex((t) => t.id === topic.id)
+          if (idx >= 0) {
+            s.topics[idx] = topic
+          } else {
+            s.topics.push(topic)
+          }
+        })
+      },
+
+      removeTopic: (id) => {
+        set((s) => {
+          s.topics = s.topics.filter((t) => t.id !== id)
+          if (s.activeTopicId === id) {
+            s.activeTopicId = null
+          }
+        })
+      },
+    })),
+    {
+      name: ACTIVE_TOPIC_STORAGE_KEY,
+      partialize: (state) => ({ activeTopicId: state.activeTopicId }),
     },
-  })),
+  ),
 )

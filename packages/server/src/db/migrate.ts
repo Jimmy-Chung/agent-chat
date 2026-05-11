@@ -80,6 +80,46 @@ export function runMigrations() {
     }
   }
 
+  // Run 0001: add turn_id column
+  {
+    const hash = '0001_turn_id'
+    const applied = sqlite
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .get(hash)
+
+    if (!applied) {
+      const sqlFile = path.join(migrationsDir, '0001_turn_id.sql')
+      if (fs.existsSync(sqlFile)) {
+        const sql = fs.readFileSync(sqlFile, 'utf-8')
+        sqlite.exec(sql)
+        sqlite
+          .prepare(`INSERT INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+          .run(hash, Date.now())
+        logger.info('Applied migration: 0001_turn_id')
+      }
+    }
+  }
+
+  // Run 0002: add plan_mode column to topics
+  {
+    const hash = '0002_plan_mode'
+    const applied = sqlite
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .get(hash)
+
+    if (!applied) {
+      const sqlFile = path.join(migrationsDir, '0002_plan_mode.sql')
+      if (fs.existsSync(sqlFile)) {
+        const sql = fs.readFileSync(sqlFile, 'utf-8')
+        sqlite.exec(sql)
+        sqlite
+          .prepare(`INSERT INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+          .run(hash, Date.now())
+        logger.info('Applied migration: 0002_plan_mode')
+      }
+    }
+  }
+
   // Create FTS5 virtual table
   sqlite.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(

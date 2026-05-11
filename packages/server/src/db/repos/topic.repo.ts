@@ -25,6 +25,7 @@ export function createTopic(input: {
     sopTemplateId: input.sopTemplateId ?? null,
     currentModel: input.currentModel ?? null,
     historyFrozenAt: null,
+    planMode: false,
     createdAt: now,
     updatedAt: now,
     archived: false,
@@ -64,6 +65,7 @@ const topicKeyMap: Record<string, string> = {
   history_frozen_at: 'historyFrozenAt',
   programming_spec_json: 'programmingSpecJson',
   general_spec_json: 'generalSpecJson',
+  plan_mode: 'planMode',
 }
 
 export function updateTopic(
@@ -78,6 +80,7 @@ export function updateTopic(
       | 'history_frozen_at'
       | 'programming_spec_json'
       | 'general_spec_json'
+      | 'plan_mode'
     >
   >,
 ): Topic | undefined {
@@ -136,6 +139,7 @@ export function upsertSystemTopic(
     sopTemplateId: null,
     currentModel: null,
     historyFrozenAt: null,
+    planMode: false,
     createdAt: now,
     updatedAt: now,
     archived: false,
@@ -156,6 +160,7 @@ function toDomain(row: Record<string, unknown>): Topic {
     sop_template_id: (row.sopTemplateId as string) || null,
     current_model: (row.currentModel as string) || null,
     history_frozen_at: (row.historyFrozenAt as number) || null,
+    plan_mode: Boolean(row.planMode),
     created_at: row.createdAt as number,
     updated_at: row.updatedAt as number,
     archived: Boolean(row.archived),

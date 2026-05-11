@@ -240,6 +240,52 @@ function routeEvent(event: PIEvent, hub: WsHub): void {
       break
     }
 
+    case 'cron.created': {
+      const originTopicId = findTopicIdBySession(payload.originSessionId)
+      if (!originTopicId) {
+        logger.warn(
+          { originSessionId: payload.originSessionId },
+          'Cron created but origin session not found',
+        )
+        return
+      }
+      // Deduplicate by PI cron ID
+      const existing = cronRepo.getCronJobByPiCronId(payload.cronId)
+      if (existing) {
+        cronRepo.updateCronJob(existing.id, {
+          status: payload.status,
+          cron_expr: payload.cronExpr,
+          prompt: payload.prompt,
+          next_run_at: payload.nextRunAt,
+        })
+      } else {
+        cronRepo.createCronJob({
+          originTopicId,
+          piCronId: payload.cronId,
+          cronExpr: payload.cronExpr,
+          prompt: payload.prompt,
+          status: payload.status,
+          nextRunAt: payload.nextRunAt,
+        })
+      }
+      const job = cronRepo.getCronJobByPiCronId(payload.cronId)
+      if (job) {
+        hub.broadcast({
+          type: 'cron.upserted',
+          data: {
+            cronId: job.id,
+            originTopicId: job.origin_topic_id,
+            cronExpr: job.cron_expr,
+            prompt: job.prompt,
+            status: job.status,
+            lastRunAt: undefined,
+            nextRunAt: job.next_run_at ?? undefined,
+          },
+        })
+      }
+      break
+    }
+
     case 'cron.triggered': {
       // Find the topic by the cron's origin session
       const originTopicId = findTopicIdBySession(payload.originSessionId)
