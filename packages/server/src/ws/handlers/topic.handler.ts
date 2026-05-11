@@ -1,5 +1,5 @@
 import type { WSFrame } from '@agent-chat/protocol'
-import { topicCreateSchema, topicDeleteSchema, topicRenameSchema, topicDetachExtensionSchema, topicSetModelSchema, topicResumeSchema } from '@agent-chat/protocol'
+import { topicCreateSchema, topicDeleteSchema, topicRenameSchema, topicDetachExtensionSchema, topicSetModelSchema, topicSetPlanModeSchema, topicResumeSchema } from '@agent-chat/protocol'
 import type { WsHub } from '../hub'
 import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
@@ -157,6 +157,41 @@ export function registerTopicHandlers(hub: WsHub, pi: PiClient): void {
     const updated = topicRepo.updateTopic(data.id, {
       current_model: data.model,
     })
+    if (updated) {
+      hub.broadcast({ type: 'topic.updated', data: updated })
+    }
+  })
+
+  hub.on('client:topic.setPlanMode', async (_conn, frame: WSFrame) => {
+    const data = topicSetPlanModeSchema.parse(frame.d)
+    const topic = topicRepo.getTopic(data.id)
+    if (!topic) return
+
+    if (topic.agent_type !== 'programming') {
+      hub.broadcast({
+        type: 'error',
+        data: { code: 'INVALID_TOPIC', message: 'Plan mode only applies to programming topics' },
+      })
+      return
+    }
+
+    if (topic.pi_session_id) {
+      try {
+        await pi.rpc('setPlanMode', {
+          sessionId: topic.pi_session_id,
+          planMode: data.planMode,
+        })
+      } catch (err) {
+        logger.error({ err, topicId: data.id }, 'Failed to set plan mode on PI')
+        hub.broadcast({
+          type: 'error',
+          data: { code: 'PI_PLAN_MODE_FAILED', message: 'Failed to set plan mode' },
+        })
+        return
+      }
+    }
+
+    const updated = topicRepo.updateTopic(data.id, { plan_mode: data.planMode })
     if (updated) {
       hub.broadcast({ type: 'topic.updated', data: updated })
     }

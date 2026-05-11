@@ -51,13 +51,13 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
           className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 text-sm"
           style={{ backgroundColor: 'var(--role-system)', color: '#fff' }}
         >
-          <span>Connection lost — wrong token?</span>
+          <span>连接已断开 — Token 错误？</span>
           <button
             onClick={handleLogout}
             className="rounded px-2 py-0.5 text-xs font-medium"
             style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
           >
-            Re-enter token
+            重新输入
           </button>
         </div>
       )}
@@ -74,7 +74,7 @@ function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
     e.preventDefault()
     const trimmed = value.trim()
     if (!trimmed) {
-      setError('Please enter a token')
+      setError('请输入 Token')
       return
     }
     onSubmit(trimmed)
@@ -100,7 +100,7 @@ function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
           agent-chat
         </h1>
         <p className="text-center text-sm" style={{ color: 'var(--fg-dim)' }}>
-          Enter your access token to continue
+          请输入 Token 以继续
         </p>
         <input
           type="password"
@@ -128,7 +128,7 @@ function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
           className="w-full rounded-lg px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90"
           style={{ backgroundColor: 'var(--role-user)', color: '#fff' }}
         >
-          Connect
+          连接
         </button>
       </form>
     </div>

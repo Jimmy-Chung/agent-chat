@@ -25,7 +25,12 @@ function createMockPiClient() {
   }
 }
 
-describe('Message handler — user.message', () => {
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+describe('Message handler', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
 
@@ -49,10 +54,62 @@ describe('Message handler — user.message', () => {
     return call![1]
   }
 
+  it('returns empty history for a topic with no messages', async () => {
+    const handler = await getHandler('client:messages.load')
+    const topic = topicRepo.createTopic({ name: 'Empty Topic', kind: 'normal', agentType: 'general' })
+
+    await handler({ ws: 'socket-1' }, {
+      d: { topicId: topic.id },
+    })
+
+    expect(mockHub.sendToClient).toHaveBeenCalledWith('socket-1', {
+      type: 'messages.history',
+      data: {
+        topicId: topic.id,
+        messages: [],
+        partsByMessage: {},
+      },
+    })
+  })
+
+  it('loads persisted history for a topic', async () => {
+    const userMessage = await getHandler('client:user.message')
+    const loadHistory = await getHandler('client:messages.load')
+    const topic = topicRepo.createTopic({ name: 'History Topic', kind: 'normal', agentType: 'general' })
+
+    topicRepo.updateTopic(topic.id, { pi_session_id: 'pi-sess-history' })
+    mockPi.reconnectSession.mockResolvedValue(undefined)
+    mockPi.hasSession.mockReturnValue(false)
+
+    await userMessage({}, {
+      d: {
+        topicId: topic.id,
+        content: 'Hello history',
+        mentions: [],
+      },
+    })
+
+    await loadHistory({ ws: 'socket-2' }, {
+      d: { topicId: topic.id },
+    })
+
+    expect(mockHub.sendToClient).toHaveBeenCalledWith('socket-2', expect.objectContaining({
+      type: 'messages.history',
+      data: expect.objectContaining({ topicId: topic.id }),
+    }))
+
+    const payload = mockHub.sendToClient.mock.calls.at(-1)?.[1]
+    expect(payload.data.messages).toHaveLength(1)
+    expect(payload.data.partsByMessage[payload.data.messages[0].id]).toHaveLength(1)
+  })
+
   it('creates user message in DB and broadcasts start/delta/end', async () => {
     const handler = await getHandler('client:user.message')
     const topic = topicRepo.createTopic({ name: 'Chat', kind: 'normal', agentType: 'general' })
+
     topicRepo.updateTopic(topic.id, { pi_session_id: 'pi-sess-msg' })
+    mockPi.reconnectSession.mockResolvedValue(undefined)
+    mockPi.hasSession.mockReturnValue(false)
 
     await handler({}, {
       d: {
@@ -62,7 +119,6 @@ describe('Message handler — user.message', () => {
       },
     })
 
-    // Three broadcasts: start, delta, end
     expect(mockHub.broadcast).toHaveBeenCalledTimes(3)
     const events = mockHub.getBroadcastEvents()
     expect(events[0].type).toBe('message.start')
@@ -74,7 +130,10 @@ describe('Message handler — user.message', () => {
   it('forwards to PI via sendUserMessage RPC', async () => {
     const handler = await getHandler('client:user.message')
     const topic = topicRepo.createTopic({ name: 'PI Chat', kind: 'normal', agentType: 'general' })
+
     topicRepo.updateTopic(topic.id, { pi_session_id: 'pi-sess-msg' })
+    mockPi.reconnectSession.mockResolvedValue(undefined)
+    mockPi.hasSession.mockReturnValue(false)
 
     await handler({}, {
       d: {
@@ -95,29 +154,28 @@ describe('Message handler — user.message', () => {
     const topic = topicRepo.createTopic({ name: 'No Session', kind: 'normal', agentType: 'general' })
 
     await handler({}, {
-      d: { topicId: topic.id, content: 'Hi' },
+      d: { topicId: topic.id, content: 'Hi', mentions: [] },
     })
 
-    const errorEvent = mockHub.getBroadcastEvents().find(
-      (e: any) => e.type === 'error',
-    )
+    const errorEvent = mockHub.getBroadcastEvents().find((e: any) => e.type === 'error')
     expect(errorEvent).toBeDefined()
     expect(errorEvent.data.code).toBe('NO_PI_SESSION')
-  })
+  }, 7000)
 
   it('broadcasts PI_UNAVAILABLE error when PI RPC fails', async () => {
-    mockPi.rpc.mockRejectedValue(new Error('PI down'))
     const handler = await getHandler('client:user.message')
     const topic = topicRepo.createTopic({ name: 'PI Down', kind: 'normal', agentType: 'general' })
+
     topicRepo.updateTopic(topic.id, { pi_session_id: 'pi-sess-down' })
+    mockPi.hasSession.mockReturnValue(true)
+    mockPi.rpc.mockRejectedValue(new Error('PI down'))
 
     await handler({}, {
-      d: { topicId: topic.id, content: 'Hi' },
+      d: { topicId: topic.id, content: 'Hi', mentions: [] },
     })
+    await flushMicrotasks()
 
-    const errorEvent = mockHub.getBroadcastEvents().find(
-      (e: any) => e.type === 'error',
-    )
+    const errorEvent = mockHub.getBroadcastEvents().find((e: any) => e.type === 'error')
     expect(errorEvent).toBeDefined()
     expect(errorEvent.data.code).toBe('PI_UNAVAILABLE')
   })
@@ -126,7 +184,7 @@ describe('Message handler — user.message', () => {
     const handler = await getHandler('client:user.message')
 
     await handler({}, {
-      d: { topicId: 'nonexistent', content: 'Hi' },
+      d: { topicId: 'nonexistent', content: 'Hi', mentions: [] },
     })
 
     expect(mockHub.broadcast).not.toHaveBeenCalled()

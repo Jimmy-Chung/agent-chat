@@ -188,4 +188,51 @@ describe('MessageRepo', () => {
     const parts = messageRepo.getMessageParts(msg.id)
     expect(parts[0].content_json).toBe('"updated"')
   })
+
+  it('aggregates text deltas into a single snapshot part', () => {
+    const msg = messageRepo.createMessage({
+      topicId,
+      role: 'assistant',
+    })
+
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: 'Hello' }))
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: ' world' }))
+    messageRepo.flushParts()
+
+    const parts = messageRepo.getMessageParts(msg.id)
+    expect(parts).toHaveLength(1)
+    expect(parts[0].kind).toBe('text')
+    expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Hello world' }))
+  })
+
+  it('aggregates thinking deltas into a single snapshot part', () => {
+    const msg = messageRepo.createMessage({
+      topicId,
+      role: 'assistant',
+    })
+
+    messageRepo.bufferPartDelta(msg.id, 'thinking', JSON.stringify({ content: 'Plan' }))
+    messageRepo.bufferPartDelta(msg.id, 'thinking', JSON.stringify({ content: ' more' }))
+    messageRepo.flushParts()
+
+    const parts = messageRepo.getMessageParts(msg.id)
+    expect(parts).toHaveLength(1)
+    expect(parts[0].kind).toBe('thinking')
+    expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Plan more' }))
+  })
+
+  it('upserts tool snapshots instead of creating duplicate tool_use parts', () => {
+    const msg = messageRepo.createMessage({
+      topicId,
+      role: 'assistant',
+    })
+
+    messageRepo.bufferPartDelta(msg.id, 'tool_use', JSON.stringify({ toolUseId: 't1', name: 'Read', input: { path: 'a.ts' } }))
+    messageRepo.bufferPartDelta(msg.id, 'tool_use', JSON.stringify({ toolUseId: 't1', name: 'Read', input: { path: 'b.ts' } }))
+    messageRepo.flushParts()
+
+    const parts = messageRepo.getMessageParts(msg.id).filter((part) => part.kind === 'tool_use')
+    expect(parts).toHaveLength(1)
+    expect(parts[0].content_json).toBe(JSON.stringify({ toolUseId: 't1', name: 'Read', input: { path: 'b.ts' } }))
+  })
 })

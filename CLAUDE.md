@@ -33,6 +33,10 @@ agent-chat/
 ```
 便于搜索 `grep "\[external\]" project_feature_list.md` 快速定位所有外部依赖。
 
+## 调试日志
+
+现在可以通过 `https://logs.jimmy-jam.com/logs` 查看 PI Agent 与 server 交互日志。排查消息链路、session 建立、PI 事件转发问题时优先结合该日志入口定位。
+
 ## 开发约定
 
 - 所有 visual 值用 CSS 变量 (design tokens),颜色/圆角/间距/字号/阴影一律 `var(--xxx)`
@@ -52,6 +56,15 @@ agent-chat/
 
 - **真实 PI Agent**: 生产环境，server 通过 `PI_ADAPTER_URL` 连接
 - **mock-pi** (`packages/mock-pi`): 仅在用户明确要求或单元测试/E2E 测试时使用
+
+## PI Adapter 访问信息
+
+| 环境 | 地址 |
+|---|---|
+| 本地 (mock-pi) | `ws://127.0.0.1:7331/api/agent-chat/v1/socket` |
+| 远程 (PI Agent) | `wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket` |
+| 健康检查 | `https://pi-adapter.jimmy-jam.com/healthz` |
+| Token | `1234` |
 
 启动开发环境时：
 - 连真实 PI: 只启动 server + web（`pnpm -F server dev & pnpm -F web dev`）

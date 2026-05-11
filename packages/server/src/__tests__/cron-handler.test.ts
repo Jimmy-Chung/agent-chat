@@ -24,6 +24,7 @@ function createMockPiClient() {
     on: emitter.on.bind(emitter),
     emit: emitter.emit.bind(emitter),
     rpc: vi.fn(),
+    rpcGlobal: vi.fn(),
   }
 }
 
@@ -156,6 +157,52 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
   afterEach(() => {
     resetDb()
     teardownTestDb()
+  })
+
+  it('cron.sync: syncs crons from PI and sends cron.list to requester', async () => {
+    const { registerCronHandlers } = await import('../ws/handlers/cron.handler')
+    const hub = Object.assign(mockHub, { on: vi.fn(), sendToClient: vi.fn() })
+    registerCronHandlers(hub as any, mockPi as any)
+
+    const syncCall = hub.on.mock.calls.find((c: string[]) => c[0] === 'client:cron.sync')
+    expect(syncCall).toBeDefined()
+    const syncHandler = syncCall![1]
+
+    const topic = topicRepo.createTopic({
+      name: 'Sync Topic',
+      kind: 'normal',
+      agentType: 'general',
+    })
+    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-sync-1' })
+
+    mockPi.rpcGlobal.mockResolvedValue([
+      {
+        cronId: 'pi-sync-1',
+        originSessionId: 'sess-sync-1',
+        cronExpr: '0 * * * *',
+        prompt: 'Hourly sync',
+        status: 'active',
+        nextRunAt: 1700000000000,
+      },
+    ])
+
+    mockPi.rpc.mockImplementation(() => {
+      throw new Error('cron.sync should not use session RPC')
+    })
+
+    await syncHandler({ ws: 'socket-sync' }, { d: {} })
+
+    expect(mockPi.rpcGlobal).toHaveBeenCalledWith('listCrons', {})
+
+    await syncHandler({ ws: 'socket-sync' }, { d: {} })
+
+    const synced = cronRepo.getCronJobByPiCronId('pi-sync-1')
+    expect(synced).toBeDefined()
+    expect(synced!.origin_topic_id).toBe(topic.id)
+
+    expect(hub.sendToClient).toHaveBeenCalledWith('socket-sync', expect.objectContaining({
+      type: 'cron.list',
+    }))
   })
 
   it('cron.pause: updates DB status and broadcasts cron.upserted', async () => {

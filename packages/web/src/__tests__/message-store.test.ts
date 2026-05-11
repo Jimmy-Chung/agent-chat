@@ -12,6 +12,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     finished_at: null,
     stop_reason: null,
     cron_run_id: null,
+    turn_id: null,
     ...overrides,
   }
 }

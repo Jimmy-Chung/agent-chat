@@ -212,6 +212,35 @@ export const cronRunCompletedSchema = z.object({
   completedAt: z.number(),
 })
 
+export const messagesHistorySchema = z.object({
+  topicId: z.string(),
+  messages: z.array(
+    z.object({
+      id: z.string(),
+      topic_id: z.string(),
+      role: z.enum(['user', 'assistant', 'system', 'cron']),
+      status: z.enum(['aborted', 'error', 'streaming', 'done']),
+      started_at: z.number(),
+      finished_at: z.number().nullable(),
+      stop_reason: z.string().nullable(),
+      cron_run_id: z.string().nullable(),
+      turn_id: z.string().nullable(),
+    }),
+  ),
+  partsByMessage: z.record(
+    z.string(),
+    z.array(
+      z.object({
+        id: z.string(),
+        message_id: z.string(),
+        ordinal: z.number(),
+        kind: z.string(),
+        content_json: z.string(),
+      }),
+    ),
+  ),
+})
+
 export const errorSchema = z.object({
   code: z.string(),
   message: z.string(),
@@ -249,6 +278,10 @@ export type ServerEvent =
   | { type: 'session.health'; data: z.infer<typeof sessionHealthSchema> }
   | { type: 'cron.run.completed'; data: z.infer<typeof cronRunCompletedSchema> }
   | { type: 'error'; data: z.infer<typeof errorSchema> }
+  | {
+      type: 'messages.history'
+      data: z.infer<typeof messagesHistorySchema>
+    }
 
 export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topics.list': topicsListSchema,
@@ -277,6 +310,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'session.health': sessionHealthSchema,
   'cron.run.completed': cronRunCompletedSchema,
   error: errorSchema,
+  'messages.history': messagesHistorySchema,
 }
 
 // ─── Client → Server events ───────────────────────────────────────
@@ -351,6 +385,8 @@ export const cronEditSchema = z.object({
   prompt: z.string().optional(),
 })
 
+export const cronSyncSchema = z.object({})
+
 export const artifactUploadInitSchema = z.object({
   name: z.string(),
   mime: z.string(),
@@ -372,8 +408,21 @@ export const topicResumeSchema = z.object({
   topicId: z.string(),
 })
 
+export const messagesLoadSchema = z.object({
+  topicId: z.string(),
+})
+
 export const topicSelectSchema = z.object({
   topicId: z.string(),
+})
+
+export const topicSetPlanModeSchema = z.object({
+  id: z.string(),
+  planMode: z.boolean(),
+})
+
+export const cronResumeSchema = z.object({
+  cronId: z.string(),
 })
 
 // ─── Client event type + schema ───────────────────────────────────
@@ -392,6 +441,7 @@ export type ClientEvent =
   | { type: 'cron.pause'; data: z.infer<typeof cronPauseSchema> }
   | { type: 'cron.delete'; data: z.infer<typeof cronDeleteSchema> }
   | { type: 'cron.edit'; data: z.infer<typeof cronEditSchema> }
+  | { type: 'cron.sync'; data: z.infer<typeof cronSyncSchema> }
   | {
       type: 'artifact.upload.init'
       data: z.infer<typeof artifactUploadInitSchema>
@@ -402,7 +452,13 @@ export type ClientEvent =
     }
   | { type: 'search.query'; data: z.infer<typeof searchQuerySchema> }
   | { type: 'topic.resume'; data: z.infer<typeof topicResumeSchema> }
+  | { type: 'messages.load'; data: z.infer<typeof messagesLoadSchema> }
+  | {
+      type: 'topic.setPlanMode'
+      data: z.infer<typeof topicSetPlanModeSchema>
+    }
   | { type: 'topic.select'; data: z.infer<typeof topicSelectSchema> }
+  | { type: 'cron.resume'; data: z.infer<typeof cronResumeSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -415,9 +471,13 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'cron.pause': cronPauseSchema,
   'cron.delete': cronDeleteSchema,
   'cron.edit': cronEditSchema,
+  'cron.sync': cronSyncSchema,
   'artifact.upload.init': artifactUploadInitSchema,
   'artifact.upload.complete': artifactUploadCompleteSchema,
   'search.query': searchQuerySchema,
   'topic.resume': topicResumeSchema,
+  'messages.load': messagesLoadSchema,
+  'topic.setPlanMode': topicSetPlanModeSchema,
   'topic.select': topicSelectSchema,
+  'cron.resume': cronResumeSchema,
 }

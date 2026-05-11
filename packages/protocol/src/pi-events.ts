@@ -116,6 +116,16 @@ export const agentStatusPayloadSchema = z.object({
   state: z.enum(['idle', 'thinking', 'tool', 'streaming', 'aborting']),
 })
 
+export const cronCreatedPayloadSchema = z.object({
+  kind: z.literal('cron.created'),
+  cronId: z.string(),
+  originSessionId: z.string(),
+  cronExpr: z.string(),
+  prompt: z.string(),
+  status: z.enum(['active', 'paused', 'error']),
+  nextRunAt: z.number().optional(),
+})
+
 export const cronTriggeredPayloadSchema = z.object({
   kind: z.literal('cron.triggered'),
   cronId: z.string(),
@@ -181,6 +191,7 @@ export type InteractionRequestPayload = z.infer<
   typeof interactionRequestPayloadSchema
 >
 export type AgentStatusPayload = z.infer<typeof agentStatusPayloadSchema>
+export type CronCreatedPayload = z.infer<typeof cronCreatedPayloadSchema>
 export type CronTriggeredPayload = z.infer<typeof cronTriggeredPayloadSchema>
 export type UsageDeltaPayload = z.infer<typeof usageDeltaPayloadSchema>
 export type ArtifactCreatedPayload = z.infer<typeof artifactCreatedPayloadSchema>
@@ -201,6 +212,7 @@ export type PIPayload =
   | PlanUpdatePayload
   | InteractionRequestPayload
   | AgentStatusPayload
+  | CronCreatedPayload
   | CronTriggeredPayload
   | UsageDeltaPayload
   | ArtifactCreatedPayload
@@ -219,6 +231,7 @@ const payloadSchema = z.discriminatedUnion('kind', [
   planUpdatePayloadSchema,
   interactionRequestPayloadSchema,
   agentStatusPayloadSchema,
+  cronCreatedPayloadSchema,
   cronTriggeredPayloadSchema,
   usageDeltaPayloadSchema,
   artifactCreatedPayloadSchema,

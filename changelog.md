@@ -1,5 +1,79 @@
 # Changelog
 
+## 2026-05-12 [v1.1.0] — UI 视觉升级 + 交互增强 + Turn ID
+
+### FEAT-012: 视觉打磨 + 响应式 + 移动端适配
+- Liquid Glass 视觉体系 (毛玻璃/backdrop-blur/半透明)
+- CSS 变量 design tokens 全覆盖 (颜色/圆角/间距/阴影/字号)
+- 全局布局重构 (Sidebar / TopicPanel / InspectorPanel)
+- EmptyState 引导页 + 动画
+
+### FEAT-017: 创建话题 Glass Modal
+- Sidebar 内嵌表单 → 居中 Glass Modal 弹窗
+- 毛玻璃背景 + backdrop blur 遮罩 + ESC 关闭
+
+### FEAT-018: 创建话题高级选项交互
+- Agent 类型 Segmented Control + glow 效果
+- YOLO Mode iOS 风格 Switch Toggle
+- Permission Mode Radio List + 描述文字
+
+### FEAT-019: AgentStatusBar 完整交互
+- Agent 状态指示 (Thinking / Using tool / Idle) + pulse 动画
+- 已用时间计时器 + Stop 按钮 + ⌘. 快捷键
+
+### FEAT-022: Inspector Plan Tab 进度追踪
+- Markdown 渲染 + Checkbox 进度追踪
+- 进度百分比 + 预估时间显示
+
+### FEAT-023: iPhone 移动端专属布局
+- 抽屉式 Sidebar + Large Title 导航栏
+- 底部固定 Composer + 顶部 Agent 状态条
+- Safe Area 适配 (Dynamic Island + Home Indicator)
+
+### FEAT-024: Permission Mode UI 重构
+- 创建编程话题权限简化为 YOLO / 普通 两个选项
+- 去掉冗余的 permissionMode 下拉框 + checkbox
+
+### FEAT-025: Plan 模式话题内切换
+- 编程话题 header 增加 Plan 模式切换按钮
+- Server 端 setPlanMode RPC 支持
+
+### FEAT-026: S9 删除话题弹窗
+- Glass Modal + 产物策略选择 (转入产物池 / 删除)
+- 红色垃圾桶 glyph + 产物预览 + Radio 选择
+- TopicItem hover 垃圾桶图标
+
+### FEAT-027: S6 @产物选择器升级
+- Filter pills + Mime 图标 + 键盘导航 (↑↓/Enter/Tab/Esc)
+- Tab 栏 (当前话题/产物池) 含 count badge
+- 搜索框 + 分组列表 + 快捷键提示
+
+### FEAT-028: Turn ID — 消息轮次聚合
+- protocol 增 turnId 字段 (PIEvent / Message)
+- server event-router turnId↔topicId 映射
+- message.repo bufferPartDelta 增量累加 + flush 机制
+- 前端 MessageList turn 合并渲染,过渡 message 过滤
+- DB migration: messages.turn_id + turn_id 索引
+
+### BUG-015: 长 URL 截断修复
+- MarkdownRenderer <a> 标签 overflowWrap + wordBreak
+
+### BUG-016: Stop 后输入框状态恢复
+- interaction.handler abort 后 broadcast agent.status idle
+
+### BUG-017: Plan 内容挤压布局
+- ChatLayout <aside> overflow:hidden + InspectorPanel overflow 约束
+
+### BUG-018: bufferPartDelta 累加修复
+- message.repo bufferPartDelta 对 text/thinking 类型累加 content
+
+### 验收
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅ (329 tests: protocol 99 + server 106 + web 114 + mock-pi 10)
+- `pnpm -r build` ✅
+
+---
+
 ## 2026-05-10 [v1.0.0] — v1.0.0 补全: 产物/Cron/协议/Session/测试
 
 ### FEAT-008: 产物系统

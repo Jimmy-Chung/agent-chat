@@ -164,6 +164,9 @@ export function createMockServer(
       case 'setSessionModel': {
         return { ok: true }
       }
+      case 'setPlanMode': {
+        return { ok: true }
+      }
       case 'getUsage': {
         return {
           totalInputTokens: 0,

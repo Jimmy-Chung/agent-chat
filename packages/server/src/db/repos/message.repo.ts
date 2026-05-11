@@ -142,17 +142,64 @@ export function bufferPartDelta(
   const existing = pendingParts.get(key)
 
   if (existing) {
-    existing.contentJson = contentJson
+    // Accumulate text/thinking content instead of replacing (PI sends incremental deltas)
+    if (kind === 'text' || kind === 'thinking') {
+      try {
+        const prevData = JSON.parse(existing.contentJson)
+        const newData = JSON.parse(contentJson)
+        if (typeof newData.content === 'string') {
+          prevData.content = (prevData.content ?? '') + newData.content
+        }
+        existing.contentJson = JSON.stringify(prevData)
+      } catch {
+        existing.contentJson = contentJson
+      }
+    } else {
+      existing.contentJson = contentJson
+    }
   } else {
-    const parts = getMessageParts(messageId)
-    const ordinal = parts.length
-    const id = ulid()
+    // For accumulative kinds (text/thinking), try to reuse an already-flushed DB part
+    // so we keep accumulating into the same row instead of creating N fragmented rows
+    let reuseId: string | undefined
+    let reuseOrdinal: number
+    let baseContent = ''
+    if (kind === 'text' || kind === 'thinking') {
+      const dbParts = getMessageParts(messageId)
+      const existingPart = dbParts.find((p) => p.kind === kind)
+      if (existingPart) {
+        reuseId = existingPart.id
+        reuseOrdinal = existingPart.ordinal
+        try {
+          const dbData = JSON.parse(existingPart.content_json)
+          if (typeof dbData.content === 'string') {
+            baseContent = dbData.content
+          }
+        } catch { /* use empty base */ }
+      } else {
+        reuseOrdinal = dbParts.length
+      }
+    } else {
+      reuseOrdinal = getMessageParts(messageId).length
+    }
+
+    // Accumulate the incoming delta onto any base content from DB
+    let finalJson = contentJson
+    if (baseContent) {
+      try {
+        const newData = JSON.parse(contentJson)
+        if (typeof newData.content === 'string') {
+          newData.content = baseContent + newData.content
+        }
+        finalJson = JSON.stringify(newData)
+      } catch { /* keep original */ }
+    }
+
     pendingParts.set(key, {
-      id,
+      id: reuseId ?? ulid(),
       messageId,
-      ordinal,
+      ordinal: reuseOrdinal!,
       kind,
-      contentJson,
+      contentJson: finalJson,
     })
   }
 
@@ -268,6 +315,7 @@ function toMessageDomain(row: Record<string, unknown>): Message {
     finished_at: (row.finishedAt as number) || null,
     stop_reason: (row.stopReason as string) || null,
     cron_run_id: (row.cronRunId as string) || null,
+    turn_id: (row.turnId as string) || null,
   }
 }
 

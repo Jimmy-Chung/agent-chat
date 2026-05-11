@@ -32,6 +32,7 @@ export function setupTestDb(): { db: ReturnType<typeof drizzle>; sqlite: Databas
       sop_template_id TEXT,
       current_model TEXT,
       history_frozen_at INTEGER,
+      plan_mode INTEGER DEFAULT 0 NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       archived INTEGER DEFAULT 0 NOT NULL
@@ -44,7 +45,8 @@ export function setupTestDb(): { db: ReturnType<typeof drizzle>; sqlite: Databas
       started_at INTEGER NOT NULL,
       finished_at INTEGER,
       stop_reason TEXT,
-      cron_run_id TEXT
+      cron_run_id TEXT,
+      turn_id TEXT
     );
     CREATE INDEX idx_messages_topic ON messages(topic_id, started_at);
     CREATE TABLE message_parts (

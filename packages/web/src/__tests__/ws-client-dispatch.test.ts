@@ -31,6 +31,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
       finished_at: null,
       stop_reason: null,
       cron_run_id: null,
+      turn_id: null,
     })
     store.startStreaming(messageId)
   }
