@@ -33,11 +33,9 @@ class PiSessionConn extends EventEmitter {
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const url = this.config.piAdapterUrl
+      const url = buildPiAdapterUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
       const ws = new WebSocket(url)
       ws.addEventListener('open', () => {
-        // Send auth header is not possible with browser WebSocket API
-        // PI Adapter should accept tokenless connections or use URL param
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
         resolve()
       })
@@ -152,6 +150,12 @@ class PiSessionConn extends EventEmitter {
     this.pending.clear()
     this.removeAllListeners()
   }
+}
+
+export function buildPiAdapterUrl(rawUrl: string, token: string): string {
+  const url = new URL(rawUrl)
+  if (token) url.searchParams.set('token', token)
+  return url.toString()
 }
 
 export class PiClient extends EventEmitter {

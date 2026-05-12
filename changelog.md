@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-12 [v1.2.23] — 修复 Workers 发送消息链路
+
+### BUG-024: Workers PI Adapter 鉴权 token 丢失
+- PiClient 在 Cloudflare Workers 原生 WebSocket 环境下无法设置 Authorization header
+- 改为把 `PI_ADAPTER_TOKEN` 注入 PI Adapter WebSocket URL 的 `token` query 参数
+- 新增 `pi-client.test.ts` 覆盖 token query 拼接和已有 query 参数保留
+
+### BUG-025: Durable Object user.message 未恢复 v1.1.0 发送语义
+- `TopicDurableObject` 的 `user.message` 改为先创建用户消息、写入 message part、索引搜索并广播 `message.start/delta/end`
+- PI session 缺失、恢复失败、PI 不可用时广播明确错误事件
+- 发送给 PI 时恢复 @产物引用的 `downloadUrl` 兼容处理
+
+---
+
 ## 2026-05-12 [v1.2.22] — 修复 FTS5 初始化导致 Worker 全量 500
 
 ### BUG-020: FTS5 porter tokenizer 导致 Worker 初始化报错

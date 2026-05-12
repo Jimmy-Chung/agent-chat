@@ -4,6 +4,7 @@ import {
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
   topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
+  userMessageSchema,
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
   searchQuerySchema,
 } from '@agent-chat/protocol'
@@ -69,6 +70,21 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       logger.error({ err, sessionId }, 'Failed to reconnect PI session')
       return false
     }
+  }
+
+  private async waitForPiSession(topicId: string, pi: PiClient, timeoutMs = 5000): Promise<string | null> {
+    const deadline = Date.now() + timeoutMs
+
+    while (Date.now() < deadline) {
+      const topic = await topicRepo.getTopic(topicId)
+      const sessionId = topic?.pi_session_id ?? null
+      if (sessionId && pi.hasSession(sessionId)) return sessionId
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    const topic = await topicRepo.getTopic(topicId)
+    const sessionId = topic?.pi_session_id ?? null
+    return sessionId && pi.hasSession(sessionId) ? sessionId : null
   }
 
   // ─── WebSocket handling ───────────────────────────────────────────────────
@@ -546,21 +562,87 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
 
       case 'user.message': {
-        const d = frame.d as { content: string; topicId: string; mentions?: Array<{ id: string; name: string; downloadUrl: string }> }
-        const topic = await topicRepo.getTopic(d.topicId)
-        const sessionId = topic?.pi_session_id
-        if (sessionId) {
-          const pi = await this.ensurePiClient()
-          if (pi && await this.ensureSession(pi, sessionId)) {
-            try {
-              await pi.rpc('sendUserMessage', {
-                sessionId,
-                content: d.content,
-                mentionedArtifacts: d.mentions?.map(m => ({ id: m.id, name: m.name, downloadUrl: m.downloadUrl })),
-              })
-            } catch (err) {
-              logger.error({ err, topicId: d.topicId }, 'Failed to send user message to PI')
-            }
+        const data = userMessageSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.topicId)
+        if (!topic) {
+          logger.warn({ topicId: data.topicId }, 'Topic not found for user message')
+          break
+        }
+
+        const msg = await messageRepo.createMessage({
+          topicId: data.topicId,
+          role: 'user',
+          status: 'done',
+        })
+
+        await messageRepo.createMessagePart({
+          messageId: msg.id,
+          kind: 'text',
+          contentJson: JSON.stringify({ content: data.content }),
+        })
+        await messageRepo.indexMessageForSearch(msg.id, data.topicId, data.content)
+
+        this.broadcastAll('message.start', {
+          topicId: data.topicId,
+          messageId: msg.id,
+          role: 'user',
+        })
+        this.broadcastAll('message.delta', {
+          topicId: data.topicId,
+          messageId: msg.id,
+          part: { kind: 'text', content: data.content },
+        })
+        this.broadcastAll('message.end', {
+          topicId: data.topicId,
+          messageId: msg.id,
+          stopReason: 'end_turn',
+        })
+
+        const pi = await this.ensurePiClient()
+        if (!pi) break
+
+        let sessionId = topic.pi_session_id
+        if (!sessionId) {
+          logger.info({ topicId: data.topicId }, 'Waiting for PI session before forwarding first message')
+          sessionId = await this.waitForPiSession(data.topicId, pi)
+        } else if (!pi.hasSession(sessionId)) {
+          logger.info({ topicId: data.topicId, sessionId }, 'Stored PI session missing from pool, attempting reconnect before forwarding message')
+          if (!(await this.ensureSession(pi, sessionId))) {
+            this.broadcastAll('error', {
+              code: 'PI_RESUME_FAILED',
+              message: 'Failed to resume agent session. Please create a new topic.',
+            })
+            break
+          }
+        }
+
+        if (!sessionId) {
+          logger.warn({ topicId: data.topicId }, 'Topic has no PI session after waiting, skipping sendUserMessage')
+          this.broadcastAll('error', {
+            code: 'NO_PI_SESSION',
+            message: 'This topic has no agent session. Please create a new topic.',
+          })
+          break
+        }
+
+        try {
+          await pi.rpc('sendUserMessage', {
+            sessionId,
+            content: data.content,
+            mentionedArtifacts: data.mentions?.map(m => ({
+              id: m.id,
+              name: m.name,
+              downloadUrl: m.downloadUrl ?? '',
+            })),
+          })
+        } catch (err) {
+          logger.error({ err, topicId: data.topicId }, 'Failed to send user message to PI')
+          const message = err instanceof Error ? err.message : String(err)
+          if (!message.includes('RPC timeout: sendUserMessage')) {
+            this.broadcastAll('error', {
+              code: 'PI_UNAVAILABLE',
+              message: 'Agent session is not available. Please create a new topic.',
+            })
           }
         }
         break

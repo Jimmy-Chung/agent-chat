@@ -82,6 +82,34 @@
 
 ## 已修复
 
+### BUG-024: Workers PI Adapter 鉴权 token 丢失
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-024 |
+| 标题 | Workers PI Adapter 鉴权 token 丢失 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/pi/client.ts |
+| 描述 | v1.2.0 迁移到 Cloudflare Workers 后，server 连接 PI Adapter 时不再携带 `PI_ADAPTER_TOKEN`，导致需要鉴权的 PI Adapter 无法创建/恢复 session 或发送消息 |
+| 根因 | v1.1.0 使用 Node `ws` 可设置 `Authorization: Bearer <token>` header；v1.2.0 改用 Workers 原生 `WebSocket` 后不能设置自定义 header，迁移时没有改为 PI Adapter 支持的 `?token=` 鉴权方式 |
+| 修复方案 | 新增 `buildPiAdapterUrl()`，连接 PI Adapter 前将 `PI_ADAPTER_TOKEN` 写入 URL `token` query 参数，并补充单元测试 |
+
+### BUG-025: Durable Object user.message 未恢复 v1.1.0 发送语义
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-025 |
+| 标题 | Durable Object user.message 未恢复 v1.1.0 发送语义 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/ws/topic-do.ts |
+| 描述 | v1.2.0 迁移到 Durable Objects 后，线上 `user.message` 路径只尝试转发 PI，不创建用户消息、不广播用户消息、不返回 PI/session 错误，导致部署后点击发送可能没有可见反馈 |
+| 根因 | v1.1.0 的真实发送路径在 `message.handler.ts`，会写库、广播并处理错误；迁移到 DO 时新增了内联 `user.message` 分支，但未完整移植旧 handler 语义，现有测试仍主要覆盖旧 handler 而非 DO 发送路径 |
+| 修复方案 | DO `user.message` 改为解析 schema、创建用户消息与 message part、写搜索索引、广播 `message.start/delta/end`，再恢复/等待 PI session 并调用 `sendUserMessage`；PI session 缺失、恢复失败、PI 不可用时广播错误 |
+
 ### BUG-001: message.delta 累加逻辑错误 — 使用 setStreamingText 替换而非 appendDelta 追加
 
 | 字段 | 值 |
