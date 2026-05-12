@@ -82,7 +82,7 @@ export async function runMigrations() {
     `)
 
     await d1
-      .prepare(`INSERT INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+      .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
       .bind('0000_initial', Date.now())
       .run()
     logger.info('Applied migration: 0000_initial')
@@ -97,9 +97,9 @@ export async function runMigrations() {
       .first()
 
     if (!applied) {
-      await d1.prepare(`ALTER TABLE messages ADD COLUMN turn_id TEXT`).run()
+      try { await d1.prepare(`ALTER TABLE messages ADD COLUMN turn_id TEXT`).run() } catch { /* column may already exist */ }
       await d1
-        .prepare(`INSERT INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0001_turn_id')
@@ -115,9 +115,9 @@ export async function runMigrations() {
       .first()
 
     if (!applied) {
-      await d1.prepare(`ALTER TABLE topics ADD COLUMN plan_mode INTEGER NOT NULL DEFAULT 0`).run()
+      try { await d1.prepare(`ALTER TABLE topics ADD COLUMN plan_mode INTEGER NOT NULL DEFAULT 0`).run() } catch { /* column may already exist */ }
       await d1
-        .prepare(`INSERT INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0002_plan_mode')
