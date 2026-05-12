@@ -19,6 +19,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Deploy to Cloudflare Workers
-        run: pnpm -F server deploy
+        run: pnpm --filter @agent-chat/server run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
