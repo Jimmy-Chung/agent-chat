@@ -32,7 +32,7 @@ export function createConfig(env: Env): AppConfig {
     piAdapterUrl:
       env.PI_ADAPTER_URL ||
       'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
-    piAdapterToken: env.PI_ADAPTER_TOKEN || '1234',
+    piAdapterToken: env.PI_ADAPTER_TOKEN || '',
     logLevel: env.LOG_LEVEL || 'info',
     r2: {
       accountId: env.R2_ACCOUNT_ID || '',
