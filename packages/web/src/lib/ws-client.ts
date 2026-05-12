@@ -16,7 +16,15 @@ import { useArtifactStore } from '@/stores/artifact-store'
 import { useCronStore } from '@/stores/cron-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://127.0.0.1:8080/ws'
+function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}/ws`
+  }
+  return 'ws://127.0.0.1:8080/ws'
+}
+
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
 
 const MAX_RECONNECT_DELAY = 30_000
@@ -33,7 +41,8 @@ class WsClient {
     this.disposed = false
 
     const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
-    const url = token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL
+    const wsUrl = getWsUrl()
+    const url = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl
 
     useWsStore.getState().setStatus('connecting')
     this.ws = new WebSocket(url)
