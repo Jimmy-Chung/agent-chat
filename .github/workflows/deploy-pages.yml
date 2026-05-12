@@ -20,8 +20,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build Next.js
         run: pnpm -F web build
+      - name: Create Pages project (if not exists)
+        run: npx wrangler@latest pages project create agent-chat --production-branch master || true
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler@latest pages deploy packages/web/out --project-name agent-chat --branch master
+        run: npx wrangler@latest pages deploy packages/web/out --project-name agent-chat --branch master --commit-dirty=true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 3eb98f2d565b81debeed1ef19b76d5f4
