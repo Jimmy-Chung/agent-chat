@@ -15,8 +15,3 @@ class_name = "TopicDurableObject"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["TopicDurableObject"]
-
-[vars]
-AGENT_CHAT_TOKEN = "test-token"
-PI_ADAPTER_URL = "wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket"
-PI_ADAPTER_TOKEN = "1234"
