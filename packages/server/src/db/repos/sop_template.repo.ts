@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { sopTemplates } from '../schema'
 import { getDb } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 export interface SopTemplate {
   id: string

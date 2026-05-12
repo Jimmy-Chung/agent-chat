@@ -2,7 +2,7 @@ import { eq, and } from 'drizzle-orm'
 import type { Topic } from '@agent-chat/protocol'
 import { topics } from '../schema'
 import { getDb } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 export async function createTopic(input: {
   name: string

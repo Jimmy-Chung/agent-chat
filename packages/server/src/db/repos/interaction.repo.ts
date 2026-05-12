@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { Interaction } from '@agent-chat/protocol'
 import { interactions } from '../schema'
 import { getDb } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 export async function createInteraction(input: {
   topicId: string
