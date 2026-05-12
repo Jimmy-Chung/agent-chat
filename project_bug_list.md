@@ -134,6 +134,34 @@
 | 根因 | `interaction.handler.ts` 的 abort handler 只向 PI 发送了 `abortSession` RPC，没有 broadcast `agent.status: idle` 给前端。前端 `isAgentRunning` 依赖 `agentStatusByTopic[topicId]`，而 PI 在 abort 后不一定会发回 `idle` 事件，导致状态卡在 `aborting` |
 | 修复方案 | abort handler 发送 RPC 后，立即 `hub.broadcast({ type: 'agent.status', data: { topicId, state: 'idle' } })`（interaction.handler.ts:23） |
 
+### BUG-018: Workers 中 ulid 包报 nodeCrypto.randomBytes is not a function
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-018 |
+| 标题 | Workers 中 ulid 包报 nodeCrypto.randomBytes is not a function |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/db/repos/*.ts, packages/server/src/lib/ulid.ts |
+| 描述 | Worker 初始化时报错，WebSocket 无法建立连接 |
+| 根因 | ulid 包环境检测顺序：先找 window.crypto（Workers 无 window）→ 回退 require("crypto")（esbuild 打包后 randomBytes 不可用）。Workers 有 crypto.getRandomValues() 但 ulid 检测逻辑不会走到这里 |
+| 修复方案 | 移除 ulid 依赖，用 Web Crypto API (crypto.getRandomValues) 实现 30 行本地 ULID，写入 packages/server/src/lib/ulid.ts |
+
+### BUG-019: Workers token 鉴权失效 + WebSocket 心跳超时断线
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-019 |
+| 标题 | Workers token 鉴权失效 + WebSocket 心跳超时断线 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/worker.ts, packages/server/src/ws/topic-do.ts, packages/web/src/lib/ws-client.ts |
+| 描述 | 配置 AGENT_CHAT_TOKEN 后，前端一直提示"连接已断开 — Token 错误？" |
+| 根因 | (1) worker.ts 路由 /ws 时从未调用 stub.setConfig()，导致 DO 内 this.config 永远为 null，token 校验条件 (this.config && ...) 短路跳过；(2) token 校验在 acceptWebSocket() 之后执行，返回 401 时 WS 已接受，行为未定义；(3) 前端从未发送 ping frame，DO 心跳检测约 60 秒后关闭连接，前端显示断线 banner |
+| 修复方案 | worker.ts 提升 appConfig 到模块级，/ws 路由前置 token 校验并调用 stub.setConfig()；topic-do.ts 将 token 校验移至 acceptWebSocket() 之前，setConfig() 中初始化 piClient；ws-client.ts 每 20 秒发送 ping frame |
+
 ### BUG-017: Plan 内容更新过程挤压页面布局
 
 | 字段 | 值 |

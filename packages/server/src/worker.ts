@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { createConfig, type Env } from './config'
+import { createConfig, type Env, type AppConfig } from './config'
+import type { TopicDurableObject } from './ws/topic-do'
 import { initDb, runMigrations } from './db/migrate'
 import { logger, setLogLevel } from './logger'
 import { seedSystemTopics } from './seed'
@@ -8,10 +9,12 @@ import { initR2 } from './r2/client'
 import { getD1 } from './db/migrate'
 
 let initialized = false
+let appConfig: AppConfig | null = null
 
 async function initialize(env: Env) {
   if (initialized) return
   const config = createConfig(env)
+  appConfig = config
   setLogLevel(config.logLevel as never)
   initDb(env.DB)
   await runMigrations()
@@ -63,9 +66,18 @@ export default {
           return new Response('Expected Upgrade: websocket', { status: 426 })
         }
 
+        // Validate token before forwarding to DO
+        const token =
+          url.searchParams.get('token') ||
+          request.headers.get('Authorization')?.replace('Bearer ', '')
+        if (!appConfig?.token || token !== appConfig.token) {
+          return new Response('Unauthorized', { status: 401 })
+        }
+
         const topicId = url.searchParams.get('topicId') || 'global'
         const doId = env.TOPIC_DO.idFromName(topicId)
-        const stub = env.TOPIC_DO.get(doId)
+        const stub = env.TOPIC_DO.get(doId) as DurableObjectStub<TopicDurableObject>
+        await stub.setConfig(appConfig, topicId)
         return stub.fetch(request)
       } catch (e) {
         return new Response(`ws error: ${String(e)}`, { status: 500 })

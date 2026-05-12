@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { CronJob, CronRun } from '@agent-chat/protocol'
 import { cronJobs, cronRuns } from '../schema'
 import { getDb } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 // ─── CronJob CRUD ──────────────────────────────────────────────────
 

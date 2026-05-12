@@ -2,7 +2,7 @@ import { eq, and, desc } from 'drizzle-orm'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import { messages, messageParts } from '../schema'
 import { getDb, getD1 } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 // ─── Message CRUD ──────────────────────────────────────────────────
 

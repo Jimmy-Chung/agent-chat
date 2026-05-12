@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { encodeFrame, decodeFrame, createFrame, type WSFrame } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
-import type { PiClient } from '../pi/client'
+import { PiClient } from '../pi/client'
 import { logger } from '../logger'
 
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -17,10 +17,21 @@ export class TopicDurableObject extends DurableObject {
     this.config = config
     this.topicId = topicId
 
-    // Check for stored PI session
+    if (!this.piClient) {
+      this.piClient = new PiClient(config)
+    }
+
+    // Check for stored PI session and reconnect if needed
     const stored = await this.ctx.storage.get<string>('pi_session_id')
-    if (stored) {
+    if (stored && !this.piSessionId) {
       this.piSessionId = stored
+      try {
+        await this.piClient.reconnectSession(stored)
+      } catch (err) {
+        logger.warn({ err, topicId }, 'Failed to reconnect PI session, clearing')
+        this.piSessionId = null
+        await this.ctx.storage.delete('pi_session_id')
+      }
     }
   }
 
@@ -35,22 +46,20 @@ export class TopicDurableObject extends DurableObject {
   }
 
   private handleWsUpgrade(request: Request): Response {
-    const pair = new WebSocketPair()
-    const [client, server] = Object.values(pair)
-
-    this.ctx.acceptWebSocket(server)
-
-    // Token validation
+    // Token validation before accepting WebSocket
     const url = new URL(request.url)
     const token =
       url.searchParams.get('token') ||
       request.headers.get('Authorization')?.replace('Bearer ', '')
 
     if (this.config && token !== this.config.token) {
-      server.close(4401, 'Unauthorized')
       return new Response('Unauthorized', { status: 401 })
     }
 
+    const pair = new WebSocketPair()
+    const [client, server] = Object.values(pair)
+
+    this.ctx.acceptWebSocket(server)
     this.sessions.set(server, { lastPing: Date.now() })
 
     // Send initial topics list

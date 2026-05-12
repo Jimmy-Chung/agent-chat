@@ -2,7 +2,7 @@ import { eq, isNull } from 'drizzle-orm'
 import type { Artifact } from '@agent-chat/protocol'
 import { artifacts } from '../schema'
 import { getDb } from '../migrate'
-import { ulid } from 'ulid'
+import { ulid } from '../../lib/ulid'
 
 export async function createArtifact(input: {
   id?: string
