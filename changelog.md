@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-12 [v1.2.22] — 修复 FTS5 初始化导致 Worker 全量 500
+
+### BUG-020: FTS5 porter tokenizer 导致 Worker 初始化报错
+- migrate.ts FTS5 虚拟表 tokenizer 从 `porter unicode61` 改为 `unicode61`
+- 加 try/catch，FTS5 不可用时降级为 warn 而不中断 Worker 初始化
+
+---
+
 ## 2026-05-12 [v1.2.21] — Workers token 鉴权及心跳修复
 
 ### BUG-018: Workers 中 ulid 包报 nodeCrypto.randomBytes is not a function

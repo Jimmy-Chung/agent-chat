@@ -124,10 +124,14 @@ export async function runMigrations() {
     }
   }
 
-  // Create FTS5 virtual table
-  await d1
-    .prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(message_id UNINDEXED, topic_id UNINDEXED, content, tokenize = 'porter unicode61')`)
-    .run()
+  // Create FTS5 virtual table (porter tokenizer not available in D1, use unicode61)
+  try {
+    await d1
+      .prepare(`CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(message_id UNINDEXED, topic_id UNINDEXED, content, tokenize = 'unicode61')`)
+      .run()
+  } catch (err) {
+    logger.warn({ err }, 'FTS5 virtual table creation failed, full-text search unavailable')
+  }
 
   logger.info('Database migrations complete')
 }

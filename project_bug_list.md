@@ -148,6 +148,20 @@
 | 根因 | ulid 包环境检测顺序：先找 window.crypto（Workers 无 window）→ 回退 require("crypto")（esbuild 打包后 randomBytes 不可用）。Workers 有 crypto.getRandomValues() 但 ulid 检测逻辑不会走到这里 |
 | 修复方案 | 移除 ulid 依赖，用 Web Crypto API (crypto.getRandomValues) 实现 30 行本地 ULID，写入 packages/server/src/lib/ulid.ts |
 
+### BUG-020: FTS5 porter tokenizer 导致 Worker 初始化报错，所有请求返回 500
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-020 |
+| 标题 | FTS5 porter tokenizer 导致 Worker 初始化报错，所有请求返回 500 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/db/migrate.ts |
+| 描述 | Worker 冷启动时 runMigrations() 抛错，所有请求（包括 WebSocket 升级）返回 500，前端显示"Token 错误？"断线提示 |
+| 根因 | migrate.ts 末尾 `CREATE VIRTUAL TABLE messages_fts USING fts5(..., tokenize = 'porter unicode61')` 无 try/catch 保护，D1 不支持 porter tokenizer 时直接抛出，导致 initialize() 每次都失败 |
+| 修复方案 | tokenizer 改为 D1 确定支持的 `unicode61`，并用 try/catch 包裹，FTS5 不可用时降级为 warn 日志而不中断初始化 |
+
 ### BUG-019: Workers token 鉴权失效 + WebSocket 心跳超时断线
 
 | 字段 | 值 |
