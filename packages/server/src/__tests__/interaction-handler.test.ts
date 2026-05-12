@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
-import { setDb, resetDb } from '../db/migrate'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
 
 function createMockHub() {
   const broadcastEvents: any[] = []
   return {
-    broadcast: vi.fn((event: any) => {
-      broadcastEvents.push(event)
+    broadcast: vi.fn((type: string, data: unknown) => {
+      broadcastEvents.push({ type, data })
     }),
     on: vi.fn(),
     sendToClient: vi.fn(),
@@ -31,16 +30,14 @@ describe('Interaction handler — user.action abort', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerInteractionHandlers } = await import('../ws/handlers/interaction.handler')
-    registerInteractionHandlers(mockHub as any, mockPi as any)
+    registerInteractionHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -48,8 +45,8 @@ describe('Interaction handler — user.action abort', () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]
 
-    const topic = topicRepo.createTopic({ name: 'Abort Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-abort-1' })
+    const topic = await topicRepo.createTopic({ name: 'Abort Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-abort-1' })
 
     await actionHandler({}, { d: { topicId: topic.id, action: 'abort' } })
 
@@ -60,7 +57,7 @@ describe('Interaction handler — user.action abort', () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]
 
-    const topic = topicRepo.createTopic({ name: 'No PI', kind: 'normal', agentType: 'general' })
+    const topic = await topicRepo.createTopic({ name: 'No PI', kind: 'normal', agentType: 'general' })
 
     await actionHandler({}, { d: { topicId: topic.id, action: 'abort' } })
 
@@ -73,16 +70,14 @@ describe('Interaction handler — user.action approve/reject', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerInteractionHandlers } = await import('../ws/handlers/interaction.handler')
-    registerInteractionHandlers(mockHub as any, mockPi as any)
+    registerInteractionHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -90,10 +85,10 @@ describe('Interaction handler — user.action approve/reject', () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]
 
-    const topic = topicRepo.createTopic({ name: 'Approve Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-approve' })
+    const topic = await topicRepo.createTopic({ name: 'Approve Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-approve' })
 
-    const interaction = interactionRepo.createInteraction({
+    const interaction = await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Allow file edit?',
@@ -103,11 +98,9 @@ describe('Interaction handler — user.action approve/reject', () => {
       d: { topicId: topic.id, action: 'approve', interactionId: interaction.id },
     })
 
-    // DB updated
-    const updated = interactionRepo.getInteraction(interaction.id)
+    const updated = await interactionRepo.getInteraction(interaction.id)
     expect(updated!.status).toBe('resolved')
 
-    // PI RPC called
     expect(mockPi.rpc).toHaveBeenCalledWith('resolveInteraction', expect.objectContaining({
       sessionId: 'sess-approve',
       interactionId: interaction.id,
@@ -119,10 +112,10 @@ describe('Interaction handler — user.action approve/reject', () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]
 
-    const topic = topicRepo.createTopic({ name: 'Reject Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-reject' })
+    const topic = await topicRepo.createTopic({ name: 'Reject Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-reject' })
 
-    const interaction = interactionRepo.createInteraction({
+    const interaction = await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Allow delete?',
@@ -132,7 +125,7 @@ describe('Interaction handler — user.action approve/reject', () => {
       d: { topicId: topic.id, action: 'reject', interactionId: interaction.id },
     })
 
-    const updated = interactionRepo.getInteraction(interaction.id)
+    const updated = await interactionRepo.getInteraction(interaction.id)
     expect(updated!.status).toBe('resolved')
 
     expect(mockPi.rpc).toHaveBeenCalledWith('resolveInteraction', expect.objectContaining({
@@ -144,13 +137,13 @@ describe('Interaction handler — user.action approve/reject', () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]
 
-    const topic = topicRepo.createTopic({ name: 'Resolved', kind: 'normal', agentType: 'general' })
-    const interaction = interactionRepo.createInteraction({
+    const topic = await topicRepo.createTopic({ name: 'Resolved', kind: 'normal', agentType: 'general' })
+    const interaction = await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Already done?',
     })
-    interactionRepo.updateInteraction(interaction.id, { status: 'resolved', resolved_at: Date.now() })
+    await interactionRepo.updateInteraction(interaction.id, { status: 'resolved', resolved_at: Date.now() })
 
     await actionHandler({}, {
       d: { topicId: topic.id, action: 'approve', interactionId: interaction.id },

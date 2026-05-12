@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
-import { setDb, resetDb } from '../db/migrate'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 
@@ -8,8 +7,8 @@ function createMockHub() {
   const sentToClient: any[] = []
   const broadcastEvents: any[] = []
   return {
-    broadcast: vi.fn((event: any) => {
-      broadcastEvents.push(event)
+    broadcast: vi.fn((type: string, data: unknown) => {
+      broadcastEvents.push({ type, data })
     }),
     on: vi.fn(),
     sendToClient: vi.fn((_ws: any, event: any) => {
@@ -24,15 +23,13 @@ describe('Artifact handler — upload.init', () => {
   let mockHub: ReturnType<typeof createMockHub>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     const { registerArtifactHandlers } = await import('../ws/handlers/artifact.handler')
     registerArtifactHandlers(mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -53,21 +50,18 @@ describe('Artifact handler — topic.select artifact list', () => {
   let mockHub: ReturnType<typeof createMockHub>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     const { registerArtifactHandlers } = await import('../ws/handlers/artifact.handler')
     registerArtifactHandlers(mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
   it('returns pool artifacts for system_artifact_pool', async () => {
-    // Create a pool artifact (no topic_id)
-    artifactRepo.createArtifact({
+    await artifactRepo.createArtifact({
       name: 'pool-file.txt',
       r2Key: 'uploads/pool-file.txt',
       source: 'uploaded',
@@ -86,8 +80,8 @@ describe('Artifact handler — topic.select artifact list', () => {
   })
 
   it('returns topic artifacts for specific topic', async () => {
-    const topic = topicRepo.createTopic({ name: 'With Artifacts', kind: 'normal', agentType: 'general' })
-    artifactRepo.createArtifact({
+    const topic = await topicRepo.createTopic({ name: 'With Artifacts', kind: 'normal', agentType: 'general' })
+    await artifactRepo.createArtifact({
       topicId: topic.id,
       name: 'topic-file.txt',
       r2Key: 'uploads/topic-file.txt',
@@ -107,7 +101,7 @@ describe('Artifact handler — topic.select artifact list', () => {
   })
 
   it('returns nothing for topic with no artifacts', async () => {
-    const topic = topicRepo.createTopic({ name: 'Empty', kind: 'normal', agentType: 'general' })
+    const topic = await topicRepo.createTopic({ name: 'Empty', kind: 'normal', agentType: 'general' })
 
     const selectCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.select')
     const selectHandler = selectCall![1]

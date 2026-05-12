@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
-import { setDb, resetDb } from '../db/migrate'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 
 function createMockHub() {
   const broadcastEvents: any[] = []
   return {
-    broadcast: vi.fn((event: any) => {
-      broadcastEvents.push(event)
+    broadcast: vi.fn((type: string, data: unknown) => {
+      broadcastEvents.push({ type, data })
     }),
     on: vi.fn(),
     sendToClient: vi.fn(),
@@ -31,16 +30,14 @@ describe('Topic handler — topic.create', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
-    registerTopicHandlers(mockHub as any, mockPi as any)
+    registerTopicHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -60,21 +57,19 @@ describe('Topic handler — topic.create', () => {
       },
     })
 
-    // Topic created in DB
-    const topics = topicRepo.listTopics()
+    const topics = await topicRepo.listTopics()
     expect(topics.length).toBe(1)
     expect(topics[0].name).toBe('General Chat')
     expect(topics[0].agent_type).toBe('general')
     expect(topics[0].kind).toBe('normal')
 
-    // PI createSession called
     expect(mockPi.createSession).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'general' }),
     )
 
-    // topic.created broadcast
     expect(mockHub.broadcast).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'topic.created' }),
+      'topic.created',
+      expect.any(Object),
     )
   })
 
@@ -94,7 +89,7 @@ describe('Topic handler — topic.create', () => {
       },
     })
 
-    const topics = topicRepo.listTopics()
+    const topics = await topicRepo.listTopics()
     expect(topics[0].agent_type).toBe('programming')
 
     const spec = JSON.parse(topics[0].programming_spec_json!)
@@ -121,10 +116,9 @@ describe('Topic handler — topic.create', () => {
       d: { name: 'Test', agentType: 'general' },
     })
 
-    const topics = topicRepo.listTopics()
+    const topics = await topicRepo.listTopics()
     expect(topics[0].pi_session_id).toBe('pi-sess-1')
 
-    // topic.updated broadcast with session info
     const updatedEvent = mockHub.getBroadcastEvents().find(
       (e: any) => e.type === 'topic.updated',
     )
@@ -140,11 +134,9 @@ describe('Topic handler — topic.create', () => {
       d: { name: 'Fail Test', agentType: 'general' },
     })
 
-    // Topic still created
-    const topics = topicRepo.listTopics()
+    const topics = await topicRepo.listTopics()
     expect(topics.length).toBe(1)
 
-    // Error broadcast
     const errorEvent = mockHub.getBroadcastEvents().find(
       (e: any) => e.type === 'error',
     )
@@ -158,16 +150,14 @@ describe('Topic handler — topic.rename', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
-    registerTopicHandlers(mockHub as any, mockPi as any)
+    registerTopicHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -175,7 +165,7 @@ describe('Topic handler — topic.rename', () => {
     const renameCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.rename')
     const renameHandler = renameCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'Old Name',
       kind: 'normal',
       agentType: 'general',
@@ -183,7 +173,7 @@ describe('Topic handler — topic.rename', () => {
 
     await renameHandler({}, { d: { id: topic.id, name: 'New Name' } })
 
-    const updated = topicRepo.getTopic(topic.id)
+    const updated = await topicRepo.getTopic(topic.id)
     expect(updated!.name).toBe('New Name')
 
     const broadcastEvent = mockHub.getBroadcastEvents()[0]
@@ -198,16 +188,14 @@ describe('Topic handler — topic.delete', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
-    registerTopicHandlers(mockHub as any, mockPi as any)
+    registerTopicHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -215,7 +203,7 @@ describe('Topic handler — topic.delete', () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'Delete Me',
       kind: 'normal',
       agentType: 'general',
@@ -223,7 +211,7 @@ describe('Topic handler — topic.delete', () => {
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'delete' } })
 
-    const found = topicRepo.getTopic(topic.id)
+    const found = await topicRepo.getTopic(topic.id)
     expect(found!.archived).toBe(true)
 
     const broadcastEvent = mockHub.getBroadcastEvents().find(
@@ -237,7 +225,7 @@ describe('Topic handler — topic.delete', () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'System',
       kind: 'system_cron_admin',
       agentType: 'general',
@@ -245,7 +233,7 @@ describe('Topic handler — topic.delete', () => {
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'delete' } })
 
-    const found = topicRepo.getTopic(topic.id)
+    const found = await topicRepo.getTopic(topic.id)
     expect(found!.archived).toBe(false)
 
     const errorEvent = mockHub.getBroadcastEvents().find(
@@ -259,12 +247,12 @@ describe('Topic handler — topic.delete', () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'With Artifacts',
       kind: 'normal',
       agentType: 'general',
     })
-    const artifact = artifactRepo.createArtifact({
+    const artifact = await artifactRepo.createArtifact({
       topicId: topic.id,
       name: 'file.txt',
       r2Key: 'uploads/file.txt',
@@ -273,8 +261,7 @@ describe('Topic handler — topic.delete', () => {
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'pool' } })
 
-    // Artifact moved to pool
-    const moved = artifactRepo.getArtifact(artifact.id)
+    const moved = await artifactRepo.getArtifact(artifact.id)
     expect(moved!.topic_id).toBeNull()
 
     const movedEvent = mockHub.getBroadcastEvents().find(
@@ -287,12 +274,12 @@ describe('Topic handler — topic.delete', () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'With Artifacts 2',
       kind: 'normal',
       agentType: 'general',
     })
-    const artifact = artifactRepo.createArtifact({
+    const artifact = await artifactRepo.createArtifact({
       topicId: topic.id,
       name: 'file2.txt',
       r2Key: 'uploads/file2.txt',
@@ -301,8 +288,7 @@ describe('Topic handler — topic.delete', () => {
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'delete' } })
 
-    // Artifact deleted
-    expect(artifactRepo.getArtifact(artifact.id)).toBeUndefined()
+    expect(await artifactRepo.getArtifact(artifact.id)).toBeUndefined()
 
     const deletedEvent = mockHub.getBroadcastEvents().find(
       (e: any) => e.type === 'artifact.deleted',
@@ -314,12 +300,12 @@ describe('Topic handler — topic.delete', () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'With Session',
       kind: 'normal',
       agentType: 'general',
     })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-to-disconnect' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-to-disconnect' })
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'delete' } })
 
@@ -332,16 +318,14 @@ describe('Topic handler — topic.resume', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
-    registerTopicHandlers(mockHub as any, mockPi as any)
+    registerTopicHandlers(mockHub as any, mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
@@ -349,12 +333,12 @@ describe('Topic handler — topic.resume', () => {
     const resumeCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.resume')
     const resumeHandler = resumeCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'Resume Topic',
       kind: 'normal',
       agentType: 'general',
     })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-resume-1' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-resume-1' })
 
     mockPi.hasSession.mockReturnValue(false)
 
@@ -367,12 +351,12 @@ describe('Topic handler — topic.resume', () => {
     const resumeCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.resume')
     const resumeHandler = resumeCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'Already Connected',
       kind: 'normal',
       agentType: 'general',
     })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-already' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-already' })
 
     mockPi.hasSession.mockReturnValue(true)
 
@@ -385,12 +369,12 @@ describe('Topic handler — topic.resume', () => {
     const resumeCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.resume')
     const resumeHandler = resumeCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'Resume Fail',
       kind: 'normal',
       agentType: 'general',
     })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-fail' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-fail' })
 
     mockPi.hasSession.mockReturnValue(false)
     mockPi.reconnectSession.mockRejectedValue(new Error('PI unreachable'))
@@ -408,7 +392,7 @@ describe('Topic handler — topic.resume', () => {
     const resumeCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.resume')
     const resumeHandler = resumeCall![1]
 
-    const topic = topicRepo.createTopic({
+    const topic = await topicRepo.createTopic({
       name: 'No Session',
       kind: 'normal',
       agentType: 'general',

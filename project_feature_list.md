@@ -133,7 +133,30 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 
 ---
 
-## 需求池 (待讨论)
+## v1.2.0 — Cloudflare 全链路部署
+
+> 基础设施迁移：Fly.io → Cloudflare Workers + D1 + R2 + Pages
+> 详见：`.omc/plans/cloudflare-migration-plan.md`
+> **范围说明**：本版本仅包含 Cloudflare 基础设施迁移（FEAT-011 + 三大改造任务：SQLite→D1、Fastify→Hono、ws→Durable Objects），UI 功能类需求移至 v1.3.0。
+
+**质量门禁：55 个测试用例必须全部通过才能合并**
+
+| 类别 | 测试 ID | 测试数 | 覆盖范围 |
+|------|---------|--------|----------|
+| 回归测试 | R-001~R-005 | 5 | 鉴权/消息链路/WS隔离/删除清理/断线重连 |
+| D1 异步转换 | DA-001~DA-010 | 10 | repo 层异步化正确性（最高风险） |
+| Durable Objects | DO-001~DO-013 | 13 | WS 连接/断连/重连/心跳/冷启动/并发 |
+| Hono 路由 | HR-001~HR-008 | 8 | HTTP 路由/鉴权/CORS/错误处理/WS升级 |
+| Wrangler 配置 | WR-001~WR-005 | 5 | binding 名称一致性/env 访问/process.env 清零 |
+| CF Pages | PG-001~PG-005 | 5 | next-on-pages 构建/Edge Runtime/前端渲染 |
+| CI/CD | CD-001~CD-004 | 4 | 自动部署/PR预览/migration顺序/测试门禁 |
+| 性能基准 | P-001~P-005 | 5 | 延迟/吞吐量基准 |
+
+> 详细测试用例定义见 `.omc/plans/cloudflare-migration-plan.md` §4
+
+---
+
+## v1.2.0 功能需求
 
 > 以下需求来自设计文档 `agent-chat-design.md §1 范围内`,归入 Part 2 或后续版本。
 
@@ -143,8 +166,8 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-015 |
 | 标题 | 话题 rename / delete 前端交互 |
-| 状态 | 开发中 |
-| 版本 | v1.0.0 |
+| 状态 | 已回归 |
+| 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 补充话题侧边栏的 rename 和 delete 交互。后端 + 协议 + store 已有完整支持，缺前端 UI 入口（编辑按钮/右键菜单/双击编辑 rename，删除按钮/滑动删除 + 确认弹窗含产物策略选择）。Delete 部分已在 FEAT-026 实现，rename 待补充 |
 | 验收标准 | 侧边栏可 rename 话题（ID 不变）、可 delete 话题（普通话题软删除、系统话题不可删），删除时弹窗选择产物处理策略（转池/删除） |
@@ -167,11 +190,11 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 影响模块 | server, web |
 | 对应步骤 | 设计文档 Phase 5 |
 
-### FEAT-027: 会话历史一致性优化（PI 原始会话为事实源）
+### FEAT-029: 会话历史一致性优化（PI 原始会话为事实源）
 
 | 字段 | 值 |
 |---|---|
-| ID | FEAT-027 |
+| ID | FEAT-029 |
 | 标题 | 会话历史一致性优化（PI 原始会话为事实源） |
 | 状态 | 待讨论 |
 | 版本 | TBD（下个版本讨论） |
@@ -182,11 +205,11 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 影响模块 | packages/server, packages/protocol, packages/web, [external] PI Adapter |
 | 备注 | 当前实现以 SQLite 历史为 UI 读取源，存在与 PI 原始会话不一致的风险；本需求先做方案讨论，不在当前版本落地 |
 
-### FEAT-028: 消息 hover 时间戳布局微调
+### FEAT-030: 消息 hover 时间戳布局微调
 
 | 字段 | 值 |
 |---|---|
-| ID | FEAT-028 |
+| ID | FEAT-030 |
 | 标题 | 消息 hover 时间戳布局微调 |
 | 状态 | 待讨论 |
 | 版本 | TBD（后续版本讨论） |
@@ -204,13 +227,25 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | ID | FEAT-016 |
 | 标题 | R2 云端产物上传下载 |
 | 状态 | 待讨论 |
-| 版本 | v1.2.0 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 话题级产物上传到 R2 云存储，Agent 可消费产物。包含：1) 用户在话题内上传文件 → R2 存储 → 关联到话题；2) 用户 @产物 发消息 → server 将产物信息（名称、下载 URL）传给 PI Agent → Agent 可读取内容并加工；3) R2 presigned URL 上传、下载链接生成 |
 | 验收标准 | 用户上传文件到 R2 成功、Agent 能读取上传产物内容并加工、下载链接可访问 |
-| 测试用例 | TBD |
+| 测试用例 | R2-001~R2-005（R2 集成，待需求确认后补充）；D1 迁移测试（DA-001~DA-010）已归入 v1.2.0 cloudflare-migration-plan.md |
 | 影响模块 | packages/server (r2/client.ts), packages/web |
 | 备注 | 从 FEAT-008 拆出，FEAT-008 为本地产物系统（已回归），本需求为 R2 云端部分 |
+
+#### FEAT-016 测试用例
+
+##### R2 集成测试 (R2-001~R2-005)
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---------|----------|----------|
+| R2-001 | presigned URL 生成 | 生成的 URL 有效且可访问 |
+| R2-002 | 文件上传流程 | 文件成功上传到 R2，可通过 URL 下载 |
+| R2-003 | 多文件并发上传 | 10 个文件同时上传无冲突 |
+| R2-004 | R2 权限验证 | 未授权访问返回 403 |
+| R2-005 | R2 删除后访问 | 删除的文件 URL 返回 404 |
 
 ### FEAT-009: 定时任务管理
 
@@ -252,14 +287,110 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-011 |
 | 标题 | PWA + 部署 + 优化 |
-| 状态 | 待讨论 |
+| 状态 | 已确认 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | manifest + SW, Cloudflare Tunnel 配置, Lighthouse PWA/Performance ≥90, iPhone 实测 |
+| 描述 | manifest + SW, Cloudflare 部署（前端 Pages + 后端 Workers），Lighthouse PWA/Performance ≥90, iPhone 实测 |
 | 验收标准 | Lighthouse PWA ≥90, iPhone 添加到主屏幕可启动 |
-| 测试用例 | TBD |
+| 测试用例 | 详细测试用例见 `.omc/plans/cloudflare-migration-plan.md`（HR-001~008, DO-001~013, P-001~005）；下方为概要 |
 | 影响模块 | web, 部署配置 |
 | 对应步骤 | 设计文档 Phase 6 |
+| 备注 | 与 Cloudflare 全链路部署统一规划 |
+
+#### FEAT-011 测试用例
+
+##### Hono 路由测试 (HR-001~HR-005)
+
+> Fastify → Hono 迁移验证
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---------|----------|----------|
+| HR-001 | 所有 HTTP 路由可用 | GET/POST/PUT/DELETE 路由均正常响应 |
+| HR-002 | 健康检查端点 | /healthz 返回 200 |
+| HR-003 | 认证中间件 | 无 token 请求返回 401 |
+| HR-004 | CORS 配置正确 | 跨域请求正常处理 |
+| HR-005 | 错误响应格式 | 错误返回统一 JSON 格式 |
+
+##### Durable Objects WebSocket 测试 (DO-001~DO-008)
+
+> ws → Durable Objects 迁移验证，核心风险点
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---------|----------|----------|
+| DO-001 | 单客户端连接建立 | WS 连接成功，收到 initial topics |
+| DO-002 | 多客户端连接隔离 | 不同 topic 的 client 互不干扰 |
+| DO-003 | PI 连接建立 | Durable Object 正确连接 PI Adapter |
+| DO-004 | 断线重连 | PI 断线后自动重连，恢复 session |
+| DO-005 | 消息路由正确性 | user message 正确路由到对应 topic |
+| DO-006 | 心跳机制 | 300s 无响应自动断开，释放资源 |
+| DO-007 | 并发连接压测 | 100 并发连接无内存泄漏 |
+| DO-008 | Durable Object 冷启动 | 首次连接延迟 < 2s |
+
+##### 性能基准测试 (P-001~P-005)
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---------|----------|----------|
+| P-001 | 首页加载时间 | < 1.5s（Lighthouse） |
+| P-002 | WebSocket 首次连接延迟 | < 500ms |
+| P-003 | 消息发送延迟 | < 200ms（不含 PI 处理时间） |
+| P-004 | 100 条消息历史加载 | < 1s |
+| P-005 | D1 写入延迟 | < 100ms（单条） |
+
+### FEAT-031: SQLite → Cloudflare D1 数据库迁移
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-031 |
+| 标题 | SQLite → Cloudflare D1 数据库迁移 |
+| 状态 | 已确认 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-12 |
+| 描述 | 将后端数据库从 better-sqlite3（本地同步 API）迁移到 Cloudflare D1（异步 API）。包含：1) 6 个 repo 文件（topic/message/artifact/cron/interaction/usage）全部改为 async/await；2) Drizzle ORM 切换到 `drizzle-orm/d1`；3) 数据迁移脚本（旧 SQLite → D1）；4) FTS5 虚拟表兼容性验证。这是本次迁移改动量最大、最易出错的部分，必须优先完成 |
+| 验收标准 | DA-001~DA-010 全绿；`pnpm -r typecheck` 无报错；`grep "better-sqlite3" packages/server` 结果为空；D1 行数与原 SQLite 一致 |
+| 测试用例 | DA-001~DA-010（见 `.omc/plans/cloudflare-migration-plan.md` §4.3） |
+| 影响模块 | packages/server/src/db/（schema + 6 个 repo 文件 + migrate.ts） |
+
+### FEAT-032: Fastify → Hono 路由迁移
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-032 |
+| 标题 | Fastify → Hono 路由迁移 |
+| 状态 | 已确认 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-12 |
+| 描述 | 将 Node.js Fastify 后端改造为 Cloudflare Workers 兼容的 Hono 应用。包含：1) 重写 `index.ts` 为 Workers 入口（`export default { fetch }`）；2) `/healthz` 迁移到 Hono，返回 D1 连接状态（而非 SQLite 文件大小）；3) 所有 `process.env.*` 替换为 Workers `env.*`；4) 鉴权中间件、CORS、错误响应格式保持一致 |
+| 验收标准 | HR-001~HR-008 全绿；`grep -r "process\.env" packages/server/src` 结果为空 |
+| 测试用例 | HR-001~HR-008（见 `.omc/plans/cloudflare-migration-plan.md` §4.5） |
+| 影响模块 | packages/server/src/index.ts, config.ts, routes/health.ts |
+
+### FEAT-033: ws → Durable Objects WebSocket 迁移
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-033 |
+| 标题 | ws → Durable Objects WebSocket 迁移 |
+| 状态 | 已确认 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-12 |
+| 描述 | 将 Node.js ws 全局 WsHub 迁移到 Cloudflare Durable Objects（每 Topic 一个 DO 实例）。包含：1) 编写 `TopicDurableObject` 类，管理前端 WS 连接 + PI WS 连接；2) 心跳从 `setInterval` 改为 DO `alarm()` API；3) PI session 冷启动恢复（从 DO Storage 读取 pi_session_id）；4) 广播、消息路由、断线重连逻辑迁移 |
+| 验收标准 | DO-001~DO-013 全绿；多 Topic 并发消息互不干扰；DO 冷启动延迟 < 2s |
+| 测试用例 | DO-001~DO-013（见 `.omc/plans/cloudflare-migration-plan.md` §4.4） |
+| 影响模块 | packages/server/src/ws/hub.ts（重写为 DO 类）, wrangler.toml |
+
+### FEAT-034: CI/CD Pipeline + 本地开发环境迁移
+
+| 字段 | 值 |
+|---|---|
+| ID | FEAT-034 |
+| 标题 | CI/CD Pipeline（GitHub → Cloudflare）+ 本地开发环境迁移 |
+| 状态 | 已确认 |
+| 版本 | v1.2.0 |
+| 提出时间 | 2026-05-12 |
+| 描述 | 建立 GitHub → Cloudflare 自动部署流水线，并更新本地开发环境。包含：1) 创建 `.github/workflows/deploy.yml`（test → D1 migration → Workers deploy 顺序）；2) Cloudflare Pages 连接 GitHub repo，PR 自动生成 Preview URL；3) 更新 `pnpm dev` 中 server 启动命令为 `wrangler dev --local`（miniflare 模拟 D1/DO） |
+| 验收标准 | CD-001~CD-004 全绿；push to master 自动部署；PR 自动生成 Preview URL；本地 `wrangler dev --local` 可正常启动 |
+| 测试用例 | CD-001~CD-004（见 `.omc/plans/cloudflare-migration-plan.md` §4.8） |
+| 影响模块 | .github/workflows/deploy.yml, package.json（dev 脚本） |
 
 ### FEAT-012: 视觉打磨 + 响应式 + 移动端
 
@@ -332,7 +463,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | ID | FEAT-020 |
 | 标题 | Cron 管理卡片增强 — 筛选 / 错误展示 / Resume |
 | 状态 | 待讨论 |
-| 版本 | v1.2.0 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S7 显示定时任务管理有丰富的卡片交互，当前实现简陋。需补充：1) 筛选 chips (全部 / Active / Paused / Error)；2) Cron 卡片增强：来源话题 chip + 上次/下次执行时间 + 状态 badge；3) Error banner：显示错误详情 + 红色背景；4) 操作按钮增加 Resume / Retry（不仅仅是 Pause/Delete）；5) Hover 状态：蓝色边框 glow |
 | 验收标准 | 筛选可切换、Error cron 显示错误详情、Pause 的 cron 可 Resume |
@@ -348,7 +479,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | ID | FEAT-021 |
 | 标题 | 消息列表日期分割线 |
 | 状态 | 待讨论 |
-| 版本 | v1.2.0 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S13 显示消息列表中有日期标签（如"今天 · 14:32"），按天分组消息。当前消息列表无日期分割，连续消息无法区分日期边界。需在 MessageList 中按 started_at 日期分组，渲染居中的日期分割线 |
 | 验收标准 | 不同日期的消息之间显示日期标签，同一天内不重复显示 |

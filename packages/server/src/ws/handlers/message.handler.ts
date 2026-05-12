@@ -1,16 +1,16 @@
 import type { WSFrame } from '@agent-chat/protocol'
 import { messagesLoadSchema, userMessageSchema } from '@agent-chat/protocol'
-import type { WsHub } from '../hub'
 import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
 import * as messageRepo from '../../db/repos/message.repo'
 import { logger } from '../../logger'
+import type { EventBroadcaster } from '../../pi/event-router'
 
 async function waitForPiSession(topicId: string, pi: PiClient, timeoutMs = 5000): Promise<string | null> {
   const deadline = Date.now() + timeoutMs
 
   while (Date.now() < deadline) {
-    const topic = topicRepo.getTopic(topicId)
+    const topic = await topicRepo.getTopic(topicId)
     const sessionId = topic?.pi_session_id ?? null
     if (sessionId && pi.hasSession(sessionId)) {
       return sessionId
@@ -18,17 +18,17 @@ async function waitForPiSession(topicId: string, pi: PiClient, timeoutMs = 5000)
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
-  const topic = topicRepo.getTopic(topicId)
+  const topic = await topicRepo.getTopic(topicId)
   const sessionId = topic?.pi_session_id ?? null
   return sessionId && pi.hasSession(sessionId) ? sessionId : null
 }
 
-function loadMessageHistory(topicId: string) {
-  const msgs = messageRepo.listMessagesByTopic(topicId)
+async function loadMessageHistory(topicId: string) {
+  const msgs = await messageRepo.listMessagesByTopic(topicId)
   const partsByMessage: Record<string, { id: string; message_id: string; ordinal: number; kind: string; content_json: string }[]> = {}
 
   for (const msg of msgs) {
-    const parts = messageRepo.getMessageParts(msg.id)
+    const parts = await messageRepo.getMessageParts(msg.id)
     if (parts.length > 0) {
       partsByMessage[msg.id] = parts.map((p) => ({
         id: p.id,
@@ -57,61 +57,61 @@ function loadMessageHistory(topicId: string) {
   }
 }
 
-export function registerMessageHandlers(hub: WsHub, pi: PiClient): void {
-  hub.on('client:messages.load', (conn, frame: WSFrame) => {
+export function registerMessageHandlers(
+  hub: { on: (event: string, handler: (...args: unknown[]) => void) => void; sendToClient?: (ws: unknown, event: { type: string; data: unknown }) => void },
+  pi: PiClient,
+  broadcaster: EventBroadcaster,
+): void {
+  hub.on('client:messages.load', async (...args: unknown[]) => {
+    const conn = args[0]
+    const frame = args[1] as WSFrame
     const data = messagesLoadSchema.parse(frame.d)
 
-    hub.sendToClient(conn.ws, {
-      type: 'messages.history',
-      data: loadMessageHistory(data.topicId),
-    })
+    if (hub.sendToClient) {
+      hub.sendToClient(conn, {
+        type: 'messages.history',
+        data: await loadMessageHistory(data.topicId),
+      })
+    }
   })
 
-  hub.on('client:user.message', async (_conn, frame: WSFrame) => {
+  hub.on('client:user.message', async (...args: unknown[]) => {
+    const frame = args[1] as WSFrame
     const data = userMessageSchema.parse(frame.d)
-    const topic = topicRepo.getTopic(data.topicId)
+    const topic = await topicRepo.getTopic(data.topicId)
     if (!topic) {
       logger.warn({ topicId: data.topicId }, 'Topic not found for user message')
       return
     }
 
-    const msg = messageRepo.createMessage({
+    const msg = await messageRepo.createMessage({
       topicId: data.topicId,
       role: 'user',
       status: 'done',
     })
 
-    messageRepo.createMessagePart({
+    await messageRepo.createMessagePart({
       messageId: msg.id,
       kind: 'text',
       contentJson: JSON.stringify({ content: data.content }),
     })
 
-    messageRepo.indexMessageForSearch(msg.id, data.topicId, data.content)
+    await messageRepo.indexMessageForSearch(msg.id, data.topicId, data.content)
 
-    hub.broadcast({
-      type: 'message.start',
-      data: {
-        topicId: data.topicId,
-        messageId: msg.id,
-        role: 'user',
-      },
+    broadcaster.broadcast('message.start', {
+      topicId: data.topicId,
+      messageId: msg.id,
+      role: 'user',
     })
-    hub.broadcast({
-      type: 'message.delta',
-      data: {
-        topicId: data.topicId,
-        messageId: msg.id,
-        part: { kind: 'text', content: data.content },
-      },
+    broadcaster.broadcast('message.delta', {
+      topicId: data.topicId,
+      messageId: msg.id,
+      part: { kind: 'text', content: data.content },
     })
-    hub.broadcast({
-      type: 'message.end',
-      data: {
-        topicId: data.topicId,
-        messageId: msg.id,
-        stopReason: 'end_turn',
-      },
+    broadcaster.broadcast('message.end', {
+      topicId: data.topicId,
+      messageId: msg.id,
+      stopReason: 'end_turn',
     })
 
     let sessionId = topic.pi_session_id
@@ -124,12 +124,9 @@ export function registerMessageHandlers(hub: WsHub, pi: PiClient): void {
         await pi.reconnectSession(sessionId)
       } catch (err) {
         logger.error({ err, topicId: data.topicId, sessionId }, 'Failed to reconnect stored PI session before forwarding message')
-        hub.broadcast({
-          type: 'error',
-          data: {
-            code: 'PI_RESUME_FAILED',
-            message: 'Failed to resume agent session. Please create a new topic.',
-          },
+        broadcaster.broadcast('error', {
+          code: 'PI_RESUME_FAILED',
+          message: 'Failed to resume agent session. Please create a new topic.',
         })
         return
       }
@@ -157,24 +154,18 @@ export function registerMessageHandlers(hub: WsHub, pi: PiClient): void {
             logger.warn({ topicId: data.topicId, sessionId }, 'sendUserMessage RPC timed out after event stream started or while PI may still be working')
             return
           }
-          hub.broadcast({
-            type: 'error',
-            data: {
-              code: 'PI_UNAVAILABLE',
-              message: 'Agent session is not available. Please create a new topic.',
-            },
+          broadcaster.broadcast('error', {
+            code: 'PI_UNAVAILABLE',
+            message: 'Agent session is not available. Please create a new topic.',
           })
         })
       return
     }
 
     logger.warn({ topicId: data.topicId }, 'Topic has no PI session after waiting, skipping sendUserMessage')
-    hub.broadcast({
-      type: 'error',
-      data: {
-        code: 'NO_PI_SESSION',
-        message: 'This topic has no agent session. Please create a new topic.',
-      },
+    broadcaster.broadcast('error', {
+      code: 'NO_PI_SESSION',
+      message: 'This topic has no agent session. Please create a new topic.',
     })
   })
 }

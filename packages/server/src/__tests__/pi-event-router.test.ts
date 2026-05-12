@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
-import { setDb, resetDb } from '../db/migrate'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import { EventEmitter } from 'node:events'
@@ -10,8 +9,8 @@ import { routePiEvents } from '../pi/event-router'
 function createMockHub() {
   const broadcastEvents: ServerEvent[] = []
   return {
-    broadcast: vi.fn((event: ServerEvent) => {
-      broadcastEvents.push(event)
+    broadcast: vi.fn((type: string, data: unknown) => {
+      broadcastEvents.push({ type, data } as ServerEvent)
     }),
     getBroadcastEvents: () => broadcastEvents,
   }
@@ -31,22 +30,21 @@ describe('Event router — session.health', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(() => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     routePiEvents(mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
-  it('broadcasts session.health connected', () => {
-    topicRepo.createTopic({ name: 'Health Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(
-      topicRepo.listTopics().find((t) => t.name === 'Health Topic')!.id,
+  it('broadcasts session.health connected', async () => {
+    await topicRepo.createTopic({ name: 'Health Topic', kind: 'normal', agentType: 'general' })
+    const topics = await topicRepo.listTopics()
+    await topicRepo.updateTopic(
+      topics.find((t) => t.name === 'Health Topic')!.id,
       { pi_session_id: 'sess-health-1' },
     )
 
@@ -58,6 +56,7 @@ describe('Event router — session.health', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
 
     expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
     const broadcast = mockHub.getBroadcastEvents()[0]
@@ -66,9 +65,9 @@ describe('Event router — session.health', () => {
     expect((broadcast.data as Record<string, unknown>).piSessionId).toBe('sess-health-1')
   })
 
-  it('broadcasts session.health disconnected with lastError', () => {
-    const topic = topicRepo.createTopic({ name: 'Disconnect Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-disc-1' })
+  it('broadcasts session.health disconnected with lastError', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Disconnect Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-disc-1' })
 
     const event: PIEvent = {
       seq: 1,
@@ -78,6 +77,7 @@ describe('Event router — session.health', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
 
     const broadcast = mockHub.getBroadcastEvents()[0]
     expect(broadcast.type).toBe('session.health')
@@ -85,7 +85,7 @@ describe('Event router — session.health', () => {
     expect((broadcast.data as Record<string, unknown>).lastError).toBe('connection reset')
   })
 
-  it('ignores session.health for unknown session', () => {
+  it('ignores session.health for unknown session', async () => {
     const event: PIEvent = {
       seq: 1,
       sessionId: 'unknown-session',
@@ -94,12 +94,13 @@ describe('Event router — session.health', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
     expect(mockHub.broadcast).not.toHaveBeenCalled()
   })
 
-  it('deduplicates session.health by seq', () => {
-    const topic = topicRepo.createTopic({ name: 'Dedup Health', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-dedup-h' })
+  it('deduplicates session.health by seq', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Dedup Health', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-dedup-h' })
 
     const event: PIEvent = {
       seq: 1,
@@ -110,6 +111,7 @@ describe('Event router — session.health', () => {
 
     mockPi.emit('event', event)
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
 
     expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
   })
@@ -120,32 +122,29 @@ describe('Event router — cron.run.completed', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(() => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
+    setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     routePiEvents(mockPi as any, mockHub as any)
   })
 
   afterEach(() => {
-    resetDb()
     teardownTestDb()
   })
 
-  it('updates cron run and broadcasts cron.run.completed', () => {
-    const topic = topicRepo.createTopic({ name: 'Cron Complete Topic', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-cron-comp' })
+  it('updates cron run and broadcasts cron.run.completed', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Cron Complete Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-cron-comp' })
 
-    const job = cronRepo.createCronJob({
+    const job = await cronRepo.createCronJob({
       originTopicId: topic.id,
       piCronId: 'pi-cron-comp',
       cronExpr: '0 * * * *',
       prompt: 'Hourly',
     })
 
-    // Create a running cron run
-    const run = cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
-    expect(cronRepo.listCronRuns(job.id)[0].status).toBe('running')
+    const run = await cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
+    expect((await cronRepo.listCronRuns(job.id))[0].status).toBe('running')
 
     const event: PIEvent = {
       seq: 1,
@@ -163,12 +162,11 @@ describe('Event router — cron.run.completed', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
 
-    // Cron run updated in DB
-    const updatedRun = cronRepo.listCronRuns(job.id)[0]
+    const updatedRun = (await cronRepo.listCronRuns(job.id))[0]
     expect(updatedRun.status).toBe('success')
 
-    // Broadcast sent
     expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
     const broadcast = mockHub.getBroadcastEvents()[0]
     expect(broadcast.type).toBe('cron.run.completed')
@@ -178,7 +176,7 @@ describe('Event router — cron.run.completed', () => {
     expect((broadcast.data as Record<string, unknown>).duration).toBe(5000)
   })
 
-  it('ignores cron.run.completed for unknown cronId', () => {
+  it('ignores cron.run.completed for unknown cronId', async () => {
     const event: PIEvent = {
       seq: 1,
       sessionId: 'sess-unknown',
@@ -195,21 +193,22 @@ describe('Event router — cron.run.completed', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
     expect(mockHub.broadcast).not.toHaveBeenCalled()
   })
 
-  it('handles cron.run.completed with timeout status', () => {
-    const topic = topicRepo.createTopic({ name: 'Cron Timeout', kind: 'normal', agentType: 'general' })
-    topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-timeout' })
+  it('handles cron.run.completed with timeout status', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Cron Timeout', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-timeout' })
 
-    const job = cronRepo.createCronJob({
+    const job = await cronRepo.createCronJob({
       originTopicId: topic.id,
       piCronId: 'pi-timeout',
       cronExpr: '0 * * * *',
       prompt: 'May timeout',
     })
 
-    cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
+    await cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
 
     const event: PIEvent = {
       seq: 1,
@@ -227,6 +226,7 @@ describe('Event router — cron.run.completed', () => {
     }
 
     mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
 
     const broadcast = mockHub.getBroadcastEvents()[0]
     expect(broadcast.type).toBe('cron.run.completed')

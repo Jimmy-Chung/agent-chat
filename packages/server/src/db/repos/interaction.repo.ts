@@ -4,13 +4,13 @@ import { interactions } from '../schema'
 import { getDb } from '../migrate'
 import { ulid } from 'ulid'
 
-export function createInteraction(input: {
+export async function createInteraction(input: {
   topicId: string
   messageId?: string | null
   kind: Interaction['kind']
   prompt: string
   optionsJson?: string | null
-}): Interaction {
+}): Promise<Interaction> {
   const row = {
     id: ulid(),
     topicId: input.topicId,
@@ -23,12 +23,12 @@ export function createInteraction(input: {
     createdAt: Date.now(),
     resolvedAt: null,
   }
-  getDb().insert(interactions).values(row).run()
+  await getDb().insert(interactions).values(row).run()
   return toDomain(row)
 }
 
-export function getInteraction(id: string): Interaction | undefined {
-  const rows = getDb()
+export async function getInteraction(id: string): Promise<Interaction | undefined> {
+  const rows = await getDb()
     .select()
     .from(interactions)
     .where(eq(interactions.id, id))
@@ -36,12 +36,12 @@ export function getInteraction(id: string): Interaction | undefined {
   return rows[0] ? toDomain(rows[0]) : undefined
 }
 
-export function updateInteraction(
+export async function updateInteraction(
   id: string,
   data: Partial<
     Pick<Interaction, 'status' | 'response_json' | 'resolved_at'>
   >,
-): Interaction | undefined {
+): Promise<Interaction | undefined> {
   const updates: Record<string, unknown> = {}
   if (data.status !== undefined) updates.status = data.status
   if (data.response_json !== undefined)
@@ -49,7 +49,7 @@ export function updateInteraction(
   if (data.resolved_at !== undefined) updates.resolvedAt = data.resolved_at
 
   if (Object.keys(updates).length > 0) {
-    getDb()
+    await getDb()
       .update(interactions)
       .set(updates)
       .where(eq(interactions.id, id))
@@ -58,10 +58,10 @@ export function updateInteraction(
   return getInteraction(id)
 }
 
-export function listPendingInteractions(
+export async function listPendingInteractions(
   topicId: string,
-): Interaction[] {
-  const rows = getDb()
+): Promise<Interaction[]> {
+  const rows = await getDb()
     .select()
     .from(interactions)
     .where(eq(interactions.topicId, topicId))

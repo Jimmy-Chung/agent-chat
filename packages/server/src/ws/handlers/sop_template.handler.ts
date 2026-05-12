@@ -1,6 +1,5 @@
 import type { WSFrame } from '@agent-chat/protocol'
 import { topicSelectSchema } from '@agent-chat/protocol'
-import type { WsHub } from '../hub'
 import * as sopRepo from '../../db/repos/sop_template.repo'
 
 function templateToPayload(t: sopRepo.SopTemplate) {
@@ -17,16 +16,21 @@ function templateToPayload(t: sopRepo.SopTemplate) {
   }
 }
 
-export function registerSopTemplateHandlers(hub: WsHub): void {
-  // Send template list when client opens SOP library
-  hub.on('client:topic.select', (conn, frame: WSFrame) => {
+export function registerSopTemplateHandlers(
+  hub: { on: (event: string, handler: (...args: unknown[]) => void) => void; sendToClient?: (ws: unknown, event: { type: string; data: unknown }) => void },
+): void {
+  hub.on('client:topic.select', async (...args: unknown[]) => {
+    const conn = args[0]
+    const frame = args[1] as WSFrame
     const data = topicSelectSchema.parse(frame.d)
     if (data.topicId !== 'system_sop_library') return
 
-    const templates = sopRepo.listTemplates()
-    hub.sendToClient(conn.ws, {
-      type: 'sop_template.list',
-      data: { templates: templates.map(templateToPayload) },
-    })
+    const templates = await sopRepo.listTemplates()
+    if (hub.sendToClient) {
+      hub.sendToClient(conn, {
+        type: 'sop_template.list',
+        data: { templates: templates.map(templateToPayload) },
+      })
+    }
   })
 }

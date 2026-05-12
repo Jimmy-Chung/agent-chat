@@ -1,4 +1,4 @@
-import { config } from '../config'
+import type { AppConfig } from '../config'
 import { logger } from '../logger'
 
 export interface R2ClientResult {
@@ -14,8 +14,10 @@ interface PresignedUrlResult {
 
 let s3Client: unknown = null
 let r2Available = false
+let r2Config: AppConfig['r2'] | null = null
 
-export async function initR2(): Promise<R2ClientResult> {
+export async function initR2(config: AppConfig): Promise<R2ClientResult> {
+  r2Config = config.r2
   const { accountId, accessKeyId, secretAccessKey, bucket } = config.r2
 
   if (!accountId || !accessKeyId || !secretAccessKey) {
@@ -61,7 +63,7 @@ export async function createPresignedUrl(
   const key = `uploads/${uploadId}/${fileName}`
 
   const command = new PutObjectCommand({
-    Bucket: config.r2.bucket,
+    Bucket: r2Config!.bucket,
     Key: key,
     ContentType: mime,
   })
@@ -78,8 +80,8 @@ export async function createPresignedUrl(
 }
 
 export function getPublicUrl(key: string): string {
-  if (config.r2.publicUrl) {
-    return `${config.r2.publicUrl}/${key}`
+  if (r2Config?.publicUrl) {
+    return `${r2Config.publicUrl}/${key}`
   }
   return key
 }

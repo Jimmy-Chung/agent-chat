@@ -1,19 +1,104 @@
 import Database from 'better-sqlite3'
-import { drizzle } from 'drizzle-orm/better-sqlite3'
-import * as schema from '../db/schema'
+import { setDb, resetDb } from '../db/migrate'
 
-// We need to override the module-level _db and _sqlite in migrate.ts
-// For tests, we use an in-memory database and set it up directly
+// D1Database shim over better-sqlite3 for testing.
+// Exposes the subset of D1Database API that drizzle-orm/d1 and our repos use.
+
+interface D1Result<T = unknown> {
+  results?: T[]
+  success: boolean
+  meta?: { rows_written?: number; rows_read?: number }
+}
+
+interface D1PreparedStatement {
+  bind(...values: unknown[]): D1PreparedStatement
+  first<T = unknown>(colName?: string): Promise<T | null>
+  all<T = unknown>(): Promise<D1Result<T>>
+  run(): Promise<D1Result>
+  raw<T = unknown[]>(): Promise<T[]>
+}
+
+class StmtShim implements D1PreparedStatement {
+  constructor(
+    private sqlite: Database.Database,
+    private sql: string,
+    private params: unknown[] = [],
+  ) {}
+
+  bind(...values: unknown[]): D1PreparedStatement {
+    if (values.length === 1 && typeof values[0] === 'object' && values[0] !== null && !Array.isArray(values[0])) {
+      return new StmtShim(this.sqlite, this.sql, [values[0]])
+    }
+    return new StmtShim(this.sqlite, this.sql, values)
+  }
+
+  async first<T = unknown>(): Promise<T | null> {
+    try {
+      const stmt = this.sqlite.prepare(this.sql)
+      const row = stmt.get(...this.params) as T | undefined
+      return row ?? null
+    } catch (err) {
+      throw err
+    }
+  }
+
+  async all<T = unknown>(): Promise<D1Result<T>> {
+    try {
+      const stmt = this.sqlite.prepare(this.sql)
+      const rows = stmt.all(...this.params) as T[]
+      return { results: rows, success: true }
+    } catch (err) {
+      throw err
+    }
+  }
+
+  async run(): Promise<D1Result> {
+    try {
+      const stmt = this.sqlite.prepare(this.sql)
+      const result = stmt.run(...this.params)
+      return {
+        success: true,
+        meta: {
+          rows_written: result.changes,
+        },
+      }
+    } catch (err) {
+      throw err
+    }
+  }
+
+  async raw<T = unknown[]>(): Promise<T[]> {
+    try {
+      const stmt = this.sqlite.prepare(this.sql)
+      stmt.raw(true)
+      const rows = stmt.all(...this.params) as T[]
+      return rows
+    } catch (err) {
+      throw err
+    }
+  }
+}
+
+class D1Shim {
+  constructor(private sqlite: Database.Database) {}
+
+  prepare(sql: string): D1PreparedStatement {
+    return new StmtShim(this.sqlite, sql)
+  }
+
+  async exec(_sql: string): Promise<void> {
+    this.sqlite.exec(_sql)
+  }
+}
 
 let _testSqlite: Database.Database | null = null
-let _testDb: ReturnType<typeof drizzle> | null = null
+let _d1Shim: D1Shim | null = null
 
-export function setupTestDb(): { db: ReturnType<typeof drizzle>; sqlite: Database.Database } {
+export function setupTestDb(): D1Shim {
   _testSqlite = new Database(':memory:')
   _testSqlite.pragma('journal_mode = WAL')
   _testSqlite.pragma('synchronous = NORMAL')
 
-  // Create all tables
   _testSqlite.exec(`
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
@@ -146,22 +231,28 @@ export function setupTestDb(): { db: ReturnType<typeof drizzle>; sqlite: Databas
     );
   `)
 
-  _testDb = drizzle(_testSqlite, { schema })
-  return { db: _testDb, sqlite: _testSqlite! }
+  _d1Shim = new D1Shim(_testSqlite)
+  setDb(_d1Shim as unknown as D1Database)
+  return _d1Shim
 }
 
 export function teardownTestDb() {
   if (_testSqlite) {
     _testSqlite.close()
     _testSqlite = null
-    _testDb = null
+    _d1Shim = null
+    resetDb()
   }
 }
 
 export function getTestDb() {
-  return _testDb!
+  return _d1Shim!
 }
 
-export function getTestSqlite(): Database.Database {
-  return _testSqlite!
+export function getTestD1() {
+  return _d1Shim as unknown as D1Database
 }
+
+// Re-export for convenience
+import type { D1Database } from '@cloudflare/workers-types'
+export type { D1Database }

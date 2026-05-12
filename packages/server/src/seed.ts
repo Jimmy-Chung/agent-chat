@@ -80,17 +80,16 @@ const BUILTIN_TEMPLATES = [
   },
 ]
 
-export function seedSystemTopics(): void {
+export async function seedSystemTopics(): Promise<void> {
   for (const t of SYSTEM_TOPICS) {
-    upsertSystemTopic(t.id, t.name, t.kind)
+    await upsertSystemTopic(t.id, t.name, t.kind)
     logger.info({ id: t.id, name: t.name }, 'System topic ensured')
   }
 
-  // Seed built-in SOP templates (idempotent)
-  const existing = sopRepo.listTemplates()
+  const existing = await sopRepo.listTemplates()
   if (existing.length === 0) {
     for (const tpl of BUILTIN_TEMPLATES) {
-      sopRepo.createTemplate({
+      await sopRepo.createTemplate({
         name: tpl.name,
         icon: tpl.icon,
         description: tpl.description,
