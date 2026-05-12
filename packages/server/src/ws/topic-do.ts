@@ -59,6 +59,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     return this.piClient
   }
 
+  // After DO hibernation the piClient is recreated with no sessions — reconnect on demand
+  private async ensureSession(pi: PiClient, sessionId: string): Promise<boolean> {
+    if (pi.hasSession(sessionId)) return true
+    try {
+      await pi.reconnectSession(sessionId)
+      return true
+    } catch (err) {
+      logger.error({ err, sessionId }, 'Failed to reconnect PI session')
+      return false
+    }
+  }
+
   // ─── WebSocket handling ───────────────────────────────────────────────────
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url)
@@ -360,7 +372,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         if (!topic) break
         if (topic.pi_session_id) {
           const pi = await this.ensurePiClient()
-          if (pi) {
+          if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
             try {
               await pi.rpc('setSessionModel', { sessionId: topic.pi_session_id, model: data.model })
             } catch (err) {
@@ -378,7 +390,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const topic = await topicRepo.getTopic(data.id)
         if (!topic || !topic.pi_session_id) break
         const pi = await this.ensurePiClient()
-        if (pi) {
+        if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
           try {
             await pi.rpc('detachExtension', { sessionId: topic.pi_session_id })
           } catch (err) {
@@ -403,7 +415,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         }
         if (topic.pi_session_id) {
           const pi = await this.ensurePiClient()
-          if (pi) {
+          if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
             try {
               await pi.rpc('setPlanMode', { sessionId: topic.pi_session_id, planMode: data.planMode })
             } catch (err) {
@@ -539,7 +551,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const sessionId = topic?.pi_session_id
         if (sessionId) {
           const pi = await this.ensurePiClient()
-          if (pi) {
+          if (pi && await this.ensureSession(pi, sessionId)) {
             try {
               await pi.rpc('sendUserMessage', {
                 sessionId,
@@ -561,7 +573,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const topic = await topicRepo.getTopic(data.topicId)
           if (topic?.pi_session_id) {
             const pi = await this.ensurePiClient()
-            if (pi) {
+            if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
               try {
                 await pi.rpc('abortSession', { sessionId: topic.pi_session_id })
               } catch (err) {
@@ -588,7 +600,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const topic = await topicRepo.getTopic(data.topicId)
           if (topic?.pi_session_id) {
             const pi = await this.ensurePiClient()
-            if (pi) {
+            if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
               try {
                 await pi.rpc('resolveInteraction', {
                   sessionId: topic.pi_session_id,
