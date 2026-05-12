@@ -34,6 +34,8 @@ app.get('/healthz', async (c) => {
   }
 })
 
+export { TopicDurableObject } from './ws/topic-do'
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     await initialize(env)
