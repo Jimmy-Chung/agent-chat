@@ -28,11 +28,11 @@ export interface AppConfig {
 
 export function createConfig(env: Env): AppConfig {
   return {
-    token: env.AGENT_CHAT_TOKEN || 'test-token',
+    token: env.AGENT_CHAT_TOKEN || '',
     piAdapterUrl:
       env.PI_ADAPTER_URL ||
       'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
-    piAdapterToken: env.PI_ADAPTER_TOKEN || 'test-token',
+    piAdapterToken: env.PI_ADAPTER_TOKEN || '1234',
     logLevel: env.LOG_LEVEL || 'info',
     r2: {
       accountId: env.R2_ACCOUNT_ID || '',
