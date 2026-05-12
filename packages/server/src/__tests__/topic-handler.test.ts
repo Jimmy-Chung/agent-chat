@@ -30,7 +30,7 @@ describe('Topic handler — topic.create', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
@@ -150,7 +150,7 @@ describe('Topic handler — topic.rename', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
@@ -188,7 +188,7 @@ describe('Topic handler — topic.delete', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')
@@ -318,7 +318,7 @@ describe('Topic handler — topic.resume', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerTopicHandlers } = await import('../ws/handlers/topic.handler')

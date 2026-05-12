@@ -23,7 +23,7 @@ describe('Artifact handler — upload.init', () => {
   let mockHub: ReturnType<typeof createMockHub>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     const { registerArtifactHandlers } = await import('../ws/handlers/artifact.handler')
     registerArtifactHandlers(mockHub as any)
@@ -50,7 +50,7 @@ describe('Artifact handler — topic.select artifact list', () => {
   let mockHub: ReturnType<typeof createMockHub>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     const { registerArtifactHandlers } = await import('../ws/handlers/artifact.handler')
     registerArtifactHandlers(mockHub as any)

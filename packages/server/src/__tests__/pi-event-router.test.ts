@@ -29,8 +29,8 @@ describe('Event router — session.health', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
 
-  beforeEach(() => {
-    setupTestDb()
+  beforeEach(async () => {
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     routePiEvents(mockPi as any, mockHub as any)
@@ -121,8 +121,8 @@ describe('Event router — cron.run.completed', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
 
-  beforeEach(() => {
-    setupTestDb()
+  beforeEach(async () => {
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     routePiEvents(mockPi as any, mockHub as any)

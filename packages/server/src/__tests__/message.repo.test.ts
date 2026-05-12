@@ -7,7 +7,7 @@ describe('MessageRepo', () => {
   let topicId: string
 
   beforeAll(async () => {
-    setupTestDb()
+    await setupTestDb()
     const topic = await topicRepo.createTopic({
       name: 'Message Test Topic',
       kind: 'normal',

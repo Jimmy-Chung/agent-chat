@@ -9,7 +9,7 @@ describe('UsageRepo', () => {
   let messageId: string
 
   beforeAll(async () => {
-    setupTestDb()
+    await setupTestDb()
     const topic = await topicRepo.createTopic({
       name: 'Usage Test Topic',
       kind: 'normal',

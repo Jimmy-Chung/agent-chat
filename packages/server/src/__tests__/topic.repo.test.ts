@@ -3,8 +3,8 @@ import { setupTestDb, teardownTestDb } from './db-helper'
 import * as topicRepo from '../db/repos/topic.repo'
 
 describe('TopicRepo', () => {
-  beforeAll(() => {
-    setupTestDb()
+  beforeAll(async () => {
+    await setupTestDb()
   })
 
   afterAll(() => {

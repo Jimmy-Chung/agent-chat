@@ -7,7 +7,7 @@ describe('CronRepo', () => {
   let topicId: string
 
   beforeAll(async () => {
-    setupTestDb()
+    await setupTestDb()
     const topic = await topicRepo.createTopic({
       name: 'Cron Test Topic',
       kind: 'normal',

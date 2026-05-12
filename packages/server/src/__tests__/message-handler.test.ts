@@ -34,7 +34,7 @@ describe('Message handler', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerMessageHandlers } = await import('../ws/handlers/message.handler')

@@ -30,7 +30,7 @@ describe('Interaction handler — user.action abort', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerInteractionHandlers } = await import('../ws/handlers/interaction.handler')
@@ -70,7 +70,7 @@ describe('Interaction handler — user.action approve/reject', () => {
   let mockPi: ReturnType<typeof createMockPiClient>
 
   beforeEach(async () => {
-    setupTestDb()
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     const { registerInteractionHandlers } = await import('../ws/handlers/interaction.handler')

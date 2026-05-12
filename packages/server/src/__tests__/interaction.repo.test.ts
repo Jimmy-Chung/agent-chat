@@ -7,7 +7,7 @@ describe('InteractionRepo', () => {
   let topicId: string
 
   beforeAll(async () => {
-    setupTestDb()
+    await setupTestDb()
     const topic = await topicRepo.createTopic({
       name: 'Interaction Test Topic',
       kind: 'normal',

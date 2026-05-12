@@ -7,7 +7,7 @@ describe('ArtifactRepo', () => {
   let topicId: string
 
   beforeAll(async () => {
-    setupTestDb()
+    await setupTestDb()
     const topic = await topicRepo.createTopic({
       name: 'Artifact Test Topic',
       kind: 'normal',

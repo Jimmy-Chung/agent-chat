@@ -30,8 +30,8 @@ describe('Cron handler — event-router cron.triggered', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
 
-  beforeEach(() => {
-    setupTestDb()
+  beforeEach(async () => {
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
     routePiEvents(mockPi as any, mockHub as any)
@@ -144,8 +144,8 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
 
-  beforeEach(() => {
-    setupTestDb()
+  beforeEach(async () => {
+    await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
   })
