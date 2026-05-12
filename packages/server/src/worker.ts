@@ -61,9 +61,9 @@ export default {
     // WebSocket upgrade → route to DO
     if (url.pathname === '/ws') {
       try {
-        const upgradeHeader = request.headers.get('Upgrade')
-        if (upgradeHeader?.toLowerCase() !== 'websocket') {
-          return new Response(`Expected Upgrade: websocket, got: ${upgradeHeader}`, { status: 426 })
+        const secWebSocketKey = request.headers.get('Sec-WebSocket-Key')
+        if (!secWebSocketKey) {
+          return new Response('Expected WebSocket upgrade', { status: 426 })
         }
 
         // Validate token before forwarding to DO
