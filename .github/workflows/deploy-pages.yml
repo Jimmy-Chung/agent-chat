@@ -31,7 +31,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name":"agent-chat","production_branch":"master"}')
           echo "$RESP"
-          echo "$RESP" | grep -q '"success":true\|"code":8000002\|"code":8000010' && echo "Project ready"
+          echo "$RESP" | grep -q '"success":true\|already exists' && echo "Project ready"
       - name: Deploy to Cloudflare Pages
         run: npx wrangler@latest pages deploy packages/web/out --project-name agent-chat --branch master --commit-dirty=true
         env:
