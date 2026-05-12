@@ -134,6 +134,48 @@
 | 根因 | `interaction.handler.ts` 的 abort handler 只向 PI 发送了 `abortSession` RPC，没有 broadcast `agent.status: idle` 给前端。前端 `isAgentRunning` 依赖 `agentStatusByTopic[topicId]`，而 PI 在 abort 后不一定会发回 `idle` 事件，导致状态卡在 `aborting` |
 | 修复方案 | abort handler 发送 RPC 后，立即 `hub.broadcast({ type: 'agent.status', data: { topicId, state: 'idle' } })`（interaction.handler.ts:23） |
 
+### BUG-021: Deploy workflow 始终部署 dev/v1.2.0 旧代码而非 master
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-021 |
+| 标题 | Deploy workflow 始终部署 dev/v1.2.0 旧代码而非 master |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | .github/workflows/deploy.yml, .github/workflows/deploy-pages.yml |
+| 描述 | 所有部署均使用 dev/v1.2.0 代码，master 修复永远不生效 |
+| 根因 | GitHub 仓库默认分支为 dev/v1.2.0，workflow_run 触发的 actions/checkout@v4 无显式 ref 时 checkout 默认分支，导致始终部署旧代码。同时 default_branch 配置错误。 |
+| 修复方案 | 两个 deploy workflow 均加 `ref: master`；用 gh API 将仓库默认分支改为 master |
+
+### BUG-022: DO RPC (stub.setConfig) 因 compatibility_date 过旧不可用
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-022 |
+| 标题 | DO RPC (stub.setConfig) 因 compatibility_date 过旧不可用 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/wrangler.toml |
+| 描述 | 调用 stub.setConfig() 时报 TypeError: stub.setConfig is not a function |
+| 根因 | Cloudflare DO RPC（直接调用 stub 方法）需要 compatibility_date >= 2024-04-05，wrangler.toml 配置为 2024-01-01 |
+| 修复方案 | wrangler.toml compatibility_date 改为 2024-04-05 |
+
+### BUG-023: Cloudflare 过滤 Upgrade 头，WebSocket 升级检测失败
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-023 |
+| 标题 | Cloudflare 过滤 Upgrade 头，WebSocket 升级检测失败 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-12 |
+| 影响模块 | packages/server/src/worker.ts |
+| 描述 | Worker 对所有 WebSocket 升级请求返回 426，连接无法建立 |
+| 根因 | Cloudflare CDN 在转发请求给 Worker 时过滤掉 Upgrade 头，导致 request.headers.get('Upgrade') 始终返回 null |
+| 修复方案 | 改用 Sec-WebSocket-Key 头检测 WebSocket 升级请求，该头不会被 Cloudflare 过滤 |
+
 ### BUG-018: Workers 中 ulid 包报 nodeCrypto.randomBytes is not a function
 
 | 字段 | 值 |
