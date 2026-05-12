@@ -3,15 +3,30 @@ import { encodeFrame, decodeFrame, createFrame, type WSFrame } from '@agent-chat
 import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
 import { logger } from '../logger'
+import { initDb } from '../db/migrate'
+import * as topicRepo from '../db/repos/topic.repo'
+import * as messageRepo from '../db/repos/message.repo'
+import * as sopRepo from '../db/repos/sop_template.repo'
+import * as cronRepo from '../db/repos/cron.repo'
+
+interface DOEnv {
+  DB: D1Database
+}
 
 const HEARTBEAT_INTERVAL_MS = 30_000
 
-export class TopicDurableObject extends DurableObject {
+export class TopicDurableObject extends DurableObject<DOEnv> {
   private sessions = new Map<WebSocket, { lastPing: number }>()
   private piClient: PiClient | null = null
   private config: AppConfig | null = null
   private piSessionId: string | null = null
   private topicId: string | null = null
+
+  private ensureDb(): void {
+    if (this.env?.DB) {
+      initDb(this.env.DB)
+    }
+  }
 
   async setConfig(config: AppConfig, topicId: string) {
     this.config = config
@@ -19,6 +34,18 @@ export class TopicDurableObject extends DurableObject {
 
     if (!this.piClient) {
       this.piClient = new PiClient(config)
+      this.piClient.on('event', (event: Record<string, unknown>) => {
+        const payload = event.payload as Record<string, unknown> | undefined
+        if (!payload) return
+        const kind = payload.kind as string
+        if (kind === 'session.health') {
+          this.broadcast('session.health', {
+            topicId: event.sessionId,
+            state: payload.state,
+            lastError: payload.lastError,
+          })
+        }
+      })
     }
 
     // Check for stored PI session and reconnect if needed
@@ -45,7 +72,7 @@ export class TopicDurableObject extends DurableObject {
     return new Response('Not Found', { status: 404 })
   }
 
-  private handleWsUpgrade(request: Request): Response {
+  private async handleWsUpgrade(request: Request): Promise<Response> {
     // Token validation before accepting WebSocket
     const url = new URL(request.url)
     const token =
@@ -62,8 +89,23 @@ export class TopicDurableObject extends DurableObject {
     this.ctx.acceptWebSocket(server)
     this.sessions.set(server, { lastPing: Date.now() })
 
-    // Send initial topics list
-    this.sendToClient(server, 'topics.list', { topics: [] })
+    // Load real topics from D1
+    try {
+      this.ensureDb()
+      const topics = await topicRepo.listTopics()
+      this.sendToClient(server, 'topics.list', { topics })
+    } catch (err) {
+      logger.warn({ err }, 'Failed to load topics on connect')
+      this.sendToClient(server, 'topics.list', { topics: [] })
+    }
+
+    // Send SOP templates
+    try {
+      const templates = await sopRepo.listTemplates()
+      this.sendToClient(server, 'sop_template.list', { templates })
+    } catch (err) {
+      logger.warn({ err }, 'Failed to load SOP templates on connect')
+    }
 
     // Set initial alarm
     this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS)
@@ -104,7 +146,6 @@ export class TopicDurableObject extends DurableObject {
       }
     }
 
-    // Re-schedule alarm
     if (this.sessions.size > 0) {
       await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS)
     }
@@ -128,15 +169,133 @@ export class TopicDurableObject extends DurableObject {
   }
 
   private async handleClientFrame(ws: WebSocket, frame: WSFrame): Promise<void> {
-    // Delegate to global handler pattern — emit events
-    // The worker.ts will register handlers that bridge between DO and global operations
+    this.ensureDb()
+
     switch (frame.t) {
       case 'topic.select': {
         this.sendToClient(ws, 'topic.selected', frame.d)
         break
       }
+
+      case 'messages.load': {
+        const d = frame.d as { topicId: string }
+        try {
+          const msgs = await messageRepo.listMessagesByTopic(d.topicId)
+          const partsByMessage: Record<string, unknown[]> = {}
+          for (const msg of msgs) {
+            const parts = await messageRepo.getMessageParts(msg.id)
+            if (parts.length > 0) partsByMessage[msg.id] = parts
+          }
+          this.sendToClient(ws, 'messages.history', {
+            topicId: d.topicId,
+            messages: msgs,
+            partsByMessage,
+          })
+        } catch (err) {
+          logger.error({ err, topicId: d.topicId }, 'Failed to load messages')
+        }
+        break
+      }
+
+      case 'topic.create': {
+        const { topicCreateSchema } = await import('@agent-chat/protocol')
+        const data = topicCreateSchema.parse(frame.d)
+        if (await topicRepo.getTopicByName(data.name)) {
+          this.broadcast('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
+          return
+        }
+        const topic = await topicRepo.createTopic({
+          name: data.name,
+          kind: 'normal',
+          agentType: data.agentType,
+          programmingSpecJson: data.programming ? JSON.stringify(data.programming) : null,
+          sopTemplateId: data.sopTemplateId,
+        })
+        this.broadcast('topic.created', topic as unknown as Record<string, unknown>)
+        if (this.piClient) {
+          try {
+            const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
+            const sessionParams: Record<string, unknown> = { kind: data.agentType, topicId: topic.id }
+            if (data.agentType === 'programming') sessionParams.programming = data.programming
+            if (sopTemplate) {
+              sessionParams.general = {
+                systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
+                initialPlan: sopTemplate.plan_template ?? undefined,
+                initialTodos: sopTemplate.todos_template_json ? JSON.parse(sopTemplate.todos_template_json) : undefined,
+              }
+              sessionParams.workflowMode = sopTemplate.workflow_mode
+            }
+            const result = await this.piClient.createSession(sessionParams as Parameters<typeof this.piClient.createSession>[0])
+            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+            if (updated) this.broadcast('topic.updated', updated as unknown as Record<string, unknown>)
+          } catch (err) {
+            logger.error({ err, topicId: topic.id }, 'Failed to create PI session')
+            this.broadcast('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
+          }
+        }
+        break
+      }
+
+      case 'topic.delete': {
+        const { topicDeleteSchema } = await import('@agent-chat/protocol')
+        const data = topicDeleteSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.id)
+        if (!topic) break
+        if (topic.kind !== 'normal') {
+          this.broadcast('error', { code: 'LOCKED', message: 'System topics cannot be deleted' })
+          break
+        }
+        await topicRepo.deleteTopic(data.id)
+        this.broadcast('topic.deleted', { id: data.id })
+        if (topic.pi_session_id && this.piClient) {
+          this.piClient.disconnectSession(topic.pi_session_id)
+        }
+        break
+      }
+
+      case 'topic.rename': {
+        const { topicRenameSchema } = await import('@agent-chat/protocol')
+        const data = topicRenameSchema.parse(frame.d)
+        const updated = await topicRepo.updateTopic(data.id, { name: data.name })
+        if (updated) this.broadcast('topic.updated', updated as unknown as Record<string, unknown>)
+        break
+      }
+
+      case 'topic.setModel': {
+        const { topicSetModelSchema } = await import('@agent-chat/protocol')
+        const data = topicSetModelSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.id)
+        if (!topic) break
+        if (topic.pi_session_id && this.piClient) {
+          try {
+            await this.piClient.rpc('setSessionModel', { sessionId: topic.pi_session_id, model: data.model })
+          } catch (err) {
+            logger.warn({ err }, 'Failed to set model on PI')
+          }
+        }
+        const updated = await topicRepo.updateTopic(data.id, { current_model: data.model })
+        if (updated) this.broadcast('topic.updated', updated as unknown as Record<string, unknown>)
+        break
+      }
+
+      case 'cron.sync': {
+        try {
+          const jobs = await cronRepo.listCronJobs()
+          this.sendToClient(ws, 'cron.list', { crons: jobs.map(j => ({
+            cronId: j.id,
+            originTopicId: j.origin_topic_id,
+            cronExpr: j.cron_expr,
+            prompt: j.prompt,
+            status: j.status,
+            nextRunAt: j.next_run_at,
+          })) })
+        } catch (err) {
+          logger.warn({ err }, 'Failed to load cron jobs')
+        }
+        break
+      }
+
       case 'user.message': {
-        // Forward to PI client
         if (this.piClient && this.piSessionId) {
           const d = frame.d as { content: string; topicId: string; mentions?: Array<{ id: string; name: string; downloadUrl: string }> }
           try {
@@ -151,6 +310,7 @@ export class TopicDurableObject extends DurableObject {
         }
         break
       }
+
       case 'user.action': {
         const d = frame.d as { action: string; topicId: string; interactionId?: string }
         if (d.action === 'abort' && this.piClient && this.piSessionId) {
@@ -162,10 +322,7 @@ export class TopicDurableObject extends DurableObject {
         }
         break
       }
-      case 'messages.load': {
-        // Messages are loaded via the global handler since repo access is needed
-        break
-      }
+
       case 'ping': {
         const session = this.sessions.get(ws)
         if (session) session.lastPing = Date.now()
