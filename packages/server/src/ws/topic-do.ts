@@ -2,16 +2,22 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   encodeFrame, decodeFrame, createFrame, type WSFrame,
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
-  topicSetModelSchema,
+  topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
+  topicResumeSchema, userActionSchema,
+  cronPauseSchema, cronDeleteSchema, cronEditSchema,
+  searchQuerySchema,
 } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
+import { routePiEvents } from '../pi/event-router'
 import { logger } from '../logger'
 import { initDb } from '../db/migrate'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as sopRepo from '../db/repos/sop_template.repo'
 import * as cronRepo from '../db/repos/cron.repo'
+import * as artifactRepo from '../db/repos/artifact.repo'
+import * as interactionRepo from '../db/repos/interaction.repo'
 
 interface DOEnv {
   DB: D1Database
@@ -48,18 +54,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     if (this.piClient) return this.piClient
 
     this.piClient = new PiClient(this.config)
-    this.piClient.on('event', (event: Record<string, unknown>) => {
-      const payload = event.payload as Record<string, unknown> | undefined
-      if (!payload) return
-      const kind = payload.kind as string
-      if (kind === 'session.health') {
-        this.broadcastAll('session.health', {
-          topicId: event.sessionId,
-          state: payload.state,
-          lastError: payload.lastError,
-        })
-      }
-    })
+    // Route ALL PI events through the event-router (handles DB writes + broadcast)
+    routePiEvents(this.piClient, this)
     return this.piClient
   }
 
@@ -122,16 +118,20 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     logger.error({ error }, 'WS client error')
   }
 
+  // ─── Alarm: keep alive while clients are connected ────────────────────────
   async alarm(): Promise<void> {
-    const now = Date.now()
-    for (const ws of this.ctx.getWebSockets()) {
-      const meta = this.ctx.getTags(ws)
-      const lastPing = meta[0] ? Number(meta[0]) : now
-      if (now - lastPing > HEARTBEAT_INTERVAL_MS + 5000) {
-        ws.close(4001, 'Heartbeat timeout')
+    const sockets = this.ctx.getWebSockets()
+    if (sockets.length > 0) {
+      // Send a ping to all connected clients to keep the connection alive
+      for (const ws of sockets) {
+        if (ws.readyState === WebSocket.READY_STATE_OPEN) {
+          try {
+            ws.send(encodeFrame(createFrame('ping' as never, {})))
+          } catch {
+            // ignore send errors; the WS error handler will clean up
+          }
+        }
       }
-    }
-    if (this.ctx.getWebSockets().length > 0) {
       await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS)
     }
   }
@@ -150,6 +150,65 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     }
   }
 
+  // EventBroadcaster interface (used by routePiEvents)
+  broadcast(type: string, data: unknown): void {
+    this.broadcastAll(type, data as Record<string, unknown>)
+  }
+
+  // ─── Cron helpers ─────────────────────────────────────────────────────────
+  private cronJobToPayload(job: { id: string; origin_topic_id: string; cron_expr: string; prompt: string; status: string; next_run_at: number | null }) {
+    return {
+      cronId: job.id,
+      originTopicId: job.origin_topic_id,
+      cronExpr: job.cron_expr,
+      prompt: job.prompt,
+      status: job.status,
+      lastRunAt: undefined as number | undefined,
+      nextRunAt: job.next_run_at ?? undefined,
+    }
+  }
+
+  private async syncCronsFromPi(pi: PiClient): Promise<void> {
+    try {
+      const result = await pi.rpcGlobal('listCrons', {}) as Array<{
+        cronId: string
+        originSessionId: string
+        cronExpr: string
+        prompt: string
+        status: string
+        lastRunAt?: number
+        nextRunAt?: number
+      }>
+      for (const c of result) {
+        const topics = await topicRepo.listTopics()
+        const originTopic = topics.find(t => t.pi_session_id === c.originSessionId)
+        const originTopicId = originTopic?.id ?? null
+        const existing = await cronRepo.getCronJobByPiCronId(c.cronId)
+        if (existing) {
+          await cronRepo.updateCronJob(existing.id, {
+            status: c.status as 'active' | 'paused' | 'error',
+            cron_expr: c.cronExpr,
+            prompt: c.prompt,
+            next_run_at: c.nextRunAt,
+          })
+        } else if (originTopicId) {
+          await cronRepo.createCronJob({
+            originTopicId,
+            piCronId: c.cronId,
+            cronExpr: c.cronExpr,
+            prompt: c.prompt,
+            status: c.status as 'active' | 'paused' | 'error',
+            nextRunAt: c.nextRunAt,
+          })
+        } else {
+          logger.warn({ cronId: c.cronId, originSessionId: c.originSessionId }, 'Cron missing origin topic during sync')
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Failed to sync crons from PI')
+    }
+  }
+
   // ─── Frame dispatch ───────────────────────────────────────────────────────
   private async handleClientFrame(ws: WebSocket, frame: WSFrame): Promise<void> {
     this.ensureDb()
@@ -161,7 +220,41 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
 
       case 'topic.select': {
+        const d = frame.d as { topicId: string }
         this.sendTo(ws, 'topic.selected', frame.d)
+
+        // Load artifacts for the selected topic
+        try {
+          if (d.topicId === 'system_artifact_pool') {
+            const artifacts = await artifactRepo.listPoolArtifacts()
+            this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
+              id: a.id, topic_id: a.topic_id, name: a.name, mime: a.mime,
+              size_bytes: a.size_bytes, source: a.source, created_at: a.created_at,
+            })) })
+          } else {
+            const artifacts = await artifactRepo.listArtifactsByTopic(d.topicId)
+            if (artifacts.length > 0) {
+              this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
+                id: a.id, topic_id: a.topic_id, name: a.name, mime: a.mime,
+                size_bytes: a.size_bytes, source: a.source, created_at: a.created_at,
+              })) })
+            }
+          }
+        } catch (err) {
+          logger.warn({ err, topicId: d.topicId }, 'Failed to load artifacts on topic.select')
+        }
+
+        // If selecting cron admin topic, sync crons from PI
+        if (d.topicId === 'system_cron_admin') {
+          const pi = await this.ensurePiClient()
+          if (pi) await this.syncCronsFromPi(pi)
+          try {
+            const jobs = await cronRepo.listCronJobs()
+            this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
+          } catch (err) {
+            logger.warn({ err }, 'Failed to load cron jobs')
+          }
+        }
         break
       }
 
@@ -228,6 +321,23 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'LOCKED', message: 'System topics cannot be deleted' })
           break
         }
+
+        // Handle artifacts based on strategy
+        const artifacts = await artifactRepo.listArtifactsByTopic(data.id)
+        if (artifacts.length > 0) {
+          if (data.artifactStrategy === 'pool') {
+            for (const a of artifacts) {
+              await artifactRepo.updateArtifactTopic(a.id, null)
+              this.broadcastAll('artifact.moved', { id: a.id, fromTopicId: data.id, toTopicId: null })
+            }
+          } else {
+            for (const a of artifacts) {
+              await artifactRepo.deleteArtifact(a.id)
+              this.broadcastAll('artifact.deleted', { id: a.id })
+            }
+          }
+        }
+
         await topicRepo.deleteTopic(data.id)
         this.broadcastAll('topic.deleted', { id: data.id })
         if (topic.pi_session_id) {
@@ -263,26 +373,168 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         break
       }
 
+      case 'topic.detachExtension': {
+        const data = topicDetachExtensionSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.id)
+        if (!topic || !topic.pi_session_id) break
+        const pi = await this.ensurePiClient()
+        if (pi) {
+          try {
+            await pi.rpc('detachExtension', { sessionId: topic.pi_session_id })
+          } catch (err) {
+            logger.warn({ err }, 'Failed to detach extension from PI')
+          }
+        }
+        const updated = await topicRepo.updateTopic(data.id, {
+          agent_type: 'general',
+          history_frozen_at: Date.now(),
+        })
+        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+        break
+      }
+
+      case 'topic.setPlanMode': {
+        const data = topicSetPlanModeSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.id)
+        if (!topic) break
+        if (topic.agent_type !== 'programming') {
+          this.broadcastAll('error', { code: 'INVALID_TOPIC', message: 'Plan mode only applies to programming topics' })
+          break
+        }
+        if (topic.pi_session_id) {
+          const pi = await this.ensurePiClient()
+          if (pi) {
+            try {
+              await pi.rpc('setPlanMode', { sessionId: topic.pi_session_id, planMode: data.planMode })
+            } catch (err) {
+              logger.error({ err, topicId: data.id }, 'Failed to set plan mode on PI')
+              this.broadcastAll('error', { code: 'PI_PLAN_MODE_FAILED', message: 'Failed to set plan mode' })
+              break
+            }
+          }
+        }
+        const updated = await topicRepo.updateTopic(data.id, { plan_mode: data.planMode })
+        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+        break
+      }
+
+      case 'topic.resume': {
+        const data = topicResumeSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.topicId)
+        if (!topic || !topic.pi_session_id) break
+        const pi = await this.ensurePiClient()
+        if (!pi) break
+        if (pi.hasSession(topic.pi_session_id)) break
+        try {
+          await pi.reconnectSession(topic.pi_session_id)
+          logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'PI session resumed')
+        } catch (err) {
+          logger.error({ err, topicId: topic.id }, 'Failed to resume PI session')
+          this.broadcastAll('error', { code: 'PI_RESUME_FAILED', message: 'Failed to resume agent session' })
+        }
+        break
+      }
+
       case 'cron.sync': {
+        const pi = await this.ensurePiClient()
+        if (pi) await this.syncCronsFromPi(pi)
         try {
           const jobs = await cronRepo.listCronJobs()
-          this.sendTo(ws, 'cron.list', { crons: jobs.map(j => ({
-            cronId: j.id,
-            originTopicId: j.origin_topic_id,
-            cronExpr: j.cron_expr,
-            prompt: j.prompt,
-            status: j.status,
-            nextRunAt: j.next_run_at,
-          })) })
+          this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
         } catch (err) {
           logger.warn({ err }, 'Failed to load cron jobs')
         }
         break
       }
 
+      case 'cron.pause': {
+        const data = cronPauseSchema.parse(frame.d)
+        const job = await cronRepo.getCronJob(data.cronId)
+        if (!job) break
+        const pi = await this.ensurePiClient()
+        if (pi) {
+          try {
+            await pi.rpc('pauseCron', { cronId: job.pi_cron_id })
+          } catch (err) {
+            logger.warn({ err }, 'Failed to pause cron on PI')
+          }
+        }
+        const updated = await cronRepo.updateCronJob(data.cronId, { status: 'paused' })
+        if (updated) this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
+        break
+      }
+
+      case 'cron.resume': {
+        // cron.resume re-activates a paused cron — forward to PI
+        const d = frame.d as { cronId: string }
+        const job = await cronRepo.getCronJob(d.cronId)
+        if (!job) break
+        const pi = await this.ensurePiClient()
+        if (pi) {
+          try {
+            await pi.rpc('resumeCron' as never, { cronId: job.pi_cron_id } as never)
+          } catch (err) {
+            logger.warn({ err }, 'Failed to resume cron on PI')
+          }
+        }
+        const updated = await cronRepo.updateCronJob(d.cronId, { status: 'active' })
+        if (updated) this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
+        break
+      }
+
+      case 'cron.delete': {
+        const data = cronDeleteSchema.parse(frame.d)
+        const job = await cronRepo.getCronJob(data.cronId)
+        if (!job) break
+        const pi = await this.ensurePiClient()
+        if (pi) {
+          try {
+            await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
+          } catch (err) {
+            logger.warn({ err }, 'Failed to delete cron on PI')
+          }
+        }
+        await cronRepo.deleteCronJob(data.cronId)
+        const jobs = await cronRepo.listCronJobs()
+        this.broadcastAll('cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
+        break
+      }
+
+      case 'cron.edit': {
+        const data = cronEditSchema.parse(frame.d)
+        const job = await cronRepo.getCronJob(data.cronId)
+        if (!job) break
+        const updated = await cronRepo.updateCronJob(data.cronId, {
+          ...(data.cronExpr ? { cron_expr: data.cronExpr } : {}),
+          ...(data.prompt ? { prompt: data.prompt } : {}),
+        })
+        if (updated) {
+          const pi = await this.ensurePiClient()
+          if (pi) {
+            try {
+              const topic = await topicRepo.getTopic(job.origin_topic_id)
+              if (topic?.pi_session_id) {
+                await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
+                const result = await pi.rpc('createCron', {
+                  originSessionId: topic.pi_session_id,
+                  cronExpr: updated.cron_expr,
+                  prompt: updated.prompt,
+                }) as { cronId: string }
+                if (result.cronId && result.cronId !== job.pi_cron_id) {
+                  await cronRepo.updateCronJob(updated.id, { pi_cron_id: result.cronId })
+                }
+              }
+            } catch (err) {
+              logger.warn({ err }, 'Failed to sync cron edit to PI')
+            }
+          }
+          this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
+        }
+        break
+      }
+
       case 'user.message': {
         const d = frame.d as { content: string; topicId: string; mentions?: Array<{ id: string; name: string; downloadUrl: string }> }
-        // Look up the specific topic's PI session, not the global one
         const topic = await topicRepo.getTopic(d.topicId)
         const sessionId = topic?.pi_session_id
         if (sessionId) {
@@ -303,9 +555,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
 
       case 'user.action': {
-        const d = frame.d as { action: string; topicId: string }
-        if (d.action === 'abort') {
-          const topic = await topicRepo.getTopic(d.topicId)
+        const data = userActionSchema.parse(frame.d)
+
+        if (data.action === 'abort') {
+          const topic = await topicRepo.getTopic(data.topicId)
           if (topic?.pi_session_id) {
             const pi = await this.ensurePiClient()
             if (pi) {
@@ -316,14 +569,70 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               }
             }
           }
+          this.broadcastAll('agent.status', { topicId: data.topicId, state: 'idle' })
+          break
+        }
+
+        // approve / reject interaction
+        if (data.interactionId) {
+          const interaction = await interactionRepo.getInteraction(data.interactionId)
+          if (!interaction || interaction.status !== 'pending') break
+
+          const decision = data.action === 'approve' ? 'approve' : 'reject'
+          await interactionRepo.updateInteraction(data.interactionId, {
+            status: 'resolved',
+            response_json: JSON.stringify({ decision }),
+            resolved_at: Date.now(),
+          })
+
+          const topic = await topicRepo.getTopic(data.topicId)
+          if (topic?.pi_session_id) {
+            const pi = await this.ensurePiClient()
+            if (pi) {
+              try {
+                await pi.rpc('resolveInteraction', {
+                  sessionId: topic.pi_session_id,
+                  interactionId: data.interactionId,
+                  decision,
+                })
+              } catch (err) {
+                logger.warn({ err }, 'Failed to resolve interaction on PI')
+              }
+            }
+          }
+        }
+        break
+      }
+
+      case 'artifact.upload.init': {
+        // R2 uploads not available in DO; return error to requesting client
+        this.sendTo(ws, 'error', {
+          code: 'ARTIFACT_UPLOAD_UNAVAILABLE',
+          message: 'File upload is not available in this version',
+        })
+        break
+      }
+
+      case 'artifact.upload.complete': {
+        // no-op: upload flow not supported
+        break
+      }
+
+      case 'search.query': {
+        try {
+          const data = searchQuerySchema.parse(frame.d)
+          const results = await messageRepo.searchMessages(data.q, data.topicId)
+          logger.info({ query: data.q, count: results.length }, 'Search completed')
+          // Send results back to the requesting client only
+          this.sendTo(ws, 'error', {
+            code: 'SEARCH_RESULTS',
+            message: JSON.stringify(results),
+          })
+        } catch (err) {
+          logger.warn({ err }, 'Search failed')
         }
         break
       }
     }
-  }
-
-  // Keep old broadcast name as alias for external callers (e.g. event-router)
-  broadcast(type: string, data: Record<string, unknown>): void {
-    this.broadcastAll(type, data)
   }
 }
