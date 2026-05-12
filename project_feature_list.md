@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.1.0 |
-| 状态 | UI 视觉升级 + 交互增强 + Turn ID |
+| 当前版本 | v1.2.0 |
+| 状态 | Cloudflare Workers 全链路迁移 |
 | 更新时间 | 2026-05-12 |
 
 ---
@@ -342,7 +342,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-031 |
 | 标题 | SQLite → Cloudflare D1 数据库迁移 |
-| 状态 | 已确认 |
+| 状态 | 已回归 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将后端数据库从 better-sqlite3（本地同步 API）迁移到 Cloudflare D1（异步 API）。包含：1) 6 个 repo 文件（topic/message/artifact/cron/interaction/usage）全部改为 async/await；2) Drizzle ORM 切换到 `drizzle-orm/d1`；3) 数据迁移脚本（旧 SQLite → D1）；4) FTS5 虚拟表兼容性验证。这是本次迁移改动量最大、最易出错的部分，必须优先完成 |
@@ -356,7 +356,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-032 |
 | 标题 | Fastify → Hono 路由迁移 |
-| 状态 | 已确认 |
+| 状态 | 已回归 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将 Node.js Fastify 后端改造为 Cloudflare Workers 兼容的 Hono 应用。包含：1) 重写 `index.ts` 为 Workers 入口（`export default { fetch }`）；2) `/healthz` 迁移到 Hono，返回 D1 连接状态（而非 SQLite 文件大小）；3) 所有 `process.env.*` 替换为 Workers `env.*`；4) 鉴权中间件、CORS、错误响应格式保持一致 |
@@ -370,7 +370,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-033 |
 | 标题 | ws → Durable Objects WebSocket 迁移 |
-| 状态 | 已确认 |
+| 状态 | 已回归 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将 Node.js ws 全局 WsHub 迁移到 Cloudflare Durable Objects（每 Topic 一个 DO 实例）。包含：1) 编写 `TopicDurableObject` 类，管理前端 WS 连接 + PI WS 连接；2) 心跳从 `setInterval` 改为 DO `alarm()` API；3) PI session 冷启动恢复（从 DO Storage 读取 pi_session_id）；4) 广播、消息路由、断线重连逻辑迁移 |
@@ -384,7 +384,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-034 |
 | 标题 | CI/CD Pipeline（GitHub → Cloudflare）+ 本地开发环境迁移 |
-| 状态 | 已确认 |
+| 状态 | 已回归 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 建立 GitHub → Cloudflare 自动部署流水线，并更新本地开发环境。包含：1) 创建 `.github/workflows/deploy.yml`（test → D1 migration → Workers deploy 顺序）；2) Cloudflare Pages 连接 GitHub repo，PR 自动生成 Preview URL；3) 更新 `pnpm dev` 中 server 启动命令为 `wrangler dev --local`（miniflare 模拟 D1/DO） |

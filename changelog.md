@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-05-12 [v1.2.0] — Cloudflare Workers 全链路迁移
+
+### FEAT-031: SQLite → Cloudflare D1 数据库迁移
+- 6 个 repo 文件 (topic/message/artifact/cron/interaction/usage) 全部改为 async/await
+- Drizzle ORM 切换到 drizzle-orm/d1 驱动
+- better-sqlite3 → D1Database shim 用于测试
+- migrate.ts: `setDb(d1)` 单一入口, `getDb()` / `getD1()` 全局访问
+- 15 个 repo 测试全 async
+
+### FEAT-032: Fastify → Hono 路由迁移
+- 重写 `index.ts` → `worker.ts` (Cloudflare Workers 入口)
+- `/healthz` 改为 Hono, 返回 D1 连接状态 (200/503)
+- 所有 `process.env.*` → `env.*` (Cloudflare Workers Env)
+- CORS、鉴权保持一致
+
+### FEAT-033: ws → Durable Objects WebSocket 迁移
+- `WsHub` → `TopicDurableObject` (每 Topic 一个 DO 实例)
+- 心跳从 setInterval → DO `alarm()` API
+- PI session 持久化到 DO Storage (`pi_session_id`)
+- Frontend WS 连接 + PI WS 连接由 DO 管理
+
+### FEAT-034: 本地开发环境 (wrangler.toml + tsconfig)
+- wrangler.toml: D1 binding + DO binding + env vars
+- tsconfig: `types: ["@cloudflare/workers-types"]`
+- `pnpm dev` 支持 `wrangler dev --local`
+
+### 测试基础设施
+- D1Database shim over better-sqlite3 (StmtShim + D1Shim)
+- 所有 102 个服务端测试迁移为 async/await
+- 删除 ws.hub.test.ts (WsHub 已不存在)
+- 修复 broadcast 签名: `(type: string, data: unknown)` 双参数
+
+### 验收
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅ (112 tests: protocol 99 + server 102 + mock-pi 10 已跳过)
+- `pnpm -r build` ✅ (web 前端构建通过)
+
+---
+
 ## 2026-05-12 [v1.1.0] — UI 视觉升级 + 交互增强 + Turn ID
 
 ### FEAT-012: 视觉打磨 + 响应式 + 移动端适配
