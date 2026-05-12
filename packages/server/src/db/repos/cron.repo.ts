@@ -6,14 +6,14 @@ import { ulid } from 'ulid'
 
 // ─── CronJob CRUD ──────────────────────────────────────────────────
 
-export function createCronJob(input: {
+export async function createCronJob(input: {
   originTopicId: string
   piCronId: string
   cronExpr: string
   prompt: string
   status?: CronJob['status']
   nextRunAt?: number | null
-}): CronJob {
+}): Promise<CronJob> {
   const now = Date.now()
   const row = {
     id: ulid(),
@@ -26,12 +26,12 @@ export function createCronJob(input: {
     createdAt: now,
     updatedAt: now,
   }
-  getDb().insert(cronJobs).values(row).run()
+  await getDb().insert(cronJobs).values(row).run()
   return toJobDomain(row)
 }
 
-export function getCronJob(id: string): CronJob | undefined {
-  const rows = getDb()
+export async function getCronJob(id: string): Promise<CronJob | undefined> {
+  const rows = await getDb()
     .select()
     .from(cronJobs)
     .where(eq(cronJobs.id, id))
@@ -39,17 +39,17 @@ export function getCronJob(id: string): CronJob | undefined {
   return rows[0] ? toJobDomain(rows[0]) : undefined
 }
 
-export function listCronJobs(): CronJob[] {
-  const rows = getDb().select().from(cronJobs).all()
+export async function listCronJobs(): Promise<CronJob[]> {
+  const rows = await getDb().select().from(cronJobs).all()
   return rows.map(toJobDomain)
 }
 
-export function updateCronJob(
+export async function updateCronJob(
   id: string,
   data: Partial<
     Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id'>
   >,
-): CronJob | undefined {
+): Promise<CronJob | undefined> {
   const updates: Record<string, unknown> = { updatedAt: Date.now() }
   if (data.status !== undefined) updates.status = data.status
   if (data.next_run_at !== undefined) updates.nextRunAt = data.next_run_at
@@ -57,7 +57,7 @@ export function updateCronJob(
   if (data.prompt !== undefined) updates.prompt = data.prompt
   if (data.pi_cron_id !== undefined) updates.piCronId = data.pi_cron_id
 
-  getDb()
+  await getDb()
     .update(cronJobs)
     .set(updates)
     .where(eq(cronJobs.id, id))
@@ -65,16 +65,17 @@ export function updateCronJob(
   return getCronJob(id)
 }
 
-export function deleteCronJob(id: string): boolean {
-  const result = getDb()
+export async function deleteCronJob(id: string): Promise<boolean> {
+  const result = await getDb()
     .delete(cronJobs)
     .where(eq(cronJobs.id, id))
     .run()
-  return result.changes > 0
+  const meta = result.meta as { rows_written?: number } | undefined
+  return (meta?.rows_written ?? 0) > 0
 }
 
-export function getCronJobByPiCronId(piCronId: string): CronJob | undefined {
-  const rows = getDb()
+export async function getCronJobByPiCronId(piCronId: string): Promise<CronJob | undefined> {
+  const rows = await getDb()
     .select()
     .from(cronJobs)
     .where(eq(cronJobs.piCronId, piCronId))
@@ -84,10 +85,10 @@ export function getCronJobByPiCronId(piCronId: string): CronJob | undefined {
 
 // ─── CronRun CRUD ──────────────────────────────────────────────────
 
-export function createCronRun(input: {
+export async function createCronRun(input: {
   cronId: string
   triggeredAt?: number
-}): CronRun {
+}): Promise<CronRun> {
   const row = {
     id: ulid(),
     cronId: input.cronId,
@@ -96,16 +97,16 @@ export function createCronRun(input: {
     status: 'running' as const,
     resultMessageId: null,
   }
-  getDb().insert(cronRuns).values(row).run()
+  await getDb().insert(cronRuns).values(row).run()
   return toRunDomain(row)
 }
 
-export function updateCronRun(
+export async function updateCronRun(
   id: string,
   data: Partial<
     Pick<CronRun, 'status' | 'finished_at' | 'result_message_id'>
   >,
-): void {
+): Promise<void> {
   const updates: Record<string, unknown> = {}
   if (data.status !== undefined) updates.status = data.status
   if (data.finished_at !== undefined) updates.finishedAt = data.finished_at
@@ -113,7 +114,7 @@ export function updateCronRun(
     updates.resultMessageId = data.result_message_id
 
   if (Object.keys(updates).length > 0) {
-    getDb()
+    await getDb()
       .update(cronRuns)
       .set(updates)
       .where(eq(cronRuns.id, id))
@@ -121,8 +122,8 @@ export function updateCronRun(
   }
 }
 
-export function listCronRuns(cronId: string): CronRun[] {
-  const rows = getDb()
+export async function listCronRuns(cronId: string): Promise<CronRun[]> {
+  const rows = await getDb()
     .select()
     .from(cronRuns)
     .where(eq(cronRuns.cronId, cronId))

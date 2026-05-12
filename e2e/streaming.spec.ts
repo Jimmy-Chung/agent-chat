@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
-const TOKEN = 'test-token'
+const TOKEN = process.env.AGENT_CHAT_TOKEN || 'test-token'
 
 async function authenticate(page: Page) {
   await page.goto('/')

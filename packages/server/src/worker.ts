@@ -1,0 +1,58 @@
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { createConfig, type Env } from './config'
+import { initDb, runMigrations } from './db/migrate'
+import { logger, setLogLevel } from './logger'
+import { seedSystemTopics } from './seed'
+import { initR2 } from './r2/client'
+import { getD1 } from './db/migrate'
+
+let initialized = false
+
+async function initialize(env: Env) {
+  if (initialized) return
+  const config = createConfig(env)
+  setLogLevel(config.logLevel as never)
+  initDb(env.DB)
+  await runMigrations()
+  await seedSystemTopics()
+  await initR2(config)
+  initialized = true
+  logger.info('Worker initialized')
+}
+
+const app = new Hono()
+app.use('*', cors())
+
+app.get('/healthz', async (c) => {
+  try {
+    const d1 = getD1()
+    await d1.prepare('SELECT 1').first()
+    return c.json({ status: 'ok', db: 'connected', timestamp: Date.now() })
+  } catch {
+    return c.json({ status: 'degraded', db: 'disconnected', timestamp: Date.now() }, 503)
+  }
+})
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    await initialize(env)
+
+    const url = new URL(request.url)
+
+    // WebSocket upgrade → route to DO
+    if (url.pathname === '/ws') {
+      const upgradeHeader = request.headers.get('Upgrade')
+      if (upgradeHeader !== 'websocket') {
+        return new Response('Expected Upgrade: websocket', { status: 426 })
+      }
+
+      const topicId = url.searchParams.get('topicId') || 'global'
+      const doId = env.TOPIC_DO.idFromName(topicId)
+      const stub = env.TOPIC_DO.get(doId)
+      return stub.fetch(request)
+    }
+
+    return app.fetch(request)
+  },
+}

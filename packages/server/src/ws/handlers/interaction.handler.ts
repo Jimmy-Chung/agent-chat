@@ -1,18 +1,22 @@
 import type { WSFrame } from '@agent-chat/protocol'
 import { userActionSchema } from '@agent-chat/protocol'
-import type { WsHub } from '../hub'
 import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
 import * as interactionRepo from '../../db/repos/interaction.repo'
 import { logger } from '../../logger'
+import type { EventBroadcaster } from '../../pi/event-router'
 
-export function registerInteractionHandlers(hub: WsHub, pi: PiClient): void {
-  hub.on('client:user.action', async (_conn, frame: WSFrame) => {
+export function registerInteractionHandlers(
+  hub: { on: (event: string, handler: (...args: unknown[]) => void) => void },
+  pi: PiClient,
+  broadcaster: EventBroadcaster,
+): void {
+  hub.on('client:user.action', async (...args: unknown[]) => {
+    const frame = args[1] as WSFrame
     const data = userActionSchema.parse(frame.d)
 
     if (data.action === 'abort') {
-      // Abort current session
-      const topic = topicRepo.getTopic(data.topicId)
+      const topic = await topicRepo.getTopic(data.topicId)
       if (topic?.pi_session_id) {
         try {
           await pi.rpc('abortSession', { sessionId: topic.pi_session_id })
@@ -20,14 +24,12 @@ export function registerInteractionHandlers(hub: WsHub, pi: PiClient): void {
           logger.warn({ err }, 'Failed to abort session on PI')
         }
       }
-      // Broadcast idle so frontend stops showing "aborting" and re-enables input
-      hub.broadcast({ type: 'agent.status', data: { topicId: data.topicId, state: 'idle' } })
+      broadcaster.broadcast('agent.status', { topicId: data.topicId, state: 'idle' })
       return
     }
 
-    // Resolve interaction (approve/reject)
     if (data.interactionId) {
-      const interaction = interactionRepo.getInteraction(data.interactionId)
+      const interaction = await interactionRepo.getInteraction(data.interactionId)
       if (!interaction || interaction.status !== 'pending') return
 
       const decision =
@@ -37,15 +39,13 @@ export function registerInteractionHandlers(hub: WsHub, pi: PiClient): void {
             ? 'reject'
             : 'reject'
 
-      // Update in DB
-      interactionRepo.updateInteraction(data.interactionId, {
+      await interactionRepo.updateInteraction(data.interactionId, {
         status: 'resolved',
         response_json: JSON.stringify({ decision }),
         resolved_at: Date.now(),
       })
 
-      // Forward to PI
-      const topic = topicRepo.getTopic(data.topicId)
+      const topic = await topicRepo.getTopic(data.topicId)
       if (topic?.pi_session_id) {
         try {
           await pi.rpc('resolveInteraction', {

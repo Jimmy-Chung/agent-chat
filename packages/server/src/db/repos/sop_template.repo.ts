@@ -18,7 +18,7 @@ export interface SopTemplate {
   updated_at: number
 }
 
-export function createTemplate(input: {
+export async function createTemplate(input: {
   name: string
   icon?: string
   description?: string
@@ -28,7 +28,7 @@ export function createTemplate(input: {
   todosTemplateJson?: string
   workflowMode?: 'lazy' | 'eager' | 'off'
   builtin?: boolean
-}): SopTemplate {
+}): Promise<SopTemplate> {
   const now = Date.now()
   const row = {
     id: ulid(),
@@ -44,12 +44,12 @@ export function createTemplate(input: {
     createdAt: now,
     updatedAt: now,
   }
-  getDb().insert(sopTemplates).values(row).run()
+  await getDb().insert(sopTemplates).values(row).run()
   return toDomain(row)
 }
 
-export function getTemplate(id: string): SopTemplate | undefined {
-  const rows = getDb()
+export async function getTemplate(id: string): Promise<SopTemplate | undefined> {
+  const rows = await getDb()
     .select()
     .from(sopTemplates)
     .where(eq(sopTemplates.id, id))
@@ -57,19 +57,19 @@ export function getTemplate(id: string): SopTemplate | undefined {
   return rows[0] ? toDomain(rows[0]) : undefined
 }
 
-export function listTemplates(agentType?: string): SopTemplate[] {
+export async function listTemplates(agentType?: string): Promise<SopTemplate[]> {
   const db = getDb()
   const query = db.select().from(sopTemplates)
   const rows = agentType
-    ? query.where(eq(sopTemplates.agentType, agentType)).all()
-    : query.all()
+    ? await query.where(eq(sopTemplates.agentType, agentType)).all()
+    : await query.all()
   return rows.map(toDomain)
 }
 
-export function updateTemplate(
+export async function updateTemplate(
   id: string,
   data: Partial<Pick<SopTemplate, 'name' | 'description' | 'system_prompt_addon' | 'plan_template' | 'todos_template_json' | 'workflow_mode'>>,
-): SopTemplate | undefined {
+): Promise<SopTemplate | undefined> {
   const keyMap: Record<string, string> = {
     name: 'name',
     description: 'description',
@@ -85,18 +85,19 @@ export function updateTemplate(
       set[col] = v
     }
   }
-  getDb().update(sopTemplates).set(set).where(eq(sopTemplates.id, id)).run()
+  await getDb().update(sopTemplates).set(set).where(eq(sopTemplates.id, id)).run()
   return getTemplate(id)
 }
 
-export function deleteTemplate(id: string): boolean {
-  const t = getTemplate(id)
+export async function deleteTemplate(id: string): Promise<boolean> {
+  const t = await getTemplate(id)
   if (t?.builtin) return false
-  const result = getDb()
+  const result = await getDb()
     .delete(sopTemplates)
     .where(eq(sopTemplates.id, id))
     .run()
-  return result.changes > 0
+  const meta = result.meta as { rows_written?: number } | undefined
+  return (meta?.rows_written ?? 0) > 0
 }
 
 function toDomain(row: Record<string, unknown>): SopTemplate {

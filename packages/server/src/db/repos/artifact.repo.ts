@@ -4,7 +4,7 @@ import { artifacts } from '../schema'
 import { getDb } from '../migrate'
 import { ulid } from 'ulid'
 
-export function createArtifact(input: {
+export async function createArtifact(input: {
   id?: string
   topicId?: string | null
   originTopicId?: string | null
@@ -14,7 +14,7 @@ export function createArtifact(input: {
   r2Key: string
   source: Artifact['source']
   metadataJson?: string | null
-}): Artifact {
+}): Promise<Artifact> {
   const row = {
     id: input.id ?? ulid(),
     topicId: input.topicId ?? null,
@@ -27,12 +27,12 @@ export function createArtifact(input: {
     createdAt: Date.now(),
     metadataJson: input.metadataJson ?? null,
   }
-  getDb().insert(artifacts).values(row).run()
+  await getDb().insert(artifacts).values(row).run()
   return toDomain(row)
 }
 
-export function getArtifact(id: string): Artifact | undefined {
-  const rows = getDb()
+export async function getArtifact(id: string): Promise<Artifact | undefined> {
+  const rows = await getDb()
     .select()
     .from(artifacts)
     .where(eq(artifacts.id, id))
@@ -40,8 +40,8 @@ export function getArtifact(id: string): Artifact | undefined {
   return rows[0] ? toDomain(rows[0]) : undefined
 }
 
-export function listArtifactsByTopic(topicId: string): Artifact[] {
-  const rows = getDb()
+export async function listArtifactsByTopic(topicId: string): Promise<Artifact[]> {
+  const rows = await getDb()
     .select()
     .from(artifacts)
     .where(eq(artifacts.topicId, topicId))
@@ -49,8 +49,8 @@ export function listArtifactsByTopic(topicId: string): Artifact[] {
   return rows.map(toDomain)
 }
 
-export function listPoolArtifacts(): Artifact[] {
-  const rows = getDb()
+export async function listPoolArtifacts(): Promise<Artifact[]> {
+  const rows = await getDb()
     .select()
     .from(artifacts)
     .where(isNull(artifacts.topicId))
@@ -58,11 +58,11 @@ export function listPoolArtifacts(): Artifact[] {
   return rows.map(toDomain)
 }
 
-export function updateArtifactTopic(
+export async function updateArtifactTopic(
   id: string,
   topicId: string | null,
-): Artifact | undefined {
-  getDb()
+): Promise<Artifact | undefined> {
+  await getDb()
     .update(artifacts)
     .set({ topicId })
     .where(eq(artifacts.id, id))
@@ -70,12 +70,13 @@ export function updateArtifactTopic(
   return getArtifact(id)
 }
 
-export function deleteArtifact(id: string): boolean {
-  const result = getDb()
+export async function deleteArtifact(id: string): Promise<boolean> {
+  const result = await getDb()
     .delete(artifacts)
     .where(eq(artifacts.id, id))
     .run()
-  return result.changes > 0
+  const meta = result.meta as { rows_written?: number } | undefined
+  return (meta?.rows_written ?? 0) > 0
 }
 
 function toDomain(row: Record<string, unknown>): Artifact {

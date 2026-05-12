@@ -2,15 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as interactionRepo from '../db/repos/interaction.repo'
 import * as topicRepo from '../db/repos/topic.repo'
-import { setDb, resetDb } from '../db/migrate'
 
 describe('InteractionRepo', () => {
   let topicId: string
 
-  beforeAll(() => {
-    const { db, sqlite } = setupTestDb()
-    setDb(db, sqlite)
-    const topic = topicRepo.createTopic({
+  beforeAll(async () => {
+    setupTestDb()
+    const topic = await topicRepo.createTopic({
       name: 'Interaction Test Topic',
       kind: 'normal',
       agentType: 'general',
@@ -19,12 +17,11 @@ describe('InteractionRepo', () => {
   })
 
   afterAll(() => {
-    resetDb()
     teardownTestDb()
   })
 
-  it('should create an interaction', () => {
-    const interaction = interactionRepo.createInteraction({
+  it('should create an interaction', async () => {
+    const interaction = await interactionRepo.createInteraction({
       topicId,
       kind: 'approval',
       prompt: 'Do you want to proceed?',
@@ -40,8 +37,8 @@ describe('InteractionRepo', () => {
     expect(interaction.created_at).toBeGreaterThan(0)
   })
 
-  it('should create an interaction with optionsJson and messageId', () => {
-    const interaction = interactionRepo.createInteraction({
+  it('should create an interaction with optionsJson and messageId', async () => {
+    const interaction = await interactionRepo.createInteraction({
       topicId,
       messageId: 'msg-123',
       kind: 'choice',
@@ -53,26 +50,26 @@ describe('InteractionRepo', () => {
     expect(interaction.options_json).toBe(JSON.stringify(['a', 'b', 'c']))
   })
 
-  it('should get an interaction by id', () => {
-    const created = interactionRepo.createInteraction({
+  it('should get an interaction by id', async () => {
+    const created = await interactionRepo.createInteraction({
       topicId,
       kind: 'approval',
       prompt: 'Get test',
     })
 
-    const found = interactionRepo.getInteraction(created.id)
+    const found = await interactionRepo.getInteraction(created.id)
     expect(found).toBeDefined()
     expect(found!.id).toBe(created.id)
     expect(found!.prompt).toBe('Get test')
   })
 
-  it('should return undefined for non-existent interaction', () => {
-    const found = interactionRepo.getInteraction('nonexistent')
+  it('should return undefined for non-existent interaction', async () => {
+    const found = await interactionRepo.getInteraction('nonexistent')
     expect(found).toBeUndefined()
   })
 
-  it('should update interaction status to resolved', () => {
-    const interaction = interactionRepo.createInteraction({
+  it('should update interaction status to resolved', async () => {
+    const interaction = await interactionRepo.createInteraction({
       topicId,
       kind: 'approval',
       prompt: 'Approve this?',
@@ -80,7 +77,7 @@ describe('InteractionRepo', () => {
     expect(interaction.status).toBe('pending')
 
     const resolvedAt = Date.now()
-    const updated = interactionRepo.updateInteraction(interaction.id, {
+    const updated = await interactionRepo.updateInteraction(interaction.id, {
       status: 'resolved',
       resolved_at: resolvedAt,
     })
@@ -90,14 +87,14 @@ describe('InteractionRepo', () => {
     expect(updated!.resolved_at).toBe(resolvedAt)
   })
 
-  it('should update interaction status to timeout with response', () => {
-    const interaction = interactionRepo.createInteraction({
+  it('should update interaction status to timeout with response', async () => {
+    const interaction = await interactionRepo.createInteraction({
       topicId,
       kind: 'approval',
       prompt: 'Reject this?',
     })
 
-    const updated = interactionRepo.updateInteraction(interaction.id, {
+    const updated = await interactionRepo.updateInteraction(interaction.id, {
       status: 'timeout',
       response_json: JSON.stringify({ reason: 'not needed' }),
       resolved_at: Date.now(),
@@ -108,63 +105,62 @@ describe('InteractionRepo', () => {
     expect(updated!.resolved_at).toBeGreaterThan(0)
   })
 
-  it('should list pending interactions by topic', () => {
-    const topic = topicRepo.createTopic({
+  it('should list pending interactions by topic', async () => {
+    const topic = await topicRepo.createTopic({
       name: 'Pending Interactions Topic',
       kind: 'normal',
       agentType: 'general',
     })
 
-    interactionRepo.createInteraction({
+    await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Pending 1',
     })
-    interactionRepo.createInteraction({
+    await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Pending 2',
     })
-    // Resolve one so it should not appear in pending list
-    const toResolve = interactionRepo.createInteraction({
+    const toResolve = await interactionRepo.createInteraction({
       topicId: topic.id,
       kind: 'approval',
       prompt: 'Will be resolved',
     })
-    interactionRepo.updateInteraction(toResolve.id, {
+    await interactionRepo.updateInteraction(toResolve.id, {
       status: 'resolved',
       resolved_at: Date.now(),
     })
 
-    const pending = interactionRepo.listPendingInteractions(topic.id)
+    const pending = await interactionRepo.listPendingInteractions(topic.id)
     expect(pending.length).toBe(2)
     expect(pending.every((i) => i.status === 'pending')).toBe(true)
   })
 
-  it('should not mix pending interactions across topics', () => {
-    const topicA = topicRepo.createTopic({
+  it('should not mix pending interactions across topics', async () => {
+    const topicA = await topicRepo.createTopic({
       name: 'Topic A',
       kind: 'normal',
       agentType: 'general',
     })
-    const topicB = topicRepo.createTopic({
+    const topicB = await topicRepo.createTopic({
       name: 'Topic B',
       kind: 'normal',
       agentType: 'general',
     })
 
-    interactionRepo.createInteraction({
+    await interactionRepo.createInteraction({
       topicId: topicA.id,
       kind: 'approval',
       prompt: 'For A',
     })
-    interactionRepo.createInteraction({
+    await interactionRepo.createInteraction({
       topicId: topicB.id,
       kind: 'approval',
       prompt: 'For B',
     })
 
-    const pendingA = interactionRepo.listPendingInteractions(topicA.id)
+    const pendingA = await interactionRepo.listPendingInteractions(topicA.id)
     expect(pendingA.length).toBe(1)
     expect(pendingA[0].prompt).toBe('For A')
   })

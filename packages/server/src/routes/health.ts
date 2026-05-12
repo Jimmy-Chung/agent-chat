@@ -1,26 +1,28 @@
-import type { FastifyInstance } from 'fastify'
-import fs from 'node:fs'
-import { config } from '../config'
-import type { PiClient } from '../pi/client'
+import type { Context, Env as HonoEnv } from 'hono'
+import type { D1Database } from '@cloudflare/workers-types'
+import { getD1 } from '../db/migrate'
 
-export function registerHealthRoute(
-  app: FastifyInstance,
-  pi: PiClient,
-): void {
-  app.get('/healthz', async (_req, reply) => {
-    let dbSize = 0
-    try {
-      const stat = fs.statSync(config.dbPath)
-      dbSize = stat.size
-    } catch {
-      // DB file may not exist yet
-    }
+interface HealthEnv extends HonoEnv {
+  Bindings: {
+    DB: D1Database
+  }
+}
 
-    reply.send({
+export async function healthHandler(c: Context<HealthEnv>): Promise<Response> {
+  try {
+    const d1 = getD1()
+    // Verify D1 connectivity with a simple query
+    await d1.prepare('SELECT 1').first()
+    return c.json({
       status: 'ok',
-      pi: pi.isConnected ? 'connected' : 'disconnected',
-      dbSizeBytes: dbSize,
+      db: 'connected',
       timestamp: Date.now(),
     })
-  })
+  } catch {
+    return c.json({
+      status: 'degraded',
+      db: 'disconnected',
+      timestamp: Date.now(),
+    }, 503)
+  }
 }

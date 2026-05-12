@@ -1,0 +1,22 @@
+name = "agent-chat-server"
+main = "src/worker.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "agent-chat"
+database_id = "616c7032-f040-4178-8c04-6f5db71434a1"
+
+[[durable_objects.bindings]]
+name = "TOPIC_DO"
+class_name = "TopicDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TopicDurableObject"]
+
+[vars]
+AGENT_CHAT_TOKEN = "test-token"
+PI_ADAPTER_URL = "wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket"
+PI_ADAPTER_TOKEN = "1234"

@@ -3,15 +3,15 @@ import type { UsageRecord } from '@agent-chat/protocol'
 import { usageRecords } from '../schema'
 import { getDb } from '../migrate'
 
-export function createUsageRecord(input: {
+export async function createUsageRecord(input: {
   topicId?: string | null
   messageId?: string | null
   model: string
   inputTokens: number
   outputTokens: number
   costMicroUsd?: number | null
-}): void {
-  getDb()
+}): Promise<void> {
+  await getDb()
     .insert(usageRecords)
     .values({
       topicId: input.topicId ?? null,
@@ -25,16 +25,16 @@ export function createUsageRecord(input: {
     .run()
 }
 
-export function getUsageByTopic(
+export async function getUsageByTopic(
   topicId: string,
   from?: number,
   to?: number,
-): UsageRecord[] {
+): Promise<UsageRecord[]> {
   const conditions = [eq(usageRecords.topicId, topicId)]
   if (from !== undefined) conditions.push(gte(usageRecords.createdAt, from))
   if (to !== undefined) conditions.push(lte(usageRecords.createdAt, to))
 
-  const rows = getDb()
+  const rows = await getDb()
     .select()
     .from(usageRecords)
     .where(and(...conditions))
@@ -42,21 +42,21 @@ export function getUsageByTopic(
   return rows.map(toDomain)
 }
 
-export function getUsageGlobal(
+export async function getUsageGlobal(
   from?: number,
   to?: number,
-): UsageRecord[] {
+): Promise<UsageRecord[]> {
   const conditions = []
   if (from !== undefined) conditions.push(gte(usageRecords.createdAt, from))
   if (to !== undefined) conditions.push(lte(usageRecords.createdAt, to))
 
   const rows = conditions.length
-    ? getDb()
+    ? await getDb()
         .select()
         .from(usageRecords)
         .where(and(...conditions))
         .all()
-    : getDb().select().from(usageRecords).all()
+    : await getDb().select().from(usageRecords).all()
   return rows.map(toDomain)
 }
 

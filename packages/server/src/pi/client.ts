@@ -1,7 +1,5 @@
-import WebSocket from 'ws'
 import { EventEmitter } from 'node:events'
-import { HttpsProxyAgent } from 'https-proxy-agent'
-import { config } from '../config'
+import type { AppConfig } from '../config'
 import { logger } from '../logger'
 import {
   encodeFrame,
@@ -25,40 +23,38 @@ class PiSessionConn extends EventEmitter {
   private rpcId = 0
   private pending = new Map<number, PendingRpc>()
   readonly sessionId: string
+  private config: AppConfig
 
-  constructor(sessionId: string) {
+  constructor(sessionId: string, config: AppConfig) {
     super()
     this.sessionId = sessionId
+    this.config = config
   }
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const url = config.piAdapterUrl
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${config.piAdapterToken}`,
-      }
-      const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
-      const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined
-
-      this.ws = new WebSocket(url, { headers, agent })
-
-      this.ws.on('open', () => {
+      const url = this.config.piAdapterUrl
+      const ws = new WebSocket(url)
+      ws.addEventListener('open', () => {
+        // Send auth header is not possible with browser WebSocket API
+        // PI Adapter should accept tokenless connections or use URL param
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
         resolve()
       })
 
-      this.ws.on('message', (raw: WebSocket.Data) => {
+      ws.addEventListener('message', (event) => {
         try {
-          const frame = decodeFrame(raw.toString())
+          const frame = decodeFrame(
+            typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data),
+          )
           this.handleFrame(frame)
         } catch (err) {
           logger.warn({ err, sessionId: this.sessionId }, 'Failed to parse PI message')
         }
       })
 
-      this.ws.on('close', (code, reason) => {
-        logger.info({ code, reason: reason.toString(), sessionId: this.sessionId }, 'PI session WS closed')
-        // Emit synthetic session.health disconnected event before closing
+      ws.addEventListener('close', (event) => {
+        logger.info({ code: event.code, reason: event.reason, sessionId: this.sessionId }, 'PI session WS closed')
         this.emit('event', {
           seq: 0,
           sessionId: this.sessionId,
@@ -68,10 +64,12 @@ class PiSessionConn extends EventEmitter {
         this.emit('close')
       })
 
-      this.ws.on('error', (err) => {
+      ws.addEventListener('error', (err) => {
         logger.error({ err, sessionId: this.sessionId }, 'PI session WS error')
-        if (this.ws?.readyState !== WebSocket.OPEN) reject(err)
+        if (ws.readyState !== WebSocket.OPEN) reject(err)
       })
+
+      this.ws = ws
     })
   }
 
@@ -158,6 +156,12 @@ class PiSessionConn extends EventEmitter {
 
 export class PiClient extends EventEmitter {
   private sessions = new Map<string, PiSessionConn>()
+  private config: AppConfig
+
+  constructor(config: AppConfig) {
+    super()
+    this.config = config
+  }
 
   get isConnected(): boolean {
     return this.sessions.size > 0
@@ -167,27 +171,17 @@ export class PiClient extends EventEmitter {
     return this.sessions.has(sessionId)
   }
 
-  setUrl(_url: string): void {
-    // Kept for API compatibility; per-session connections use config directly
-  }
-
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {
-    // Open a new WS connection
     const tempId = `pending-${Date.now()}`
-    const conn = new PiSessionConn(tempId)
+    const conn = new PiSessionConn(tempId, this.config)
     await conn.connect()
 
-    // Send createSession RPC
     const result = await conn.rpc('createSession', params)
     const sessionId = (result as { sessionId: string }).sessionId
-
-    // Update the conn's sessionId
     ;(conn as { sessionId: string }).sessionId = sessionId
 
-    // Attach session to receive events
     await conn.rpc('attachSession', { sessionId })
 
-    // Forward events from this session
     conn.on('event', (event: PIEvent) => {
       this.emit('event', event)
     })
@@ -199,7 +193,6 @@ export class PiClient extends EventEmitter {
     this.sessions.set(sessionId, conn)
     logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session created and connected')
 
-    // Emit session.health connected
     this.emit('event', {
       seq: 0,
       sessionId,
@@ -210,14 +203,11 @@ export class PiClient extends EventEmitter {
     return result as PiRpcMethod['createSession']['result']
   }
 
-  /** Reconnect to an existing PI session (e.g. after server restart) */
   async reconnectSession(sessionId: string): Promise<void> {
     if (this.sessions.has(sessionId)) return
 
-    const conn = new PiSessionConn(sessionId)
+    const conn = new PiSessionConn(sessionId, this.config)
     await conn.connect()
-
-    // Attach to receive events for this existing session
     await conn.rpc('attachSession', { sessionId })
 
     conn.on('event', (event: PIEvent) => {
@@ -231,7 +221,6 @@ export class PiClient extends EventEmitter {
     this.sessions.set(sessionId, conn)
     logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session reconnected')
 
-    // Emit session.health connected
     this.emit('event', {
       seq: 0,
       sessionId,
@@ -244,7 +233,6 @@ export class PiClient extends EventEmitter {
     method: K,
     params: PiRpcMethod[K]['params'],
   ): Promise<PiRpcMethod[K]['result']> {
-    // Find the session connection from params
     const p = params as Record<string, unknown>
     const sessionId = p.sessionId as string | undefined
     if (!sessionId) {
@@ -259,8 +247,6 @@ export class PiClient extends EventEmitter {
     return conn.rpc(method, params)
   }
 
-  /** Send an RPC that doesn't belong to a specific session (e.g. listCrons).
-   *  Uses the first available session connection. */
   async rpcGlobal<K extends keyof PiRpcMethod>(
     method: K,
     params: PiRpcMethod[K]['params'],
@@ -287,5 +273,3 @@ export class PiClient extends EventEmitter {
     this.sessions.clear()
   }
 }
-
-export const piClient = new PiClient()

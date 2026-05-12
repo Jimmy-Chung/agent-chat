@@ -1,18 +1,18 @@
 import { eq, and, desc } from 'drizzle-orm'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import { messages, messageParts } from '../schema'
-import { getDb, getSqlite } from '../migrate'
+import { getDb, getD1 } from '../migrate'
 import { ulid } from 'ulid'
 
 // ─── Message CRUD ──────────────────────────────────────────────────
 
-export function createMessage(input: {
+export async function createMessage(input: {
   topicId: string
   role: Message['role']
   status?: Message['status']
   cronRunId?: string | null
   id?: string
-}): Message {
+}): Promise<Message> {
   const row = {
     id: input.id ?? ulid(),
     topicId: input.topicId,
@@ -23,12 +23,12 @@ export function createMessage(input: {
     stopReason: null,
     cronRunId: input.cronRunId ?? null,
   }
-  getDb().insert(messages).values(row).run()
+  await getDb().insert(messages).values(row).run()
   return toMessageDomain(row)
 }
 
-export function getMessage(id: string): Message | undefined {
-  const rows = getDb()
+export async function getMessage(id: string): Promise<Message | undefined> {
+  const rows = await getDb()
     .select()
     .from(messages)
     .where(eq(messages.id, id))
@@ -36,19 +36,19 @@ export function getMessage(id: string): Message | undefined {
   return rows[0] ? toMessageDomain(rows[0]) : undefined
 }
 
-export function updateMessage(
+export async function updateMessage(
   id: string,
   data: Partial<
     Pick<Message, 'status' | 'finished_at' | 'stop_reason'>
   >,
-): void {
+): Promise<void> {
   const updates: Record<string, unknown> = {}
   if (data.status !== undefined) updates.status = data.status
   if (data.finished_at !== undefined) updates.finishedAt = data.finished_at
   if (data.stop_reason !== undefined) updates.stopReason = data.stop_reason
 
   if (Object.keys(updates).length > 0) {
-    getDb()
+    await getDb()
       .update(messages)
       .set(updates)
       .where(eq(messages.id, id))
@@ -56,11 +56,11 @@ export function updateMessage(
   }
 }
 
-export function listMessagesByTopic(
+export async function listMessagesByTopic(
   topicId: string,
   limit = 100,
-): Message[] {
-  const rows = getDb()
+): Promise<Message[]> {
+  const rows = await getDb()
     .select()
     .from(messages)
     .where(eq(messages.topicId, topicId))
@@ -72,13 +72,12 @@ export function listMessagesByTopic(
 
 // ─── MessagePart CRUD ──────────────────────────────────────────────
 
-export function createMessagePart(input: {
+export async function createMessagePart(input: {
   messageId: string
   kind: MessagePart['kind']
   contentJson: string
-}): MessagePart {
-  // Get next ordinal
-  const existing = getDb()
+}): Promise<MessagePart> {
+  const existing = await getDb()
     .select({ ordinal: messageParts.ordinal })
     .from(messageParts)
     .where(eq(messageParts.messageId, input.messageId))
@@ -92,12 +91,12 @@ export function createMessagePart(input: {
     kind: input.kind,
     contentJson: input.contentJson,
   }
-  getDb().insert(messageParts).values(row).run()
+  await getDb().insert(messageParts).values(row).run()
   return toPartDomain(row)
 }
 
-export function getMessageParts(messageId: string): MessagePart[] {
-  const rows = getDb()
+export async function getMessageParts(messageId: string): Promise<MessagePart[]> {
+  const rows = await getDb()
     .select()
     .from(messageParts)
     .where(eq(messageParts.messageId, messageId))
@@ -106,11 +105,11 @@ export function getMessageParts(messageId: string): MessagePart[] {
   return rows.map(toPartDomain)
 }
 
-export function updateMessagePartContent(
+export async function updateMessagePartContent(
   id: string,
   contentJson: string,
-): void {
-  getDb()
+): Promise<void> {
+  await getDb()
     .update(messageParts)
     .set({ contentJson })
     .where(eq(messageParts.id, id))
@@ -142,7 +141,6 @@ export function bufferPartDelta(
   const existing = pendingParts.get(key)
 
   if (existing) {
-    // Accumulate text/thinking content instead of replacing (PI sends incremental deltas)
     if (kind === 'text' || kind === 'thinking') {
       try {
         const prevData = JSON.parse(existing.contentJson)
@@ -158,48 +156,15 @@ export function bufferPartDelta(
       existing.contentJson = contentJson
     }
   } else {
-    // For accumulative kinds (text/thinking), try to reuse an already-flushed DB part
-    // so we keep accumulating into the same row instead of creating N fragmented rows
-    let reuseId: string | undefined
-    let reuseOrdinal: number
-    let baseContent = ''
-    if (kind === 'text' || kind === 'thinking') {
-      const dbParts = getMessageParts(messageId)
-      const existingPart = dbParts.find((p) => p.kind === kind)
-      if (existingPart) {
-        reuseId = existingPart.id
-        reuseOrdinal = existingPart.ordinal
-        try {
-          const dbData = JSON.parse(existingPart.content_json)
-          if (typeof dbData.content === 'string') {
-            baseContent = dbData.content
-          }
-        } catch { /* use empty base */ }
-      } else {
-        reuseOrdinal = dbParts.length
-      }
-    } else {
-      reuseOrdinal = getMessageParts(messageId).length
-    }
-
-    // Accumulate the incoming delta onto any base content from DB
-    let finalJson = contentJson
-    if (baseContent) {
-      try {
-        const newData = JSON.parse(contentJson)
-        if (typeof newData.content === 'string') {
-          newData.content = baseContent + newData.content
-        }
-        finalJson = JSON.stringify(newData)
-      } catch { /* keep original */ }
-    }
-
+    // For accumulative kinds we need to check DB — but bufferPartDelta is called synchronously
+    // from event-router. We defer the DB check to flushParts.
+    const reuseOrdinal = 0 // placeholder, resolved in flushParts
     pendingParts.set(key, {
-      id: reuseId ?? ulid(),
+      id: ulid(),
       messageId,
-      ordinal: reuseOrdinal!,
+      ordinal: reuseOrdinal,
       kind,
-      contentJson: finalJson,
+      contentJson,
     })
   }
 
@@ -215,7 +180,7 @@ export function bufferPartDelta(
   }
 }
 
-export function flushParts(): void {
+export async function flushParts(): Promise<void> {
   if (flushTimer) {
     clearTimeout(flushTimer)
     flushTimer = null
@@ -227,8 +192,46 @@ export function flushParts(): void {
 
   const db = getDb()
   for (const p of entries) {
-    // Check if part already exists in DB for this message+ordinal
-    const existing = db
+    // For text/thinking kinds, check if a DB part already exists to accumulate into
+    if (p.kind === 'text' || p.kind === 'thinking') {
+      const dbParts = await getMessageParts(p.messageId)
+      const existingPart = dbParts.find((ep) => ep.kind === p.kind)
+      if (existingPart) {
+        // Accumulate with DB content
+        try {
+          const dbData = JSON.parse(existingPart.content_json)
+          const newData = JSON.parse(p.contentJson)
+          if (typeof newData.content === 'string' && typeof dbData.content === 'string') {
+            dbData.content = dbData.content + newData.content
+            p.contentJson = JSON.stringify(dbData)
+          }
+        } catch { /* keep new content */ }
+        p.id = existingPart.id
+        p.ordinal = existingPart.ordinal
+      } else {
+        p.ordinal = dbParts.length
+      }
+    } else {
+      const dbParts = await getMessageParts(p.messageId)
+      // Check if part at this ordinal already exists
+      const existing = await db
+        .select()
+        .from(messageParts)
+        .where(
+          and(
+            eq(messageParts.messageId, p.messageId),
+            eq(messageParts.ordinal, p.ordinal),
+          ),
+        )
+        .get()
+      if (existing) {
+        p.id = existing.id as string
+      } else {
+        p.ordinal = dbParts.length
+      }
+    }
+
+    const existing = await db
       .select()
       .from(messageParts)
       .where(
@@ -240,39 +243,40 @@ export function flushParts(): void {
       .get()
 
     if (existing) {
-      db.update(messageParts)
+      await db.update(messageParts)
         .set({ contentJson: p.contentJson })
-        .where(eq(messageParts.id, existing.id))
+        .where(eq(messageParts.id, existing.id as string))
         .run()
     } else {
-      db.insert(messageParts).values(p).run()
+      await db.insert(messageParts).values(p).run()
     }
   }
 }
 
 // ─── FTS5 ──────────────────────────────────────────────────────────
 
-export function indexMessageForSearch(
+export async function indexMessageForSearch(
   messageId: string,
   topicId: string,
   content: string,
-): void {
-  const sqlite = getSqlite()
-  sqlite
+): Promise<void> {
+  const d1 = getD1()
+  await d1
     .prepare(
       'INSERT OR REPLACE INTO messages_fts(message_id, topic_id, content) VALUES (?, ?, ?)',
     )
-    .run(messageId, topicId, content)
+    .bind(messageId, topicId, content)
+    .run()
 }
 
-export function searchMessages(
+export async function searchMessages(
   query: string,
   topicId?: string,
   limit = 50,
-): Array<{ messageId: string; topicId: string; content: string; rank: number }> {
-  const sqlite = getSqlite()
+): Promise<Array<{ messageId: string; topicId: string; content: string; rank: number }>> {
+  const d1 = getD1()
   if (topicId) {
-    return sqlite
+    const result = await d1
       .prepare(
         `SELECT message_id, topic_id, content, rank
          FROM messages_fts
@@ -280,14 +284,16 @@ export function searchMessages(
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(query, topicId, limit) as Array<{
+      .bind(query, topicId, limit)
+      .all()
+    return (result.results ?? []) as Array<{
       messageId: string
       topicId: string
       content: string
       rank: number
     }>
   }
-  return sqlite
+  const result = await d1
     .prepare(
       `SELECT message_id, topic_id, content, rank
        FROM messages_fts
@@ -295,7 +301,9 @@ export function searchMessages(
        ORDER BY rank
        LIMIT ?`,
     )
-    .all(query, limit) as Array<{
+    .bind(query, limit)
+    .all()
+  return (result.results ?? []) as Array<{
     messageId: string
     topicId: string
     content: string
