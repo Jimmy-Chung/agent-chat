@@ -13,8 +13,6 @@
   },
   "dependencies": {
     "@agent-chat/protocol": "workspace:*",
-    "@aws-sdk/client-s3": "^3.758.0",
-    "@aws-sdk/s3-request-presigner": "^3.758.0",
     "drizzle-orm": "^0.39.3",
     "hono": "^4.3.0",
     "ulid": "^2.3.0",
