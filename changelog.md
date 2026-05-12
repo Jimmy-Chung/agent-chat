@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-12 [v1.2.21] — Workers token 鉴权及心跳修复
+
+### BUG-018: Workers 中 ulid 包报 nodeCrypto.randomBytes is not a function
+- 移除 ulid npm 包，用 Web Crypto API (crypto.getRandomValues) 实现本地 ULID
+- 新增 packages/server/src/lib/ulid.ts，6 个 repo 文件改用本地 import
+
+### BUG-019: Workers token 鉴权失效 + WebSocket 心跳超时断线
+- worker.ts 提升 appConfig 到模块级，/ws 路由前置 token 校验
+- 路由到 DO 前调用 stub.setConfig()，确保 DO 获得正确 config
+- topic-do.ts token 校验移至 acceptWebSocket() 之前，setConfig() 初始化 piClient
+- ws-client.ts 每 20 秒发送 ping frame，防止 DO 心跳超时断线
+
+---
+
 ## 2026-05-12 [v1.2.0] — Cloudflare Workers 全链路迁移
 
 ### FEAT-031: SQLite → Cloudflare D1 数据库迁移

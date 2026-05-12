@@ -30,9 +30,12 @@ const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
 const MAX_RECONNECT_DELAY = 30_000
 const BASE_RECONNECT_DELAY = 1_000
 
+const PING_INTERVAL_MS = 20_000
+
 class WsClient {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private pingTimer: ReturnType<typeof setInterval> | null = null
   private attempt = 0
   private disposed = false
 
@@ -50,6 +53,11 @@ class WsClient {
     this.ws.onopen = () => {
       this.attempt = 0
       useWsStore.getState().setStatus('connected')
+      this.pingTimer = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(encodeFrame(createFrame('ping' as never, {})))
+        }
+      }, PING_INTERVAL_MS)
     }
 
     this.ws.onmessage = (ev) => {
@@ -62,6 +70,10 @@ class WsClient {
     }
 
     this.ws.onclose = () => {
+      if (this.pingTimer) {
+        clearInterval(this.pingTimer)
+        this.pingTimer = null
+      }
       useWsStore.getState().setStatus('disconnected')
       this.scheduleReconnect()
     }
@@ -76,6 +88,10 @@ class WsClient {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
+    }
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer)
+      this.pingTimer = null
     }
     if (this.ws) {
       this.ws.close()
