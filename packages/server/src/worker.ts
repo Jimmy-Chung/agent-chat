@@ -34,25 +34,42 @@ app.get('/healthz', async (c) => {
   }
 })
 
+app.get('/debug', (c) => {
+  return c.json({
+    token: '***',
+    piAdapterToken: '***',
+    piAdapterUrl: 'set',
+    initialized,
+  })
+})
+
 export { TopicDurableObject } from './ws/topic-do'
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    await initialize(env)
+    try {
+      await initialize(env)
+    } catch (e) {
+      return new Response(`init error: ${String(e)}`, { status: 500 })
+    }
 
     const url = new URL(request.url)
 
     // WebSocket upgrade → route to DO
     if (url.pathname === '/ws') {
-      const upgradeHeader = request.headers.get('Upgrade')
-      if (upgradeHeader !== 'websocket') {
-        return new Response('Expected Upgrade: websocket', { status: 426 })
-      }
+      try {
+        const upgradeHeader = request.headers.get('Upgrade')
+        if (upgradeHeader !== 'websocket') {
+          return new Response('Expected Upgrade: websocket', { status: 426 })
+        }
 
-      const topicId = url.searchParams.get('topicId') || 'global'
-      const doId = env.TOPIC_DO.idFromName(topicId)
-      const stub = env.TOPIC_DO.get(doId)
-      return stub.fetch(request)
+        const topicId = url.searchParams.get('topicId') || 'global'
+        const doId = env.TOPIC_DO.idFromName(topicId)
+        const stub = env.TOPIC_DO.get(doId)
+        return stub.fetch(request)
+      } catch (e) {
+        return new Response(`ws error: ${String(e)}`, { status: 500 })
+      }
     }
 
     return app.fetch(request)
