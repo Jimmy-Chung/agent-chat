@@ -40,7 +40,7 @@ export async function runMigrations() {
   // Ensure migration tracking table exists
   await d1.exec(`
     CREATE TABLE IF NOT EXISTS ${MIGRATION_TABLE} (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id INTEGER PRIMARY KEY,
       hash TEXT NOT NULL UNIQUE,
       created_at INTEGER
     );
@@ -154,7 +154,7 @@ export async function runMigrations() {
       );
 
       CREATE TABLE IF NOT EXISTS usage_records (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         topic_id TEXT REFERENCES topics(id) ON DELETE SET NULL,
         message_id TEXT REFERENCES messages(id) ON DELETE SET NULL,
         model TEXT NOT NULL,
@@ -167,7 +167,7 @@ export async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_usage_model_time ON usage_records(model, created_at);
 
       CREATE TABLE IF NOT EXISTS audit_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         ts INTEGER NOT NULL,
         kind TEXT NOT NULL,
         detail_json TEXT
