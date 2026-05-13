@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-13 [v1.2.25] — 修复 Inspector Cron 渲染循环
+
+### BUG-029: Inspector Cron selector 返回新数组导致 React 最大更新深度错误
+- 修复 `useCronStore((s) => s.crons.filter(...))` 每次 render 返回新数组的问题
+- Inspector 和 CronTab 改为订阅原始 `crons`，再用 `useMemo` 按当前话题过滤
+- 本地真实 PI 调试下已验证 `/ws` 101、`createSession/attachSession` 成功
+
+---
+
 ## 2026-05-13 [v1.2.24] — Inspector 与 @ 产物选择器修复
 
 ### BUG-026: Inspector Cron Tab 未按当前话题隔离

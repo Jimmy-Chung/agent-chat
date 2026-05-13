@@ -2,12 +2,27 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.2.24 |
+| 当前版本 | v1.2.25 |
 | 更新时间 | 2026-05-13 |
 
 ---
 
 ## 待修复
+
+### BUG-029: Inspector Cron selector 返回新数组导致 React 最大更新深度错误
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-029 |
+| 标题 | Inspector Cron selector 返回新数组导致 React 最大更新深度错误 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-13 |
+| 修复时间 | 2026-05-13 |
+| 修复版本 | v1.2.25 |
+| 影响模块 | packages/web/src/components/layout/InspectorPanel.tsx |
+| 描述 | v1.2.24 修复 Inspector Cron 按话题隔离后，前端进入页面会报 `Maximum update depth exceeded`，React 检测到组件反复触发 store rerender。 |
+| 根因 | `useCronStore((s) => s.crons.filter(...))` selector 每次调用都会返回新的数组引用；React 19 / Zustand 的 `useSyncExternalStore` 路径下会认为 snapshot 持续变化，导致被动 effect 中反复 rerender。 |
+| 修复方案 | selector 只订阅稳定的原始 `s.crons`；组件内用 `useMemo` 根据 `activeTopicId` / `topicId` 派生过滤后的 Cron 列表。 |
 
 ### BUG-028: 聊天窗 @ 产物池选择器回退到旧 UI
 

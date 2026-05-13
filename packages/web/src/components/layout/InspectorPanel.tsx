@@ -26,8 +26,10 @@ export function InspectorPanel() {
 
   const todos = activeTopicId ? (todosByTopic[activeTopicId] ?? []) : []
   const plan = activeTopicId ? planByTopic[activeTopicId] : null
-  const crons = useCronStore((s) =>
-    activeTopicId ? s.crons.filter((cron) => cron.originTopicId === activeTopicId) : [],
+  const allCrons = useCronStore((s) => s.crons)
+  const crons = useMemo(
+    () => (activeTopicId ? allCrons.filter((cron) => cron.originTopicId === activeTopicId) : []),
+    [activeTopicId, allCrons],
   )
   const hasContent = todos.length > 0 || !!plan || artifacts.length > 0 || crons.length > 0
 
@@ -353,8 +355,10 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
 }
 
 function CronTab({ topicId }: { topicId: string | null }) {
-  const crons = useCronStore((s) =>
-    topicId ? s.crons.filter((cron) => cron.originTopicId === topicId) : [],
+  const allCrons = useCronStore((s) => s.crons)
+  const crons = useMemo(
+    () => (topicId ? allCrons.filter((cron) => cron.originTopicId === topicId) : []),
+    [topicId, allCrons],
   )
   const runs = useCronStore((s) => s.runs)
 
