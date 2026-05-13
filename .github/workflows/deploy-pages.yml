@@ -11,14 +11,15 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: master
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: pnpm
+          package-manager-cache: false
+      - run: corepack enable
+      - run: corepack prepare pnpm@9.15.4 --activate
       - run: pnpm install --frozen-lockfile
       - name: Build Next.js
         run: pnpm -F web build
