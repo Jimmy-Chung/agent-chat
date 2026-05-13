@@ -4,7 +4,7 @@
 |---|---|
 | 当前版本 | v1.2.0 |
 | 状态 | Cloudflare Workers 全链路迁移 |
-| 更新时间 | 2026-05-12 |
+| 更新时间 | 2026-05-13 |
 
 ---
 
@@ -52,7 +52,7 @@
 | 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | 本地 WebSocket 服务模拟 PI Adapter 全部 RPC + 事件流。含 fixture 事件流 (simple-text / tool-use / file-edit / approval / cron-trigger), scenario runner 按 content 关键词匹配 fixture 并按真实节奏推流, Bearer 鉴权 |
+| 描述 | 本地 WebSocket 服务模拟 PI Adapter 全部 RPC + 事件流。含 fixture 事件流 (simple-text / tool-use / file-edit / approval / cron-trigger), scenario runner 按 content 关键词匹配 fixture 并按真实节奏推流, 访问控制模拟 |
 | 验收标准 | mock-pi dev 启动后 healthz 200, ws client 连接 + createSession + sendUserMessage("hi") → 收到 start/delta/end 三条事件 |
 | 测试用例 | `packages/mock-pi/src/__tests__/scenarios.test.ts` (8 tests) |
 | 影响模块 | packages/mock-pi |
@@ -67,7 +67,7 @@
 | 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | Fastify + SQLite (drizzle) + WebSocket Hub + PI Adapter 客户端 + R2 presigned URL + Token 鉴权 + 系统话题 seed。包含: DB schema (users/topics/messages/message_parts/FTS5/artifacts/cron_jobs/cron_runs/interactions/usage_records/audit_log), WS handler (topic/message/interaction/cron/artifact/search), PI client 自动重连 + seq 续传, 流式 delta 100ms/32KB/end batch flush |
+| 描述 | Fastify + SQLite (drizzle) + WebSocket Hub + PI Adapter 客户端 + R2 presigned URL + 访问控制 + 系统话题 seed。包含: DB schema (users/topics/messages/message_parts/FTS5/artifacts/cron_jobs/cron_runs/interactions/usage_records/audit_log), WS handler (topic/message/interaction/cron/artifact/search), PI client 自动重连 + seq 续传, 流式 delta 100ms/32KB/end batch flush |
 | 验收标准 | 三窗口跑 mock-pi + server, `curl localhost:8080/healthz` 200, 单测 + 集成测试覆盖 ≥70% |
 | 测试用例 | `packages/server/src/__tests__/` — 7 files (topic/message/artifact/cron/interaction/usage.repo + ws.hub) |
 | 影响模块 | packages/server |
@@ -82,8 +82,8 @@
 | 状态 | 已回归 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | App Router + 主布局三栏 (TopicSidebar / 对话主区 / RightPanel) + Zustand stores (topics/messages/agent-status/todos/plan/artifacts/interactions/usage) + WS client 自动重连 + seq 续传 + Token 鉴权页。视觉粗糙,不打磨细节,所有值用 CSS 变量占位 |
-| 验收标准 | 三窗口跑 mock-pi + server + web, 浏览器输入 token → sidebar 显示系统话题 → 点击进入 → 看到空 message list |
+| 描述 | App Router + 主布局三栏 (TopicSidebar / 对话主区 / RightPanel) + Zustand stores (topics/messages/agent-status/todos/plan/artifacts/interactions/usage) + WS client 自动重连 + seq 续传 + 访问控制页。视觉粗糙,不打磨细节,所有值用 CSS 变量占位 |
+| 验收标准 | 三窗口跑 mock-pi + server + web, 浏览器完成访问验证 → sidebar 显示系统话题 → 点击进入 → 看到空 message list |
 | 测试用例 | `packages/web/src/__tests__/` — topic-store(8), message-store(14), artifact-store(12), cron-store(7), sop-template-store(3), ui-store(4), ws-store(5), ws-client-dispatch(5), streaming-state(6), streaming-perf(4) |
 | 影响模块 | packages/web |
 | 对应步骤 | Step 5 |
@@ -143,16 +143,28 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 
 | 类别 | 测试 ID | 测试数 | 覆盖范围 |
 |------|---------|--------|----------|
-| 回归测试 | R-001~R-005 | 5 | 鉴权/消息链路/WS隔离/删除清理/断线重连 |
+| 回归测试 | R-001~R-005 | 5 | 访问控制/消息链路/WS隔离/删除清理/断线重连 |
 | D1 异步转换 | DA-001~DA-010 | 10 | repo 层异步化正确性（最高风险） |
 | Durable Objects | DO-001~DO-013 | 13 | WS 连接/断连/重连/心跳/冷启动/并发 |
-| Hono 路由 | HR-001~HR-008 | 8 | HTTP 路由/鉴权/CORS/错误处理/WS升级 |
-| Wrangler 配置 | WR-001~WR-005 | 5 | binding 名称一致性/env 访问/process.env 清零 |
+| Hono 路由 | HR-001~HR-008 | 8 | HTTP 路由/访问控制/CORS/错误处理/WS升级 |
+| Wrangler 配置 | WR-001~WR-005 | 5 | binding 名称一致性/运行时配置访问/Node 环境变量清理 |
 | CF Pages | PG-001~PG-005 | 5 | next-on-pages 构建/Edge Runtime/前端渲染 |
 | CI/CD | CD-001~CD-004 | 4 | 自动部署/PR预览/migration顺序/测试门禁 |
 | 性能基准 | P-001~P-005 | 5 | 延迟/吞吐量基准 |
 
 > 详细测试用例定义见 `.omc/plans/cloudflare-migration-plan.md` §4
+
+### v1.2.x 过程记录
+
+| 小版本 | 日期 | 需求/工程影响 |
+|---|---|---|
+| v1.2.21 | 2026-05-12 | Workers 运行时兼容性修复：本地 ULID、WS 访问控制、DO 配置注入、前端 ping 心跳 |
+| v1.2.22 | 2026-05-12 | D1 FTS5 初始化兼容性修复，确保 Worker 冷启动不因 tokenizer 差异全量 500 |
+| v1.2.23 | 2026-05-12 | 恢复 Workers/DO 发送消息链路到 v1.1.0 语义；PI Adapter 访问凭证改为 Worker 兼容传递方式 |
+| v1.2.24 | 2026-05-13 | 修复 Inspector / artifact / @产物选择器在 Cloudflare 迁移后的回归问题 |
+| v1.2.25 | 2026-05-13 | 修复 Inspector Cron 过滤 selector 导致的 React 渲染循环 |
+| v1.2.26 | 2026-05-13 | GitHub Actions 升级到 Node 24 action runtime，维持 CI/CD 兼容性 |
+| v1.2.27 | 2026-05-13 | 清理公开需求/缺陷文档中的访问凭证、访问控制与环境配置细节 |
 
 ---
 
@@ -227,7 +239,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | ID | FEAT-016 |
 | 标题 | R2 云端产物上传下载 |
 | 状态 | 待讨论 |
-| 版本 | v1.3.0 |
+| 版本 | 待定版本 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 话题级产物上传到 R2 云存储，Agent 可消费产物。包含：1) 用户在话题内上传文件 → R2 存储 → 关联到话题；2) 用户 @产物 发消息 → server 将产物信息（名称、下载 URL）传给 PI Agent → Agent 可读取内容并加工；3) R2 presigned URL 上传、下载链接生成 |
 | 验收标准 | 用户上传文件到 R2 成功、Agent 能读取上传产物内容并加工、下载链接可访问 |
@@ -279,7 +291,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 
 #### 外部依赖
 
-- [external] TODO: PI Agent 新增 `WORKSPACE_ROOT` 环境变量，收到 createSession 时自动在 `{WORKSPACE_ROOT}/{topicId}` 下创建工作目录，`ProgrammingSpec.cwd` 改为可选（不传则自动生成）
+- [external] TODO: PI Agent 新增工作区根目录配置，收到 createSession 时自动在 `{workspaceRoot}/{topicId}` 下创建工作目录，`ProgrammingSpec.cwd` 改为可选（不传则自动生成）
 
 ### FEAT-011: PWA + 部署
 
@@ -287,7 +299,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-011 |
 | 标题 | PWA + 部署 + 优化 |
-| 状态 | 已确认 |
+| 状态 | 部分完成 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | manifest + SW, Cloudflare 部署（前端 Pages + 后端 Workers），Lighthouse PWA/Performance ≥90, iPhone 实测 |
@@ -295,7 +307,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 测试用例 | 详细测试用例见 `.omc/plans/cloudflare-migration-plan.md`（HR-001~008, DO-001~013, P-001~005）；下方为概要 |
 | 影响模块 | web, 部署配置 |
 | 对应步骤 | 设计文档 Phase 6 |
-| 备注 | 与 Cloudflare 全链路部署统一规划 |
+| 备注 | Cloudflare 部署部分已完成：Workers、Pages、CI/CD 已成功部署。PWA 本体未完成：源码中未发现 manifest、service worker 注册或 next-pwa 配置；当前只有基础 metadata / theme-color。 |
 
 #### FEAT-011 测试用例
 
@@ -307,7 +319,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---------|----------|----------|
 | HR-001 | 所有 HTTP 路由可用 | GET/POST/PUT/DELETE 路由均正常响应 |
 | HR-002 | 健康检查端点 | /healthz 返回 200 |
-| HR-003 | 认证中间件 | 无 token 请求返回 401 |
+| HR-003 | 访问控制中间件 | 未授权请求返回 401 |
 | HR-004 | CORS 配置正确 | 跨域请求正常处理 |
 | HR-005 | 错误响应格式 | 错误返回统一 JSON 格式 |
 
@@ -359,7 +371,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 状态 | 已回归 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
-| 描述 | 将 Node.js Fastify 后端改造为 Cloudflare Workers 兼容的 Hono 应用。包含：1) 重写 `index.ts` 为 Workers 入口（`export default { fetch }`）；2) `/healthz` 迁移到 Hono，返回 D1 连接状态（而非 SQLite 文件大小）；3) 所有 `process.env.*` 替换为 Workers `env.*`；4) 鉴权中间件、CORS、错误响应格式保持一致 |
+| 描述 | 将 Node.js Fastify 后端改造为 Cloudflare Workers 兼容的 Hono 应用。包含：1) 重写 `index.ts` 为 Workers 入口；2) `/healthz` 迁移到 Hono，返回 D1 连接状态（而非 SQLite 文件大小）；3) Node 环境变量访问替换为 Workers 运行时配置访问；4) 访问控制中间件、CORS、错误响应格式保持一致 |
 | 验收标准 | HR-001~HR-008 全绿；`grep -r "process\.env" packages/server/src` 结果为空 |
 | 测试用例 | HR-001~HR-008（见 `.omc/plans/cloudflare-migration-plan.md` §4.5） |
 | 影响模块 | packages/server/src/index.ts, config.ts, routes/health.ts |
@@ -401,8 +413,8 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 状态 | 已回归 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-09 |
-| 描述 | 替换占位 design tokens 为设计稿最终值, Liquid Glass 工具类, 响应式断点。设计稿已喂入，token/globals.css/核心组件已改造完成。移动端和交互增强拆到 FEAT-019 ~ FEAT-023 |
-| 验收标准 | 桌面端三栏 Liquid Glass 视觉与设计稿一致，CSS 变量覆盖全部 design tokens |
+| 描述 | 替换占位设计变量为设计稿最终值, Liquid Glass 工具类, 响应式断点。设计稿已喂入，设计变量/globals.css/核心组件已改造完成。移动端和交互增强拆到 FEAT-019 ~ FEAT-023 |
+| 验收标准 | 桌面端三栏 Liquid Glass 视觉与设计稿一致，CSS 变量覆盖全部设计变量 |
 | 测试用例 | TBD |
 | 影响模块 | packages/web |
 | 对应步骤 | autopilot-execution-plan.md Step 8 |
@@ -657,14 +669,17 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 
 ### E4: usage.delta 事件上报
 - **状态**: 待改
+- **版本**: 待定版本
 - **要求**: 每次 `message.end` 后发送 `{ kind: 'usage.delta', messageId, model, inputTokens, outputTokens, cacheReadTokens?, cacheCreateTokens? }`
 
-### E5: WORKSPACE_ROOT 环境变量 (FEAT-010 外部依赖)
+### E5: 工作区根目录配置 (FEAT-010 外部依赖)
 - **状态**: 已完成 (PI v1.1.0 C15)
-- **要求**: 收到 `createSession` 时自动在 `{WORKSPACE_ROOT}/{topicId}` 创建工作目录
+- **版本**: 待定版本
+- **要求**: 收到 `createSession` 时自动在 `{workspaceRoot}/{topicId}` 创建工作目录
 
 ### E6: Turn ID — 每轮 assistant 工作聚合标识
 - **状态**: 待改 (PI v1.2.0 C19, 本系统 FEAT-028)
+- **版本**: 待定版本
 - **要求**: 详见 `.omc/plans/pi-agent-requirements.md` §2 v1.2.0 C19 + 本文件 FEAT-028
 
 ### 其他已有外部需求
