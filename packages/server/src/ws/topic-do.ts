@@ -256,15 +256,17 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           if (d.topicId === 'system_artifact_pool') {
             const artifacts = await artifactRepo.listPoolArtifacts()
             this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
-              id: a.id, topic_id: a.topic_id, name: a.name, mime: a.mime,
-              size_bytes: a.size_bytes, source: a.source, created_at: a.created_at,
+              id: a.id, topic_id: a.topic_id, origin_topic_id: a.origin_topic_id,
+              name: a.name, mime: a.mime, size_bytes: a.size_bytes,
+              source: a.source, created_at: a.created_at, metadata_json: a.metadata_json,
             })) })
           } else {
             const artifacts = await artifactRepo.listArtifactsByTopic(d.topicId)
             if (artifacts.length > 0) {
               this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
-                id: a.id, topic_id: a.topic_id, name: a.name, mime: a.mime,
-                size_bytes: a.size_bytes, source: a.source, created_at: a.created_at,
+                id: a.id, topic_id: a.topic_id, origin_topic_id: a.origin_topic_id,
+                name: a.name, mime: a.mime, size_bytes: a.size_bytes,
+                source: a.source, created_at: a.created_at, metadata_json: a.metadata_json,
               })) })
             }
           }

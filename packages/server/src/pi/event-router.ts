@@ -278,6 +278,16 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
     }
 
     case 'artifact.created': {
+      logger.info(
+        {
+          artifactId: payload.artifactId,
+          name: payload.name,
+          metadata: payload.metadata,
+          sessionId,
+          topicId,
+        },
+        'PI artifact.created payload received',
+      )
       if (await artifactRepo.getArtifact(payload.artifactId)) break
       const artifact = await artifactRepo.createArtifact({
         id: payload.artifactId,
@@ -295,11 +305,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
       hub.broadcast('artifact.added', {
         id: artifact.id,
         topic_id: artifact.topic_id,
+        origin_topic_id: artifact.origin_topic_id,
         name: artifact.name,
         mime: artifact.mime,
         size_bytes: artifact.size_bytes,
         source: artifact.source,
         created_at: artifact.created_at,
+        metadata_json: artifact.metadata_json,
       })
       break
     }

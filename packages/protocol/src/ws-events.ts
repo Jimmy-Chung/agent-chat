@@ -24,11 +24,13 @@ const topicSchema = z.object({
 const artifactSchema = z.object({
   id: z.string(),
   topic_id: z.string().nullable(),
+  origin_topic_id: z.string().nullable().optional(),
   name: z.string(),
   mime: z.string().nullable(),
   size_bytes: z.number().nullable(),
   source: z.enum(['generated', 'uploaded']),
   created_at: z.number(),
+  metadata_json: z.string().nullable().optional(),
 })
 
 // ─── Server → Client events ───────────────────────────────────────

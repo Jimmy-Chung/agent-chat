@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-05-13 [v1.2.24] — Inspector 与 @ 产物选择器修复
+
+### BUG-026: Inspector Cron Tab 未按当前话题隔离
+- 右侧 Inspector 的 Cron Tab 改为只展示当前话题 `originTopicId` 对应的定时任务
+- Cron tab 计数和折叠状态也按当前话题计算
+
+### BUG-027: artifact.created 的 metadata.path 在 server → IM 链路丢失
+- `artifact.added` / `artifact.list` 透传 `metadata_json` 和 `origin_topic_id`
+- 前端 artifact store 保存 `metadata_json`，Inspector / 产物池视图优先展示 `metadata.path`
+- server 收到 `artifact.created` 时记录安全摘要日志，便于对比 adapter payload
+
+### BUG-028: 聊天窗 @ 产物池选择器回退到旧 UI
+- `TopicPanel` 改为引用新版 `@/components/chat/MessageInput`
+- 恢复新版 @ 产物选择器宽面板、当前话题 / 产物池 tab、搜索 / 类型筛选和键盘提示
+
+---
+
 ## 2026-05-12 [v1.2.23] — 修复 Workers 发送消息链路
 
 ### BUG-024: Workers PI Adapter 鉴权 token 丢失

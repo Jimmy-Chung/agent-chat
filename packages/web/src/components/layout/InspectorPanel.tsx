@@ -26,7 +26,10 @@ export function InspectorPanel() {
 
   const todos = activeTopicId ? (todosByTopic[activeTopicId] ?? []) : []
   const plan = activeTopicId ? planByTopic[activeTopicId] : null
-  const hasContent = todos.length > 0 || !!plan || artifacts.length > 0
+  const crons = useCronStore((s) =>
+    activeTopicId ? s.crons.filter((cron) => cron.originTopicId === activeTopicId) : [],
+  )
+  const hasContent = todos.length > 0 || !!plan || artifacts.length > 0 || crons.length > 0
 
   if (inspectorCollapsed && !hasContent) {
     return (
@@ -82,7 +85,7 @@ export function InspectorPanel() {
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4" /><path d="M12 11v10" /></svg>
           Artifacts
         </TabBtn>
-        <TabBtn active={tab === 'cron'} onClick={() => setTab('cron')}>
+        <TabBtn active={tab === 'cron'} onClick={() => setTab('cron')} count={crons.length}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="7" /><path d="M12 9v4l2.5 2" /></svg>
           Cron
         </TabBtn>
@@ -100,7 +103,7 @@ export function InspectorPanel() {
         {tab === 'todo' && <TodoTab todos={todos} />}
         {tab === 'plan' && <PlanTab plan={plan} />}
         {tab === 'artifacts' && <ArtifactsTab artifacts={artifacts} />}
-        {tab === 'cron' && <CronTab />}
+        {tab === 'cron' && <CronTab topicId={activeTopicId} />}
       </div>
     </div>
   )
@@ -331,6 +334,11 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
             <span className="text-xs" style={{ color: 'var(--fg-dim)' }}>{mimeIcon(a.mime)}</span>
             <span className="truncate text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{a.name}</span>
           </div>
+          {artifactPath(a) && (
+            <div className="mt-1.5 truncate text-[11px]" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>
+              {artifactPath(a)}
+            </div>
+          )}
           <div className="mt-1.5 flex items-center gap-3">
             {a.mime && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{a.mime}</span>}
             {a.size_bytes != null && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{formatSize(a.size_bytes)}</span>}
@@ -344,13 +352,15 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
   )
 }
 
-function CronTab() {
-  const crons = useCronStore((s) => s.crons)
+function CronTab({ topicId }: { topicId: string | null }) {
+  const crons = useCronStore((s) =>
+    topicId ? s.crons.filter((cron) => cron.originTopicId === topicId) : [],
+  )
   const runs = useCronStore((s) => s.runs)
 
   useEffect(() => {
     getWsClient().send({ type: 'cron.sync', data: {} })
-  }, [])
+  }, [topicId])
 
   if (crons.length === 0) {
     return (
@@ -382,6 +392,16 @@ function CronTab() {
       })}
     </div>
   )
+}
+
+function artifactPath(artifact: import('@agent-chat/protocol').Artifact): string | null {
+  if (!artifact.metadata_json) return null
+  try {
+    const metadata = JSON.parse(artifact.metadata_json) as { path?: unknown }
+    return typeof metadata.path === 'string' ? metadata.path : null
+  } catch {
+    return null
+  }
 }
 
 function mimeIcon(mime: string | null): string {

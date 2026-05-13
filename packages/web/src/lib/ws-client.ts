@@ -264,14 +264,14 @@ class WsClient {
         useArtifactStore.getState().addArtifact({
           id: a.id as string,
           topic_id: (a.topic_id as string) ?? null,
-          origin_topic_id: null,
+          origin_topic_id: (a.origin_topic_id as string) ?? null,
           name: a.name as string,
           mime: (a.mime as string) ?? null,
           size_bytes: (a.size_bytes as number) ?? null,
           r2_key: '',
           source: a.source as 'generated' | 'uploaded',
           created_at: a.created_at as number,
-          metadata_json: null,
+          metadata_json: (a.metadata_json as string) ?? null,
         })
         break
       }
@@ -293,14 +293,14 @@ class WsClient {
         const artifacts = rawList.map((a) => ({
           id: (a as Record<string, unknown>).id as string,
           topic_id: ((a as Record<string, unknown>).topic_id as string) ?? null,
-          origin_topic_id: null,
+          origin_topic_id: ((a as Record<string, unknown>).origin_topic_id as string) ?? null,
           name: (a as Record<string, unknown>).name as string,
           mime: ((a as Record<string, unknown>).mime as string) ?? null,
           size_bytes: ((a as Record<string, unknown>).size_bytes as number) ?? null,
           r2_key: '',
           source: (a as Record<string, unknown>).source as 'generated' | 'uploaded',
           created_at: (a as Record<string, unknown>).created_at as number,
-          metadata_json: null,
+          metadata_json: ((a as Record<string, unknown>).metadata_json as string) ?? null,
         }))
         const activeTopicId = useTopicStore.getState().activeTopicId
         if (activeTopicId === 'system_artifact_pool') {

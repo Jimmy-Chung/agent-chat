@@ -10,8 +10,8 @@ import { useCronStore } from '@/stores/cron-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
 import { useWsStore } from '@/stores/ws-store'
 import { EmptyState } from './EmptyState'
-import { MessageInput } from './MessageInput'
 import { MessageList } from '@/components/chat/MessageList'
+import { MessageInput } from '@/components/chat/MessageInput'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
@@ -584,12 +584,23 @@ function ArtifactPoolView() {
       {poolArtifacts.map((a) => (
         <div key={a.id} className="glass-1 p-3">
           <div className="truncate text-xs font-medium" style={{ color: 'var(--fg-strong)' }}>{a.name}</div>
+          {artifactPath(a) && <div className="mt-1 truncate text-xs" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>{artifactPath(a)}</div>}
           {a.mime && <div className="mt-1 text-xs" style={{ color: 'var(--fg-dim)' }}>{a.mime}</div>}
           {a.size_bytes && <div className="text-xs" style={{ color: 'var(--fg-dim)' }}>{(a.size_bytes / 1024).toFixed(1)} KB</div>}
         </div>
       ))}
     </div>
   )
+}
+
+function artifactPath(artifact: import('@agent-chat/protocol').Artifact): string | null {
+  if (!artifact.metadata_json) return null
+  try {
+    const metadata = JSON.parse(artifact.metadata_json) as { path?: unknown }
+    return typeof metadata.path === 'string' ? metadata.path : null
+  } catch {
+    return null
+  }
 }
 
 function CronAdminView() {

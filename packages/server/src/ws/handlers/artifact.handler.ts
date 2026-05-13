@@ -12,6 +12,7 @@ function artifactToPayload(a: Artifact) {
     size_bytes: a.size_bytes,
     source: a.source,
     created_at: a.created_at,
+    metadata_json: a.metadata_json,
   }
 }
 

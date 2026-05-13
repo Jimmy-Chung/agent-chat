@@ -2,12 +2,58 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.1.0 |
-| 更新时间 | 2026-05-12 |
+| 当前版本 | v1.2.24 |
+| 更新时间 | 2026-05-13 |
 
 ---
 
 ## 待修复
+
+### BUG-028: 聊天窗 @ 产物池选择器回退到旧 UI
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-028 |
+| 标题 | 聊天窗 @ 产物池选择器回退到旧 UI |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-13 |
+| 修复时间 | 2026-05-13 |
+| 修复版本 | v1.2.24 |
+| 影响模块 | packages/web/src/components/layout/TopicPanel.tsx, packages/web/src/components/layout/MessageInput.tsx, packages/web/src/components/chat/MessageInput.tsx |
+| 描述 | 聊天窗口输入 `@` 选择产物池时，UI 回退成旧版窄弹层，只显示简单的“话题产物 / 产物池”列表，而不是新版宽面板 UI。 |
+| 根因 | 项目中存在两套同名 MessageInput：新版位于 `components/chat/MessageInput.tsx`，旧版位于 `components/layout/MessageInput.tsx`；`TopicPanel.tsx` 仍从 `./MessageInput` 引用旧版。 |
+| 修复方案 | `TopicPanel.tsx` 改为引用 `@/components/chat/MessageInput`，恢复新版 @ 产物选择器。 |
+
+### BUG-027: artifact.created 的 metadata.path 在 server → IM 链路丢失
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-027 |
+| 标题 | artifact.created 的 metadata.path 在 server → IM 链路丢失 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-13 |
+| 修复时间 | 2026-05-13 |
+| 修复版本 | v1.2.24 |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/server/src/ws/topic-do.ts, packages/protocol/src/ws-events.ts, packages/web/src/lib/ws-client.ts, packages/web/src/components/layout/InspectorPanel.tsx |
+| 描述 | Adapter 侧 `artifact.created` payload 中 `name=meal.md` 且 `metadata.path=/Users/enjoychan/Desktop/workspace/{topicId}/meal.md`，数据无 corruption；但 IM / 右侧 Inspector 中看到的路径信息异常，怀疑 server 接收后处理或前端渲染链路丢失/误用路径。 |
+| 已确认 | Adapter payload 没有 `filePath` 协议字段，路径只在 `metadata.path`；server `event-router.ts` 创建 artifact 时保存了 `metadataJson`，但广播 `artifact.added` 时未携带 `metadata_json`；`topic.select` 加载 `artifact.list` 时也未携带 `metadata_json`；前端 `ws-client.ts` 对 `artifact.added` / `artifact.list` 均将 `metadata_json` 固定为 `null`。 |
+| 根因 | 初步判断为 server → client artifact payload schema/映射缺少 `metadata_json`，导致前端 Inspector 无法使用 adapter 提供的干净 `metadata.path`，后续展示可能退化为其它不可靠文本来源。仍需在 server 侧增加收到 `artifact.created` 原始 JSON 的安全日志，对比 adapter 发出 payload 与 server 接收 payload。 |
+| 修复方案 | `artifactSchema` 增加 `metadata_json` 字段；`artifact.added` / `artifact.list` 广播透传 `artifact.metadata_json`；前端 `ws-client.ts` 保存 `metadata_json`；Inspector 展示 artifact 路径时优先解析 `metadata_json.path`，文件名仍用 `name`。补充 server/event-router 和前端 artifact dispatch 测试。 |
+
+### BUG-026: Inspector Cron Tab 未按当前话题隔离
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-026 |
+| 标题 | Inspector Cron Tab 未按当前话题隔离 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-13 |
+| 修复时间 | 2026-05-13 |
+| 修复版本 | v1.2.24 |
+| 影响模块 | packages/web/src/components/layout/InspectorPanel.tsx, packages/web/src/stores/cron-store.ts |
+| 描述 | 右侧 Inspector 正常应跟随当前会话/话题展示状态。用户在一个会话中创建多个定时任务后，切换到其它会话仍能在 Inspector Cron Tab 看到这些定时任务。用户怀疑 Todo / Plan 也可能存在类似跨话题状态泄漏，需要一并验证。 |
+| 根因 | 初步排查：Todo / Plan 当前通过 `todosByTopic` / `planByTopic` 按 `activeTopicId` 读取；Cron store 当前是全局 `crons: CronJob[]`，`InspectorPanel` 的 `CronTab` 直接展示全量 crons，未按当前话题过滤。 |
+| 修复方案 | Cron 数据需要按 origin topic / active topic 过滤，或将 cron store 改为按 topic 分组；同时补充 Inspector 状态隔离测试，覆盖切换话题后 Cron / Todo / Plan / Artifacts 的展示边界。 |
 
 ### BUG-019: 定时任务仍在话题内但管理页缺失
 
@@ -15,12 +61,13 @@
 |---|---|
 | ID | BUG-019 |
 | 标题 | 定时任务仍在话题内但管理页缺失 |
-| 状态 | 下个版本 (v1.2.0) |
+| 状态 | 已修复 |
 | 发现时间 | 2026-05-12 |
+| 修复时间 | 2026-05-13 |
 | 影响模块 | 待排查 |
 | 描述 | 用户已设置 3 个定时任务，但当前只有 1 个还能在”定时任务管理”系统话题中查到，另外 2 个在原话题内仍然存在，但管理页缺失 |
-| 根因 | 待排查 |
-| 修复方案 | 待排查 |
+| 根因 | 已解决，待补充修复细节 |
+| 修复方案 | 已解决，待补充修复细节 |
 
 ### BUG-003: 允许创建同名话题
 
