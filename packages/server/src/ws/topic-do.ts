@@ -4,9 +4,9 @@ import {
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
   topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
-  userMessageSchema,
+  userMessageRetrySchema, userMessageSchema,
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
-  searchQuerySchema,
+  searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema,
 } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
@@ -19,9 +19,25 @@ import * as sopRepo from '../db/repos/sop_template.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import { createPendingUserMessage, deliverUserMessage, restoreExistingTopicSession, startAutoDelivery } from './message-delivery'
+import { ARTIFACT_UPLOAD_MAX_BYTES } from '../r2/artifact-access'
+import {
+  artifactToPayload,
+  completeArtifactUpload,
+  errorToRpc,
+  failArtifactUpload,
+  initArtifactDownload,
+  type ArtifactDownloadInitParams,
+  type ArtifactUploadCompleteParams,
+  type ArtifactUploadFailedParams,
+  type ArtifactUploadRequestParams,
+  type PendingUpload,
+  requestArtifactUpload,
+} from './artifact-control'
 
 interface DOEnv {
   DB: D1Database
+  R2?: R2Bucket
 }
 
 const HEARTBEAT_INTERVAL_MS = 30_000
@@ -29,6 +45,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000
 export class TopicDurableObject extends DurableObject<DOEnv> {
   private piClient: PiClient | null = null
   private config: AppConfig | null = null
+  private pendingUploads = new Map<string, PendingUpload>()
 
   // ─── DB init (called on every wake since isolate state resets) ───────────
   private ensureDb(): void {
@@ -57,6 +74,14 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     this.piClient = new PiClient(this.config)
     // Route ALL PI events through the event-router (handles DB writes + broadcast)
     routePiEvents(this.piClient, this)
+    this.piClient.on('rpc', async ({ sessionId, method, params, reply }) => {
+      try {
+        const result = await this.handleAdapterRpc(sessionId, method, params)
+        reply(null, result)
+      } catch (err) {
+        reply(errorToRpc(err))
+      }
+    })
     return this.piClient
   }
 
@@ -72,23 +97,9 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     }
   }
 
-  private async waitForPiSession(topicId: string, pi: PiClient, timeoutMs = 5000): Promise<string | null> {
-    const deadline = Date.now() + timeoutMs
-
-    while (Date.now() < deadline) {
-      const topic = await topicRepo.getTopic(topicId)
-      const sessionId = topic?.pi_session_id ?? null
-      if (sessionId && pi.hasSession(sessionId)) return sessionId
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-
-    const topic = await topicRepo.getTopic(topicId)
-    const sessionId = topic?.pi_session_id ?? null
-    return sessionId && pi.hasSession(sessionId) ? sessionId : null
-  }
-
   // ─── WebSocket handling ───────────────────────────────────────────────────
   async fetch(request: Request): Promise<Response> {
+    await this.ctx.storage.put('baseUrl', new URL(request.url).origin)
     const { pathname } = new URL(request.url)
     if (pathname === '/ws') return this.handleWsUpgrade(request)
     return new Response('Not Found', { status: 404 })
@@ -183,6 +194,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     this.broadcastAll(type, data as Record<string, unknown>)
   }
 
+  private artifactToPayload(artifact: import('@agent-chat/protocol').Artifact): Record<string, unknown> {
+    return artifactToPayload(artifact)
+  }
+
   // ─── Cron helpers ─────────────────────────────────────────────────────────
   private cronJobToPayload(job: { id: string; origin_topic_id: string; cron_expr: string; prompt: string; status: string; next_run_at: number | null }) {
     return {
@@ -237,6 +252,62 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     }
   }
 
+  private async handleAdapterRpc(sessionId: string, method: string, params: unknown): Promise<unknown> {
+    this.ensureDb()
+    await this.restoreConfig()
+    const baseUrl = await this.ctx.storage.get<string>('baseUrl')
+    const rpcParams = this.isRecord(params) ? { sessionId, ...params } : { sessionId }
+
+    switch (method) {
+      case 'artifact.upload.request':
+        return requestArtifactUpload({
+          env: this.env,
+          config: this.config,
+          baseUrl,
+          pendingUploads: this.pendingUploads,
+        }, rpcParams as ArtifactUploadRequestParams)
+
+      case 'artifact.upload.complete': {
+        const { artifact, result } = await completeArtifactUpload({
+          env: this.env,
+          config: this.config,
+          baseUrl,
+          pendingUploads: this.pendingUploads,
+        }, rpcParams as unknown as ArtifactUploadCompleteParams)
+        this.broadcastAll('artifact.added', this.artifactToPayload(artifact))
+        return result
+      }
+
+      case 'artifact.upload.failed': {
+        const { artifact, result } = await failArtifactUpload({
+          env: this.env,
+          config: this.config,
+          baseUrl,
+          pendingUploads: this.pendingUploads,
+        }, rpcParams as ArtifactUploadFailedParams)
+        this.broadcastAll('artifact.added', this.artifactToPayload(artifact))
+        return result
+      }
+
+      case 'artifact.download.init':
+      case 'getArtifactDownloadUrl':
+        return initArtifactDownload({
+          config: this.config,
+          baseUrl,
+        }, rpcParams as ArtifactDownloadInitParams)
+
+      default: {
+        const error = new Error(`Unknown adapter RPC method: ${method}`) as Error & { code: string }
+        error.code = 'method_not_found'
+        throw error
+      }
+    }
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+  }
+
   // ─── Frame dispatch ───────────────────────────────────────────────────────
   private async handleClientFrame(ws: WebSocket, frame: WSFrame): Promise<void> {
     this.ensureDb()
@@ -251,23 +322,24 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const d = frame.d as { topicId: string }
         this.sendTo(ws, 'topic.selected', frame.d)
 
+        void this.ensurePiClient()
+          .then((pi) => {
+            if (!pi) return false
+            return restoreExistingTopicSession(d.topicId, pi)
+          })
+          .catch((err) => {
+            logger.warn({ err, topicId: d.topicId }, 'Failed to restore PI session on topic.select')
+          })
+
         // Load artifacts for the selected topic
         try {
           if (d.topicId === 'system_artifact_pool') {
             const artifacts = await artifactRepo.listPoolArtifacts()
-            this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
-              id: a.id, topic_id: a.topic_id, origin_topic_id: a.origin_topic_id,
-              name: a.name, mime: a.mime, size_bytes: a.size_bytes,
-              source: a.source, created_at: a.created_at, metadata_json: a.metadata_json,
-            })) })
+            this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => this.artifactToPayload(a)) })
           } else {
             const artifacts = await artifactRepo.listArtifactsByTopic(d.topicId)
             if (artifacts.length > 0) {
-              this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => ({
-                id: a.id, topic_id: a.topic_id, origin_topic_id: a.origin_topic_id,
-                name: a.name, mime: a.mime, size_bytes: a.size_bytes,
-                source: a.source, created_at: a.created_at, metadata_json: a.metadata_json,
-              })) })
+              this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => this.artifactToPayload(a)) })
             }
           }
         } catch (err) {
@@ -454,9 +526,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         if (!topic || !topic.pi_session_id) break
         const pi = await this.ensurePiClient()
         if (!pi) break
-        if (pi.hasSession(topic.pi_session_id)) break
         try {
-          await pi.reconnectSession(topic.pi_session_id)
+          await restoreExistingTopicSession(data.topicId, pi)
           logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'PI session resumed')
         } catch (err) {
           logger.error({ err, topicId: topic.id }, 'Failed to resume PI session')
@@ -571,82 +642,53 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           break
         }
 
-        const msg = await messageRepo.createMessage({
+        const msg = await createPendingUserMessage({
           topicId: data.topicId,
-          role: 'user',
-          status: 'done',
-        })
-
-        await messageRepo.createMessagePart({
-          messageId: msg.id,
-          kind: 'text',
-          contentJson: JSON.stringify({ content: data.content }),
-        })
-        await messageRepo.indexMessageForSearch(msg.id, data.topicId, data.content)
-
-        this.broadcastAll('message.start', {
-          topicId: data.topicId,
-          messageId: msg.id,
-          role: 'user',
-        })
-        this.broadcastAll('message.delta', {
-          topicId: data.topicId,
-          messageId: msg.id,
-          part: { kind: 'text', content: data.content },
-        })
-        this.broadcastAll('message.end', {
-          topicId: data.topicId,
-          messageId: msg.id,
-          stopReason: 'end_turn',
+          content: data.content,
+          mentions: data.mentions,
+          clientMessageId: data.clientMessageId,
+          broadcaster: this,
         })
 
         const pi = await this.ensurePiClient()
         if (!pi) break
 
-        let sessionId = topic.pi_session_id
-        if (!sessionId) {
-          logger.info({ topicId: data.topicId }, 'Waiting for PI session before forwarding first message')
-          sessionId = await this.waitForPiSession(data.topicId, pi)
-        } else if (!pi.hasSession(sessionId)) {
-          logger.info({ topicId: data.topicId, sessionId }, 'Stored PI session missing from pool, attempting reconnect before forwarding message')
-          if (!(await this.ensureSession(pi, sessionId))) {
-            this.broadcastAll('error', {
-              code: 'PI_RESUME_FAILED',
-              message: 'Failed to resume agent session. Please create a new topic.',
-            })
-            break
-          }
-        }
+        void startAutoDelivery({
+          topicId: data.topicId,
+          messageId: msg.id,
+          content: data.content,
+          mentions: data.mentions,
+          pi,
+          broadcaster: this,
+          artifactAccess: {
+            baseUrl: await this.ctx.storage.get<string>('baseUrl') ?? '',
+            tokenSecret: this.config?.artifactTokenSecret ?? '',
+          },
+          manual: false,
+        })
+        break
+      }
 
-        if (!sessionId) {
-          logger.warn({ topicId: data.topicId }, 'Topic has no PI session after waiting, skipping sendUserMessage')
-          this.broadcastAll('error', {
-            code: 'NO_PI_SESSION',
-            message: 'This topic has no agent session. Please create a new topic.',
-          })
-          break
-        }
+      case 'user.message.retry': {
+        const data = userMessageRetrySchema.parse(frame.d)
+        const parts = await messageRepo.getMessageParts(data.messageId)
+        const textPart = parts.find((part) => part.kind === 'text')
+        const content = textPart ? parseTextContent(textPart.content_json) : ''
+        const pi = await this.ensurePiClient()
+        if (!pi || !content) break
 
-        try {
-          await pi.rpc('sendUserMessage', {
-            sessionId,
-            content: data.content,
-            mentionedArtifacts: data.mentions?.map(m => ({
-              id: m.id,
-              name: m.name,
-              downloadUrl: m.downloadUrl ?? '',
-            })),
-          })
-        } catch (err) {
-          logger.error({ err, topicId: data.topicId }, 'Failed to send user message to PI')
-          const message = err instanceof Error ? err.message : String(err)
-          if (!message.includes('RPC timeout: sendUserMessage')) {
-            this.broadcastAll('error', {
-              code: 'PI_UNAVAILABLE',
-              message: 'Agent session is not available. Please create a new topic.',
-            })
-          }
-        }
+        await deliverUserMessage({
+          topicId: data.topicId,
+          messageId: data.messageId,
+          content,
+          pi,
+          broadcaster: this,
+          artifactAccess: {
+            baseUrl: await this.ctx.storage.get<string>('baseUrl') ?? '',
+            tokenSecret: this.config?.artifactTokenSecret ?? '',
+          },
+          manual: true,
+        })
         break
       }
 
@@ -701,16 +743,81 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
 
       case 'artifact.upload.init': {
-        // R2 uploads not available in DO; return error to requesting client
-        this.sendTo(ws, 'error', {
-          code: 'ARTIFACT_UPLOAD_UNAVAILABLE',
-          message: 'File upload is not available in this version',
+        const data = artifactUploadInitSchema.parse(frame.d)
+        await this.restoreConfig()
+        const baseUrl = await this.ctx.storage.get<string>('baseUrl')
+        if (!this.env.R2 || !this.config || !baseUrl) {
+          this.sendTo(ws, 'error', {
+            code: 'ARTIFACT_UPLOAD_UNAVAILABLE',
+            message: 'File upload is not available in this version',
+          })
+          break
+        }
+        if (data.sizeBytes > ARTIFACT_UPLOAD_MAX_BYTES) {
+          this.sendTo(ws, 'error', {
+            code: 'ARTIFACT_UPLOAD_TOO_LARGE',
+            message: `File upload limit is ${Math.floor(ARTIFACT_UPLOAD_MAX_BYTES / 1024 / 1024)} MB`,
+          })
+          break
+        }
+
+        const result = await requestArtifactUpload({
+          env: this.env,
+          config: this.config,
+          baseUrl,
+          pendingUploads: this.pendingUploads,
+        }, {
+          name: data.name,
+          mime: data.mime,
+          sizeBytes: data.sizeBytes,
+          topicId: data.topicId,
+          source: 'uploaded',
+          metadata: { uploadedVia: 'agent-chat' },
+        })
+        this.sendTo(ws, 'artifact.upload.ready', {
+          uploadId: result.uploadId,
+          uploadUrl: result.uploadUrl,
+          method: result.method,
+          expiresAt: result.expiresAt,
+          maxBytes: result.maxBytes,
         })
         break
       }
 
       case 'artifact.upload.complete': {
-        // no-op: upload flow not supported
+        const data = artifactUploadCompleteSchema.parse(frame.d)
+        const { artifact } = await completeArtifactUpload({
+          env: this.env,
+          config: this.config,
+          baseUrl: await this.ctx.storage.get<string>('baseUrl'),
+          pendingUploads: this.pendingUploads,
+        }, {
+          uploadId: data.uploadId,
+          topicId: data.topicId,
+          metadata: { uploadedVia: 'agent-chat' },
+        })
+        this.broadcastAll('artifact.added', this.artifactToPayload(artifact))
+        break
+      }
+
+      case 'artifact.download.init': {
+        const data = artifactDownloadInitSchema.parse(frame.d)
+        await this.restoreConfig()
+        const baseUrl = await this.ctx.storage.get<string>('baseUrl')
+        try {
+          const result = await initArtifactDownload({
+            config: this.config,
+            baseUrl,
+          }, {
+            artifactId: data.artifactId,
+          })
+          this.sendTo(ws, 'artifact.download.ready', result)
+        } catch {
+          this.sendTo(ws, 'error', {
+            code: 'ARTIFACT_DOWNLOAD_UNAVAILABLE',
+            message: 'Artifact download is not available',
+          })
+        }
         break
       }
 
@@ -730,5 +837,14 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         break
       }
     }
+  }
+}
+
+function parseTextContent(contentJson: string): string {
+  try {
+    const parsed = JSON.parse(contentJson) as { content?: string } | string
+    return typeof parsed === 'string' ? parsed : parsed.content ?? ''
+  } catch {
+    return ''
   }
 }

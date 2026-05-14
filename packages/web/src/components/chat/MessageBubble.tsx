@@ -10,6 +10,7 @@ import { UsageBadge } from './UsageBadge'
 import { CronIndicator } from './CronIndicator'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { useMessageStore } from '@/stores/message-store'
+import { getWsClient } from '@/lib/ws-client'
 
 interface MessageBubbleProps {
   message: Message
@@ -65,6 +66,18 @@ export function MessageBubble({
   const showInlineStreamingPulse = message.status === 'streaming' && isLast && !isUser && !hasStreamingContent && visiblePartCount > 0
   const hasVisibleBody = visiblePartCount > 0 || hasStreamingContent
   const showTimestampRow = hovered && hasVisibleBody
+  const showRetryDot = isUser && message.status === 'needs_retry'
+  const showRetryLoading = isUser && message.status === 'retrying'
+
+  const handleRetry = () => {
+    getWsClient().send({
+      type: 'user.message.retry',
+      data: {
+        topicId: message.topic_id,
+        messageId: message.id,
+      },
+    })
+  }
 
   // System messages: inline purple text, no bubble
   if (isSystem) {
@@ -113,6 +126,16 @@ export function MessageBubble({
         {/* Bubble */}
         {hasVisibleBody && (
           <div className="relative">
+            {showRetryDot && (
+              <button
+                type="button"
+                className="message-retry-dot"
+                onClick={handleRetry}
+                aria-label="Retry message"
+                title={`Retry (${message.max_retries - message.retry_count} left)`}
+              />
+            )}
+            {showRetryLoading && <span className="message-retry-loading" />}
             <div
               className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}
               style={{ paddingBottom: showTimestampRow ? (isUser ? 26 : 30) : undefined }}

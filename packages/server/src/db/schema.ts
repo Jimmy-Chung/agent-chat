@@ -57,13 +57,16 @@ export const messages = sqliteTable(
       enum: ['user', 'assistant', 'system', 'cron'],
     }).notNull(),
     status: text('status', {
-      enum: ['streaming', 'done', 'aborted', 'error'],
+      enum: ['streaming', 'done', 'aborted', 'error', 'pending', 'needs_retry', 'retrying'],
     }).notNull(),
     startedAt: integer('started_at').notNull(),
     finishedAt: integer('finished_at'),
     stopReason: text('stop_reason'),
     cronRunId: text('cron_run_id'),
     turnId: text('turn_id'),
+    clientMessageId: text('client_message_id'),
+    retryCount: integer('retry_count').default(0).notNull(),
+    maxRetries: integer('max_retries').default(2).notNull(),
   },
   (table) => [index('idx_messages_topic').on(table.topicId, table.startedAt)],
 )
@@ -100,6 +103,11 @@ export const artifacts = sqliteTable(
     source: text('source', {
       enum: ['generated', 'uploaded'],
     }).notNull(),
+    uploadStatus: text('upload_status', {
+      enum: ['uploaded', 'upload_failed'],
+    }).default('uploaded').notNull(),
+    failureCode: text('failure_code'),
+    failureMessage: text('failure_message'),
     createdAt: integer('created_at').notNull(),
     metadataJson: text('metadata_json'),
   },

@@ -9,10 +9,13 @@ import { ulid } from '../../lib/ulid'
 export async function createMessage(input: {
   topicId: string
   role: Message['role']
-  status?: Message['status']
-  cronRunId?: string | null
-  id?: string
-}): Promise<Message> {
+    status?: Message['status']
+    cronRunId?: string | null
+    id?: string
+    clientMessageId?: string | null
+    retryCount?: number
+    maxRetries?: number
+  }): Promise<Message> {
   const row = {
     id: input.id ?? ulid(),
     topicId: input.topicId,
@@ -22,6 +25,9 @@ export async function createMessage(input: {
     finishedAt: null,
     stopReason: null,
     cronRunId: input.cronRunId ?? null,
+    clientMessageId: input.clientMessageId ?? null,
+    retryCount: input.retryCount ?? 0,
+    maxRetries: input.maxRetries ?? 2,
   }
   await getDb().insert(messages).values(row).run()
   return toMessageDomain(row)
@@ -39,13 +45,15 @@ export async function getMessage(id: string): Promise<Message | undefined> {
 export async function updateMessage(
   id: string,
   data: Partial<
-    Pick<Message, 'status' | 'finished_at' | 'stop_reason'>
+    Pick<Message, 'status' | 'finished_at' | 'stop_reason' | 'retry_count' | 'max_retries'>
   >,
 ): Promise<void> {
   const updates: Record<string, unknown> = {}
   if (data.status !== undefined) updates.status = data.status
   if (data.finished_at !== undefined) updates.finishedAt = data.finished_at
   if (data.stop_reason !== undefined) updates.stopReason = data.stop_reason
+  if (data.retry_count !== undefined) updates.retryCount = data.retry_count
+  if (data.max_retries !== undefined) updates.maxRetries = data.max_retries
 
   if (Object.keys(updates).length > 0) {
     await getDb()
@@ -54,6 +62,16 @@ export async function updateMessage(
       .where(eq(messages.id, id))
       .run()
   }
+}
+
+export async function deleteMessage(id: string): Promise<void> {
+  await getDb().delete(messageParts).where(eq(messageParts.messageId, id)).run()
+  try {
+    await getD1().prepare('DELETE FROM messages_fts WHERE message_id = ?').bind(id).run()
+  } catch {
+    // FTS may be unavailable in some local/test environments.
+  }
+  await getDb().delete(messages).where(eq(messages.id, id)).run()
 }
 
 export async function listMessagesByTopic(
@@ -324,6 +342,9 @@ function toMessageDomain(row: Record<string, unknown>): Message {
     stop_reason: (row.stopReason as string) || null,
     cron_run_id: (row.cronRunId as string) || null,
     turn_id: (row.turnId as string) || null,
+    client_message_id: (row.clientMessageId as string) || null,
+    retry_count: typeof row.retryCount === 'number' ? row.retryCount : 0,
+    max_retries: typeof row.maxRetries === 'number' ? row.maxRetries : 2,
   }
 }
 

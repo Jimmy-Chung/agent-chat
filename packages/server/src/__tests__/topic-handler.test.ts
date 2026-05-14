@@ -347,7 +347,7 @@ describe('Topic handler — topic.resume', () => {
     expect(mockPi.reconnectSession).toHaveBeenCalledWith('sess-resume-1')
   })
 
-  it('skips resume when session already connected', async () => {
+  it('re-attaches when session already connected', async () => {
     const resumeCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.resume')
     const resumeHandler = resumeCall![1]
 
@@ -362,7 +362,7 @@ describe('Topic handler — topic.resume', () => {
 
     await resumeHandler({}, { d: { topicId: topic.id } })
 
-    expect(mockPi.reconnectSession).not.toHaveBeenCalled()
+    expect(mockPi.reconnectSession).toHaveBeenCalledWith('sess-already')
   })
 
   it('broadcasts error when resume fails', async () => {

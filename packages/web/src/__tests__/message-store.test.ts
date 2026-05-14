@@ -13,6 +13,9 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     stop_reason: null,
     cron_run_id: null,
     turn_id: null,
+    client_message_id: null,
+    retry_count: 0,
+    max_retries: 2,
     ...overrides,
   }
 }

@@ -165,14 +165,19 @@ class WsClient {
           id: event.data.messageId,
           topic_id: event.data.topicId,
           role: event.data.role,
-          status: 'streaming',
+          status: event.data.status ?? 'streaming',
           started_at: Date.now(),
           finished_at: null,
           stop_reason: null,
           cron_run_id: null,
           turn_id: (event.data as { turnId?: string }).turnId ?? null,
+          client_message_id: event.data.clientMessageId ?? null,
+          retry_count: event.data.retryCount ?? 0,
+          max_retries: event.data.maxRetries ?? 2,
         })
-        messageStore.startStreaming(event.data.messageId)
+        if (event.data.role === 'assistant') {
+          messageStore.startStreaming(event.data.messageId)
+        }
         break
 
       case 'message.delta': {
@@ -214,8 +219,24 @@ class WsClient {
         })
         break
 
+      case 'message.delivery': {
+        if (event.data.status === 'error') {
+          messageStore.removeMessage(event.data.messageId)
+          break
+        }
+        messageStore.updateMessage(event.data.messageId, {
+          status: event.data.status === 'done' ? 'done' : event.data.status,
+          retry_count: event.data.retryCount,
+          max_retries: event.data.maxRetries,
+        })
+        break
+      }
+
       case 'error':
         console.error('[ws] server error:', event.data)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('agent-chat:error', { detail: event.data }))
+        }
         break
 
       case 'tool.call': {
@@ -269,6 +290,8 @@ class WsClient {
           mime: (a.mime as string) ?? null,
           size_bytes: (a.size_bytes as number) ?? null,
           r2_key: '',
+          download_url: (a.download_url as string) ?? undefined,
+          preview_url: (a.preview_url as string) ?? undefined,
           source: a.source as 'generated' | 'uploaded',
           created_at: a.created_at as number,
           metadata_json: (a.metadata_json as string) ?? null,
@@ -298,6 +321,8 @@ class WsClient {
           mime: ((a as Record<string, unknown>).mime as string) ?? null,
           size_bytes: ((a as Record<string, unknown>).size_bytes as number) ?? null,
           r2_key: '',
+          download_url: ((a as Record<string, unknown>).download_url as string) ?? undefined,
+          preview_url: ((a as Record<string, unknown>).preview_url as string) ?? undefined,
           source: (a as Record<string, unknown>).source as 'generated' | 'uploaded',
           created_at: (a as Record<string, unknown>).created_at as number,
           metadata_json: ((a as Record<string, unknown>).metadata_json as string) ?? null,
@@ -310,6 +335,22 @@ class WsClient {
         }
         break
       }
+
+      case 'artifact.upload.ready':
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('agent-chat:artifact-upload-ready', { detail: event.data }))
+        }
+        break
+
+      case 'artifact.download.ready':
+        useArtifactStore.getState().updateArtifactAccess(event.data.artifactId, {
+          download_url: event.data.downloadUrl,
+          preview_url: event.data.previewUrl ?? event.data.downloadUrl,
+        })
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('agent-chat:artifact-download-ready', { detail: event.data }))
+        }
+        break
 
       case 'cron.list': {
         const crons = (event.data as { crons: unknown[] }).crons.map((c) => {
@@ -433,12 +474,15 @@ class WsClient {
             id: r.id as string,
             topic_id: r.topic_id as string,
             role: r.role as 'user' | 'assistant' | 'system' | 'cron',
-            status: r.status as 'aborted' | 'error' | 'streaming' | 'done',
+            status: r.status as 'aborted' | 'error' | 'streaming' | 'done' | 'pending' | 'needs_retry' | 'retrying',
             started_at: (r.started_at as number) ?? Date.now(),
             finished_at: r.finished_at as number | null,
             stop_reason: r.stop_reason as string | null,
             cron_run_id: r.cron_run_id as string | null,
             turn_id: (r.turn_id as string) ?? null,
+            client_message_id: (r.client_message_id as string) ?? null,
+            retry_count: (r.retry_count as number) ?? 0,
+            max_retries: (r.max_retries as number) ?? 2,
           }
         })
         messageStore.setMessages(d.topicId, msgs)

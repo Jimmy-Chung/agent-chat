@@ -26,6 +26,7 @@ import {
 } from '../index'
 import {
   agentStatusSchema,
+  artifactDownloadInitSchema,
   artifactUploadInitSchema,
   clientEventDataSchemas,
   cronListSchema,
@@ -892,6 +893,34 @@ describe('Client event schemas', () => {
       topicId: 't1',
     })
     expect(result.sizeBytes).toBe(1024)
+  })
+
+  it('parses artifact.upload.ready', () => {
+    const schema = serverEventDataSchemas['artifact.upload.ready']
+    const result = schema.parse({
+      uploadId: 'up1',
+      uploadUrl: 'https://example.test/api/artifacts/upload/key?token=t',
+      method: 'PUT',
+      expiresAt: Date.now() + 60_000,
+      maxBytes: 1024,
+    })
+    expect(result.method).toBe('PUT')
+  })
+
+  it('parses artifact.download.init', () => {
+    const result = artifactDownloadInitSchema.parse({ artifactId: 'a1' })
+    expect(result.artifactId).toBe('a1')
+  })
+
+  it('parses artifact.download.ready', () => {
+    const schema = serverEventDataSchemas['artifact.download.ready']
+    const result = schema.parse({
+      artifactId: 'a1',
+      downloadUrl: 'https://example.test/api/artifacts/download/key?token=t',
+      previewUrl: 'https://example.test/api/artifacts/download/key?token=t',
+      expiresAt: Date.now() + 60_000,
+    })
+    expect(result.artifactId).toBe('a1')
   })
 
   it('parses cron.edit with partial update', () => {

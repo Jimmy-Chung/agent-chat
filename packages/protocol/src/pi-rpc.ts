@@ -42,6 +42,7 @@ export type GeneralSpecRpc = z.infer<typeof generalSpecSchema>
 
 // createSession
 export const createSessionParamsSchema = z.object({
+  sessionId: z.string().optional(),
   kind: z.enum(['programming', 'general']),
   programming: programmingSpecSchema.optional(),
   general: generalSpecSchema.optional(),
@@ -66,6 +67,16 @@ export const attachSessionResultSchema = okResultSchema
 
 export type AttachSessionParams = z.infer<typeof attachSessionParamsSchema>
 export type AttachSessionResult = z.infer<typeof attachSessionResultSchema>
+
+// recreateSession
+export const recreateSessionParamsSchema = createSessionParamsSchema.extend({
+  sessionId: z.string(),
+})
+
+export const recreateSessionResultSchema = createSessionResultSchema
+
+export type RecreateSessionParams = z.infer<typeof recreateSessionParamsSchema>
+export type RecreateSessionResult = z.infer<typeof recreateSessionResultSchema>
 
 // detachExtension
 export const detachExtensionParamsSchema = z.object({
@@ -102,8 +113,10 @@ export type AbortSessionResult = z.infer<typeof abortSessionResultSchema>
 // sendUserMessage
 export const sendUserMessageParamsSchema = z.object({
   sessionId: z.string(),
+  clientMessageId: z.string().optional(),
   content: z.string(),
   mentionedArtifacts: z.array(artifactRefSchema).optional(),
+  streamingBehavior: z.enum(['steer', 'followUp']).optional(),
 })
 
 export const sendUserMessageResultSchema = z.object({
@@ -287,6 +300,10 @@ export type PiRpcMethod = {
   attachSession: {
     params: AttachSessionParams
     result: AttachSessionResult
+  }
+  recreateSession: {
+    params: RecreateSessionParams
+    result: RecreateSessionResult
   }
   detachExtension: {
     params: DetachExtensionParams

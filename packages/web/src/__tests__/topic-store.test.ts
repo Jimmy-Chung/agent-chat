@@ -46,7 +46,6 @@ type TopicActions = {
 function createTopicStore() {
   const requestTopicData = (topicId: string) => {
     sendMock({ type: 'messages.load', data: { topicId } })
-    sendMock({ type: 'topic.resume', data: { topicId } })
     sendMock({ type: 'topic.select', data: { topicId } })
   }
 
@@ -131,8 +130,8 @@ describe('TopicStore', () => {
     useTopicStore.getState().selectTopic('abc-123')
     expect(useTopicStore.getState().activeTopicId).toBe('abc-123')
     expect(sendMock).toHaveBeenCalledWith({ type: 'messages.load', data: { topicId: 'abc-123' } })
-    expect(sendMock).toHaveBeenCalledWith({ type: 'topic.resume', data: { topicId: 'abc-123' } })
     expect(sendMock).toHaveBeenCalledWith({ type: 'topic.select', data: { topicId: 'abc-123' } })
+    expect(sendMock).toHaveBeenCalledTimes(2)
   })
 
   it('setTopics replaces the topics array', () => {
@@ -149,8 +148,8 @@ describe('TopicStore', () => {
 
     expect(useTopicStore.getState().activeTopicId).toBe('t2')
     expect(sendMock).toHaveBeenCalledWith({ type: 'messages.load', data: { topicId: 't2' } })
-    expect(sendMock).toHaveBeenCalledWith({ type: 'topic.resume', data: { topicId: 't2' } })
     expect(sendMock).toHaveBeenCalledWith({ type: 'topic.select', data: { topicId: 't2' } })
+    expect(sendMock).toHaveBeenCalledTimes(2)
   })
 
   it('setTopics clears activeTopicId when restored topic no longer exists', () => {

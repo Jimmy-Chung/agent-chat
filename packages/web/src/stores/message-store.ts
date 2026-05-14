@@ -23,6 +23,7 @@ interface MessageActions {
   fetchMessages: (topicId: string) => void
   addMessage: (topicId: string, msg: Message) => void
   updateMessage: (messageId: string, updates: Partial<Message>) => void
+  removeMessage: (messageId: string) => void
   appendPart: (messageId: string, part: MessagePart) => void
   upsertSnapshotPart: (messageId: string, kind: MessagePart['kind'], contentJson: string, stableId: string) => void
   setMessages: (topicId: string, messages: Message[]) => void
@@ -80,6 +81,23 @@ export const useMessageStore = create<MessageState & MessageActions>()(
             break
           }
         }
+      })
+    },
+
+    removeMessage: (messageId) => {
+      set((s) => {
+        for (const [topicId, topicMessages] of Object.entries(s.byTopic)) {
+          const nextMessages = topicMessages.filter((m) => m.id !== messageId)
+          if (nextMessages.length !== topicMessages.length) {
+            s.byTopic[topicId] = nextMessages
+            break
+          }
+        }
+        delete s.partsByMessage[messageId]
+        delete s.streamingText[messageId]
+        delete s.streamingThinking[messageId]
+        delete s.streamingToolInputs[messageId]
+        delete s.usageByMessage[messageId]
       })
     },
 

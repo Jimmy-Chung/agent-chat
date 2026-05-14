@@ -64,10 +64,10 @@ export async function runMigrations() {
     await execEach(d1, `
       CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, display_name TEXT, default_model TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS topics (id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, agent_type TEXT NOT NULL, pi_session_id TEXT, programming_spec_json TEXT, general_spec_json TEXT, sop_template_id TEXT, current_model TEXT, history_frozen_at INTEGER, plan_mode INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, archived INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, role TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, stop_reason TEXT, cron_run_id TEXT, turn_id TEXT);
+      CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, role TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, stop_reason TEXT, cron_run_id TEXT, turn_id TEXT, client_message_id TEXT, retry_count INTEGER NOT NULL DEFAULT 0, max_retries INTEGER NOT NULL DEFAULT 2);
       CREATE INDEX IF NOT EXISTS idx_messages_topic ON messages(topic_id, started_at);
       CREATE TABLE IF NOT EXISTS message_parts (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, ordinal INTEGER NOT NULL, kind TEXT NOT NULL, content_json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, topic_id TEXT, origin_topic_id TEXT, name TEXT NOT NULL, mime TEXT, size_bytes INTEGER, r2_key TEXT NOT NULL, source TEXT NOT NULL, created_at INTEGER NOT NULL, metadata_json TEXT);
+      CREATE TABLE IF NOT EXISTS artifacts (id TEXT PRIMARY KEY, topic_id TEXT, origin_topic_id TEXT, name TEXT NOT NULL, mime TEXT, size_bytes INTEGER, r2_key TEXT NOT NULL, source TEXT NOT NULL, upload_status TEXT NOT NULL DEFAULT 'uploaded', failure_code TEXT, failure_message TEXT, created_at INTEGER NOT NULL, metadata_json TEXT);
       CREATE INDEX IF NOT EXISTS idx_artifacts_topic ON artifacts(topic_id);
       CREATE TABLE IF NOT EXISTS message_artifact_refs (message_id TEXT NOT NULL, artifact_id TEXT NOT NULL, PRIMARY KEY (message_id, artifact_id));
       CREATE TABLE IF NOT EXISTS cron_jobs (id TEXT PRIMARY KEY, origin_topic_id TEXT NOT NULL, pi_cron_id TEXT NOT NULL, cron_expr TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL, next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -121,6 +121,46 @@ export async function runMigrations() {
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0002_plan_mode')
+    }
+  }
+
+  // Run 0003: add message retry metadata
+  {
+    const hash = '0003_message_retry'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      try { await d1.prepare(`ALTER TABLE messages ADD COLUMN client_message_id TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE messages ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE messages ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 2`).run() } catch { /* column may already exist */ }
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0003_message_retry')
+    }
+  }
+
+  // Run 0004: add artifact upload status metadata
+  {
+    const hash = '0004_artifact_upload_status'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      try { await d1.prepare(`ALTER TABLE artifacts ADD COLUMN upload_status TEXT NOT NULL DEFAULT 'uploaded'`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE artifacts ADD COLUMN failure_code TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE artifacts ADD COLUMN failure_message TEXT`).run() } catch { /* column may already exist */ }
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0004_artifact_upload_status')
     }
   }
 

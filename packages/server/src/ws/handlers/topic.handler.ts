@@ -6,6 +6,7 @@ import * as artifactRepo from '../../db/repos/artifact.repo'
 import * as sopRepo from '../../db/repos/sop_template.repo'
 import { logger } from '../../logger'
 import type { EventBroadcaster } from '../../pi/event-router'
+import { restoreExistingTopicSession } from '../message-delivery'
 
 export function registerTopicHandlers(
   hub: { on: (event: string, handler: (...args: unknown[]) => void) => void },
@@ -190,17 +191,13 @@ export function registerTopicHandlers(
   hub.on('client:topic.resume', async (...args: unknown[]) => {
     const frame = args[1] as WSFrame
     const data = topicResumeSchema.parse(frame.d)
-    const topic = await topicRepo.getTopic(data.topicId)
-    if (!topic || !topic.pi_session_id) return
-
-    if (pi.hasSession(topic.pi_session_id)) return
-
-    try {
-      await pi.reconnectSession(topic.pi_session_id)
-      logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'PI session resumed')
-    } catch (err) {
-      logger.error({ err, topicId: topic.id }, 'Failed to resume PI session')
-      broadcaster.broadcast('error', { code: 'PI_RESUME_FAILED', message: 'Failed to resume agent session' })
+    const restored = await restoreExistingTopicSession(data.topicId, pi)
+    if (!restored) {
+      const topic = await topicRepo.getTopic(data.topicId)
+      if (topic?.pi_session_id) {
+        logger.error({ topicId: topic.id, sessionId: topic.pi_session_id }, 'Failed to restore PI session')
+        broadcaster.broadcast('error', { code: 'PI_RESUME_FAILED', message: 'Failed to resume agent session' })
+      }
     }
   })
 }

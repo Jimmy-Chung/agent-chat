@@ -181,6 +181,39 @@ code, pre {
 }
 .role-bubble-assistant:hover { background: rgba(255, 255, 255, 0.08); }
 
+.message-retry-dot {
+  position: absolute;
+  top: 50%;
+  left: -16px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--state-danger);
+  border: 0;
+  padding: 0;
+  transform: translateY(-50%);
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.16), 0 0 12px rgba(255, 69, 58, 0.45);
+  cursor: pointer;
+}
+
+.message-retry-loading {
+  position: absolute;
+  top: 50%;
+  left: -18px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  border-top-color: var(--state-danger);
+  transform: translateY(-50%);
+  animation: retry-spin 800ms linear infinite;
+}
+
+@keyframes retry-spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
 .role-bubble-system {
   background: transparent;
   color: var(--role-system);

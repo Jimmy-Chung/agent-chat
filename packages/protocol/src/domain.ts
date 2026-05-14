@@ -52,12 +52,22 @@ export interface Message {
   id: string
   topic_id: string
   role: 'user' | 'assistant' | 'system' | 'cron'
-  status: 'streaming' | 'done' | 'aborted' | 'error'
+  status:
+    | 'streaming'
+    | 'done'
+    | 'aborted'
+    | 'error'
+    | 'pending'
+    | 'needs_retry'
+    | 'retrying'
   started_at: number
   finished_at: number | null
   stop_reason: string | null
   cron_run_id: string | null
   turn_id: string | null
+  client_message_id: string | null
+  retry_count: number
+  max_retries: number
 }
 
 export interface MessagePart {
@@ -76,7 +86,12 @@ export interface Artifact {
   mime: string | null
   size_bytes: number | null
   r2_key: string
+  download_url?: string
+  preview_url?: string
   source: 'generated' | 'uploaded'
+  upload_status?: 'uploaded' | 'upload_failed'
+  failure_code?: string | null
+  failure_message?: string | null
   created_at: number
   metadata_json: string | null
 }

@@ -28,7 +28,12 @@ const artifactSchema = z.object({
   name: z.string(),
   mime: z.string().nullable(),
   size_bytes: z.number().nullable(),
+  download_url: z.string().optional(),
+  preview_url: z.string().optional(),
   source: z.enum(['generated', 'uploaded']),
+  upload_status: z.enum(['uploaded', 'upload_failed']).optional(),
+  failure_code: z.string().nullable().optional(),
+  failure_message: z.string().nullable().optional(),
   created_at: z.number(),
   metadata_json: z.string().nullable().optional(),
 })
@@ -51,6 +56,10 @@ export const messageStartSchema = z.object({
   topicId: z.string(),
   messageId: z.string(),
   role: z.enum(['user', 'assistant', 'system', 'cron']),
+  status: z.enum(['aborted', 'error', 'streaming', 'done', 'pending', 'needs_retry', 'retrying']).optional(),
+  clientMessageId: z.string().nullable().optional(),
+  retryCount: z.number().optional(),
+  maxRetries: z.number().optional(),
 })
 
 export const messageDeltaSchema = z.object({
@@ -69,6 +78,14 @@ export const messageEndSchema = z.object({
     'aborted',
     'error',
   ]),
+})
+
+export const messageDeliverySchema = z.object({
+  topicId: z.string(),
+  messageId: z.string(),
+  status: z.enum(['pending', 'needs_retry', 'retrying', 'done', 'error']),
+  retryCount: z.number(),
+  maxRetries: z.number(),
 })
 
 export const toolCallSchema = z.object({
@@ -167,6 +184,21 @@ export const artifactListSchema = z.object({
   artifacts: z.array(artifactSchema),
 })
 
+export const artifactUploadReadySchema = z.object({
+  uploadId: z.string(),
+  uploadUrl: z.string(),
+  method: z.literal('PUT'),
+  expiresAt: z.number(),
+  maxBytes: z.number(),
+})
+
+export const artifactDownloadReadySchema = z.object({
+  artifactId: z.string(),
+  downloadUrl: z.string(),
+  previewUrl: z.string().optional(),
+  expiresAt: z.number(),
+})
+
 const sopTemplateSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -221,12 +253,15 @@ export const messagesHistorySchema = z.object({
       id: z.string(),
       topic_id: z.string(),
       role: z.enum(['user', 'assistant', 'system', 'cron']),
-      status: z.enum(['aborted', 'error', 'streaming', 'done']),
+      status: z.enum(['aborted', 'error', 'streaming', 'done', 'pending', 'needs_retry', 'retrying']),
       started_at: z.number(),
       finished_at: z.number().nullable(),
       stop_reason: z.string().nullable(),
       cron_run_id: z.string().nullable(),
       turn_id: z.string().nullable(),
+      client_message_id: z.string().nullable().optional(),
+      retry_count: z.number().optional(),
+      max_retries: z.number().optional(),
     }),
   ),
   partsByMessage: z.record(
@@ -258,6 +293,7 @@ export type ServerEvent =
   | { type: 'message.start'; data: z.infer<typeof messageStartSchema> }
   | { type: 'message.delta'; data: z.infer<typeof messageDeltaSchema> }
   | { type: 'message.end'; data: z.infer<typeof messageEndSchema> }
+  | { type: 'message.delivery'; data: z.infer<typeof messageDeliverySchema> }
   | { type: 'tool.call'; data: z.infer<typeof toolCallSchema> }
   | { type: 'tool.result'; data: z.infer<typeof toolResultSchema> }
   | { type: 'file.diff'; data: z.infer<typeof fileDiffSchema> }
@@ -275,6 +311,8 @@ export type ServerEvent =
   | { type: 'artifact.deleted'; data: z.infer<typeof artifactDeletedSchema> }
   | { type: 'artifact.moved'; data: z.infer<typeof artifactMovedSchema> }
   | { type: 'artifact.list'; data: z.infer<typeof artifactListSchema> }
+  | { type: 'artifact.upload.ready'; data: z.infer<typeof artifactUploadReadySchema> }
+  | { type: 'artifact.download.ready'; data: z.infer<typeof artifactDownloadReadySchema> }
   | { type: 'sop_template.list'; data: z.infer<typeof sopTemplateListSchema> }
   | { type: 'usage.snapshot'; data: z.infer<typeof usageSnapshotSchema> }
   | { type: 'session.health'; data: z.infer<typeof sessionHealthSchema> }
@@ -293,6 +331,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'message.start': messageStartSchema,
   'message.delta': messageDeltaSchema,
   'message.end': messageEndSchema,
+  'message.delivery': messageDeliverySchema,
   'tool.call': toolCallSchema,
   'tool.result': toolResultSchema,
   'file.diff': fileDiffSchema,
@@ -307,6 +346,8 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'artifact.deleted': artifactDeletedSchema,
   'artifact.moved': artifactMovedSchema,
   'artifact.list': artifactListSchema,
+  'artifact.upload.ready': artifactUploadReadySchema,
+  'artifact.download.ready': artifactDownloadReadySchema,
   'sop_template.list': sopTemplateListSchema,
   'usage.snapshot': usageSnapshotSchema,
   'session.health': sessionHealthSchema,
@@ -358,6 +399,7 @@ export const topicSetModelSchema = z.object({
 export const userMessageSchema = z.object({
   topicId: z.string(),
   content: z.string(),
+  clientMessageId: z.string().optional(),
   mentions: z.array(
     z.object({
       id: z.string(),
@@ -365,6 +407,11 @@ export const userMessageSchema = z.object({
       downloadUrl: z.string().optional(),
     }),
   ).optional().default([]),
+})
+
+export const userMessageRetrySchema = z.object({
+  topicId: z.string(),
+  messageId: z.string(),
 })
 
 export const userActionSchema = z.object({
@@ -391,7 +438,7 @@ export const cronSyncSchema = z.object({})
 
 export const artifactUploadInitSchema = z.object({
   name: z.string(),
-  mime: z.string(),
+  mime: z.string().optional().default('application/octet-stream'),
   sizeBytes: z.number(),
   topicId: z.string().optional(),
 })
@@ -399,6 +446,10 @@ export const artifactUploadInitSchema = z.object({
 export const artifactUploadCompleteSchema = z.object({
   uploadId: z.string(),
   topicId: z.string().optional(),
+})
+
+export const artifactDownloadInitSchema = z.object({
+  artifactId: z.string(),
 })
 
 export const searchQuerySchema = z.object({
@@ -439,6 +490,7 @@ export type ClientEvent =
     }
   | { type: 'topic.setModel'; data: z.infer<typeof topicSetModelSchema> }
   | { type: 'user.message'; data: z.infer<typeof userMessageSchema> }
+  | { type: 'user.message.retry'; data: z.infer<typeof userMessageRetrySchema> }
   | { type: 'user.action'; data: z.infer<typeof userActionSchema> }
   | { type: 'cron.pause'; data: z.infer<typeof cronPauseSchema> }
   | { type: 'cron.delete'; data: z.infer<typeof cronDeleteSchema> }
@@ -451,6 +503,10 @@ export type ClientEvent =
   | {
       type: 'artifact.upload.complete'
       data: z.infer<typeof artifactUploadCompleteSchema>
+    }
+  | {
+      type: 'artifact.download.init'
+      data: z.infer<typeof artifactDownloadInitSchema>
     }
   | { type: 'search.query'; data: z.infer<typeof searchQuerySchema> }
   | { type: 'topic.resume'; data: z.infer<typeof topicResumeSchema> }
@@ -469,6 +525,7 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.detachExtension': topicDetachExtensionSchema,
   'topic.setModel': topicSetModelSchema,
   'user.message': userMessageSchema,
+  'user.message.retry': userMessageRetrySchema,
   'user.action': userActionSchema,
   'cron.pause': cronPauseSchema,
   'cron.delete': cronDeleteSchema,
@@ -476,6 +533,7 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'cron.sync': cronSyncSchema,
   'artifact.upload.init': artifactUploadInitSchema,
   'artifact.upload.complete': artifactUploadCompleteSchema,
+  'artifact.download.init': artifactDownloadInitSchema,
   'search.query': searchQuerySchema,
   'topic.resume': topicResumeSchema,
   'messages.load': messagesLoadSchema,

@@ -18,6 +18,14 @@ interface PendingRpc {
   timer: ReturnType<typeof setTimeout>
 }
 
+export interface AdapterRpcRequest {
+  sessionId: string
+  id: string
+  method: string
+  params: unknown
+  reply: (error: RpcError | null, result?: unknown) => void
+}
+
 class PiSessionConn extends EventEmitter {
   private ws: WebSocket | null = null
   private rpcId = 0
@@ -41,13 +49,20 @@ class PiSessionConn extends EventEmitter {
       })
 
       ws.addEventListener('message', (event) => {
+        let frame: WSFrame | null = null
         try {
-          const frame = decodeFrame(
+          frame = decodeFrame(
             typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data),
           )
           this.handleFrame(frame)
         } catch (err) {
-          logger.warn({ err, sessionId: this.sessionId }, 'Failed to parse PI message')
+          const d = frame?.d as { payload?: { kind?: unknown } } | undefined
+          logger.warn({
+            err,
+            frameType: frame?.t,
+            payloadKind: typeof d?.payload?.kind === 'string' ? d.payload.kind : undefined,
+            sessionId: this.sessionId,
+          }, 'Failed to parse PI message')
         }
       })
 
@@ -91,9 +106,39 @@ class PiSessionConn extends EventEmitter {
         this.resolveRpc(id, undefined, frame.d as RpcError)
         break
       }
+      case 'rpc': {
+        const d = frame.d as { method?: unknown; params?: unknown }
+        const method = typeof d.method === 'string' ? d.method : ''
+        const id = frame.id ?? ''
+        if (!method || !id) {
+          this.sendRpcError(id, { code: 'invalid_rpc', message: 'Invalid RPC frame' })
+          break
+        }
+        this.emit('rpc', {
+          sessionId: this.sessionId,
+          id,
+          method,
+          params: d.params,
+          reply: (error: RpcError | null, result?: unknown) => {
+            if (error) this.sendRpcError(id, error)
+            else this.sendRpcResult(id, result ?? {})
+          },
+        } satisfies AdapterRpcRequest)
+        break
+      }
       default:
         logger.warn({ type: frame.t, sessionId: this.sessionId }, 'Unknown PI frame type')
     }
+  }
+
+  private sendRpcResult(id: string, result: unknown): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    this.ws.send(encodeFrame(createFrame('rpc.result', result, id)))
+  }
+
+  private sendRpcError(id: string, error: RpcError): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    this.ws.send(encodeFrame(createFrame('rpc.error', error, id)))
   }
 
   private resolveRpc(id: number, result?: unknown, error?: RpcError): void {
@@ -189,6 +234,9 @@ export class PiClient extends EventEmitter {
     conn.on('event', (event: PIEvent) => {
       this.emit('event', event)
     })
+    conn.on('rpc', (request: AdapterRpcRequest) => {
+      this.emit('rpc', request)
+    })
     conn.on('close', () => {
       this.sessions.delete(sessionId)
       logger.info({ sessionId }, 'PI session removed from pool')
@@ -207,8 +255,47 @@ export class PiClient extends EventEmitter {
     return result as PiRpcMethod['createSession']['result']
   }
 
+  async recreateSession(params: PiRpcMethod['recreateSession']['params']): Promise<PiRpcMethod['recreateSession']['result']> {
+    const existing = this.sessions.get(params.sessionId)
+    if (existing) {
+      existing.close()
+      this.sessions.delete(params.sessionId)
+    }
+
+    const conn = new PiSessionConn(params.sessionId, this.config)
+    await conn.connect()
+    const result = await conn.rpc('recreateSession', params)
+    const sessionId = (result as { sessionId: string }).sessionId
+
+    conn.on('event', (event: PIEvent) => {
+      this.emit('event', event)
+    })
+    conn.on('rpc', (request: AdapterRpcRequest) => {
+      this.emit('rpc', request)
+    })
+    conn.on('close', () => {
+      this.sessions.delete(sessionId)
+      logger.info({ sessionId }, 'PI session removed from pool')
+    })
+
+    this.sessions.set(sessionId, conn)
+    logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session recreated and connected')
+
+    this.emit('event', {
+      seq: 0,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'session.health' as const, state: 'connected' as const, piSessionId: sessionId },
+    })
+
+    return result as PiRpcMethod['recreateSession']['result']
+  }
+
   async reconnectSession(sessionId: string): Promise<void> {
-    if (this.sessions.has(sessionId)) return
+    if (this.sessions.has(sessionId)) {
+      await this.rpc('attachSession', { sessionId })
+      return
+    }
 
     const conn = new PiSessionConn(sessionId, this.config)
     await conn.connect()
@@ -216,6 +303,9 @@ export class PiClient extends EventEmitter {
 
     conn.on('event', (event: PIEvent) => {
       this.emit('event', event)
+    })
+    conn.on('rpc', (request: AdapterRpcRequest) => {
+      this.emit('rpc', request)
     })
     conn.on('close', () => {
       this.sessions.delete(sessionId)
