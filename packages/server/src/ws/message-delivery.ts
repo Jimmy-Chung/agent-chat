@@ -15,6 +15,12 @@ export interface MessageDeliveryBroadcaster {
 }
 
 export const AUTO_RETRY_DELAY_MS = 5000
+
+// Overridable in tests to skip the minimum wait without fake timers
+export let _minRetryWaitMs = AUTO_RETRY_DELAY_MS
+export function _setMinRetryWaitForTest(ms: number): void {
+  _minRetryWaitMs = ms
+}
 const AUTO_RETRY_ATTEMPTS = 2
 const restorePromisesBySession = new Map<string, Promise<boolean>>()
 
@@ -100,8 +106,18 @@ export async function deliverUserMessage(input: DeliverUserMessageInput): Promis
     return handleRetryFailure(input, msg, nextRetryCount)
   }
 
+  const deliveryStart = Date.now()
+
   if (await attemptDelivery(input, msg, { retryCount: msg.retry_count, forceSessionRecovery: false })) {
     return 'delivered'
+  }
+
+  // Guarantee at least _minRetryWaitMs from initial send before auto-retry loop.
+  // Without this guard, if session setup fails instantly (PI not reachable), the loop
+  // runs with no delay, violating the 5-second response window defined in FEAT-029.
+  const elapsed = Date.now() - deliveryStart
+  if (elapsed < _minRetryWaitMs) {
+    await new Promise<void>((resolve) => setTimeout(resolve, _minRetryWaitMs - elapsed))
   }
 
   for (let attempt = 1; attempt <= AUTO_RETRY_ATTEMPTS; attempt += 1) {

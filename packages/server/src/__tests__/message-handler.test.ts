@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as topicRepo from '../db/repos/topic.repo'
+import { _setMinRetryWaitForTest } from '../ws/message-delivery'
 
 function createMockHub() {
   const broadcastEvents: any[] = []
@@ -40,6 +41,7 @@ describe('Message handler', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers()
+    _setMinRetryWaitForTest(0)  // skip 5-sec wait in all message-handler tests
     await setupTestDb()
     mockHub = createMockHub()
     mockPi = createMockPiClient()
@@ -48,6 +50,7 @@ describe('Message handler', () => {
   })
 
   afterEach(() => {
+    _setMinRetryWaitForTest(5000)  // restore production default
     vi.useRealTimers()
     teardownTestDb()
   })
