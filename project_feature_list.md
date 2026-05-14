@@ -2,9 +2,73 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.2.0 |
-| 状态 | Cloudflare Workers 全链路迁移 |
+| 当前版本 | v1.3.0 |
+| 状态 | v1.3.0 测试中 |
 | 更新时间 | 2026-05-13 |
+
+---
+
+## v1.3.0 — 需求范围
+
+| 类别 | 需求 | 状态 | 说明 |
+|---|---|---|---|
+| 云端产物 | FEAT-016 R2 云端产物上传下载 | 测试中 | 上传、下载、Agent 消费产物内容 |
+| 历史一致性 | FEAT-029 会话历史一致性优化 | 测试中 | PI 原始会话 / 本地投影视图的一致性方案已确认，进入实现 |
+| 消息时间体验 | FEAT-021 日期分割线 + FEAT-030 hover 时间戳 | 测试中 | 同一批处理消息列表时间分组与气泡时间戳细节 |
+
+> 范围说明：除以上条目外，其它未完成或待讨论需求暂不纳入 `v1.3.0`，统一放入待定版本。
+
+---
+
+## 清单维护规则
+
+- 每次新增需求或变更需求状态时，必须同步更新 Linear issue，并维护下方 `FEAT ID -> Linear ID` 映射。
+- 新增需求时先检查已有 `FEAT-*` 编号；如果目标 ID 已存在或发生冲突，自动使用下一个未占用的 `FEAT-*` ID。
+- 需求状态机：`待讨论 -> 开发中 -> 测试中 -> 待发布 -> 已发布`。
+- Linear issue 必须标记 `Feature`，并按本地状态同步对应的 `status: ...` 标签；涉及 PI Adapter、Cloudflare、GitHub Actions 等外部系统时，同时标记 `External dependency`。
+- 待讨论阶段沉淀需求、验收标准和 TC 场景清单；开发阶段根据 TC 编写自动化测试与代码。
+- 本清单可公开发布；不得写入真实 token、鉴权值、密钥或环境变量值。
+
+---
+
+## Linear 映射
+
+| FEAT ID | Linear ID |
+|---|---|
+| FEAT-001 | AIT-11 |
+| FEAT-002 | AIT-10 |
+| FEAT-003 | AIT-13 |
+| FEAT-004 | AIT-12 |
+| FEAT-005 | AIT-14 |
+| FEAT-006 | AIT-15 |
+| FEAT-007 | AIT-16 |
+| FEAT-008 | AIT-18 |
+| FEAT-009 | AIT-19 |
+| FEAT-010 | AIT-17 |
+| FEAT-011 | AIT-7 |
+| FEAT-012 | AIT-20 |
+| FEAT-013 | AIT-21 |
+| FEAT-014 | AIT-22 |
+| FEAT-015 | AIT-23 |
+| FEAT-016 | AIT-5 |
+| FEAT-017 | AIT-24 |
+| FEAT-018 | AIT-25 |
+| FEAT-019 | AIT-26 |
+| FEAT-020 | AIT-27 |
+| FEAT-021 | AIT-8 |
+| FEAT-022 | AIT-29 |
+| FEAT-023 | AIT-28 |
+| FEAT-024 | AIT-30 |
+| FEAT-025 | AIT-31 |
+| FEAT-026 | AIT-32 |
+| FEAT-027 | AIT-33 |
+| FEAT-028 | AIT-34 |
+| FEAT-029 | AIT-6 |
+| FEAT-030 | AIT-9 |
+| FEAT-031 | AIT-35 |
+| FEAT-032 | AIT-36 |
+| FEAT-033 | AIT-37 |
+| FEAT-034 | AIT-38 |
 
 ---
 
@@ -18,7 +82,7 @@
 |---|---|
 | ID | FEAT-001 |
 | 标题 | pnpm monorepo 脚手架 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 初始化 pnpm monorepo: packages/protocol, server, web, mock-pi。含 tsconfig.base.json, biome.json, .gitignore, .npmrc, CI (GitHub Actions), README |
@@ -33,7 +97,7 @@
 |---|---|
 | ID | FEAT-002 |
 | 标题 | 协议层类型定义 (packages/protocol) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 定义所有跨进程消息的 TypeScript 类型 + zod schema: PIEvent (message/tool/file/todo/plan/interaction/cron/usage), PI RPC 方法签名, 前后端 WS 事件, 领域类型, WS 帧编解码 |
@@ -49,7 +113,7 @@
 |---|---|
 | ID | FEAT-003 |
 | 标题 | Mock PI Server (packages/mock-pi) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 本地 WebSocket 服务模拟 PI Adapter 全部 RPC + 事件流。含 fixture 事件流 (simple-text / tool-use / file-edit / approval / cron-trigger), scenario runner 按 content 关键词匹配 fixture 并按真实节奏推流, 访问控制模拟 |
@@ -64,7 +128,7 @@
 |---|---|
 | ID | FEAT-004 |
 | 标题 | 后端核心服务 (packages/server) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | Fastify + SQLite (drizzle) + WebSocket Hub + PI Adapter 客户端 + R2 presigned URL + 访问控制 + 系统话题 seed。包含: DB schema (users/topics/messages/message_parts/FTS5/artifacts/cron_jobs/cron_runs/interactions/usage_records/audit_log), WS handler (topic/message/interaction/cron/artifact/search), PI client 自动重连 + seq 续传, 流式 delta 100ms/32KB/end batch flush |
@@ -79,7 +143,7 @@
 |---|---|
 | ID | FEAT-005 |
 | 标题 | 前端骨架 + 状态管理 (packages/web) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | App Router + 主布局三栏 (TopicSidebar / 对话主区 / RightPanel) + Zustand stores (topics/messages/agent-status/todos/plan/artifacts/interactions/usage) + WS client 自动重连 + seq 续传 + 访问控制页。视觉粗糙,不打磨细节,所有值用 CSS 变量占位 |
@@ -94,7 +158,7 @@
 |---|---|
 | ID | FEAT-006 |
 | 标题 | 核心消息组件 (MessageBubble / ToolCard / DiffCard / ApprovalCard / ThinkingBlock / AgentStatusBar / TodoPanel / PlanPanel) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 所有 message_part 类型的渲染组件骨架。MessageBubble 根据 role 切样式 (user 右蓝 / assistant 左玻璃 / system 居中紫 / cron 顶部金条), 内部按 part.kind 渲染 MarkdownContent / ThinkingBlock / ToolCard / DiffCard。ApprovalCard 三状态 (pending/approved/rejected) |
@@ -109,7 +173,7 @@
 |---|---|
 | ID | FEAT-007 |
 | 标题 | 流式逻辑 + stream-safe Markdown |
-| 状态 | 已回归 (有缺陷，见下方) |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 流式 delta 合并到同一气泡不刷屏不闪烁。message-aggregator 累加 delta, stream-safe-markdown 状态机检测未闭合代码块/列表/表格并虚拟补全。ESC + StopButton abort。性能: 1k delta 期间 FPS ≥50 |
@@ -178,7 +242,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-015 |
 | 标题 | 话题 rename / delete 前端交互 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 补充话题侧边栏的 rename 和 delete 交互。后端 + 协议 + store 已有完整支持，缺前端 UI 入口（编辑按钮/右键菜单/双击编辑 rename，删除按钮/滑动删除 + 确认弹窗含产物策略选择）。Delete 部分已在 FEAT-026 实现，rename 待补充 |
@@ -193,7 +257,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-008 |
 | 标题 | 产物系统 (Artifacts) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 话题级产物 + 产物池 (跨话题共享), @产物引用语法, 删话题产物处理 (转产物池/一并删除)。纯本地，不涉及云存储 |
@@ -208,14 +272,29 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-029 |
 | 标题 | 会话历史一致性优化（PI 原始会话为事实源） |
-| 状态 | 待讨论 |
-| 版本 | TBD（下个版本讨论） |
+| 状态 | 测试中 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-12 |
-| 描述 | 优化 topic 历史记录的一致性模型，评估将 PI / Claude Code 原始会话作为事实源、SQLite 作为缓存 / 投影视图的方案。重点讨论：1) 刷新或恢复 topic 时，是否需要从 PI 补偿缺失历史；2) 是否需要基于 seq / offset 的增量同步，而非每次全量回放 jsonl；3) 如何避免 server 重启、断线、漏事件导致数据库历史与 PI 原始会话分叉；4) 在一致性提升的前提下控制长会话下的性能与存储成本 |
-| 验收标准 | TBD |
-| 测试用例 | TBD |
+| 描述 | 优化 topic 历史记录与 Agent session 的一致性模型。页面展示历史以 agent-chat DB 为准，保留 thinking / tool / interaction / artifact 等过程信息；PI / Claude session 作为 Agent 上下文源。首次发送后等待 5 秒；5 秒内只要 Adapter 有任何信息回复（包括 syncing、ack、progress、assistant event），都视为链路有响应。若 5 秒内无响应或明确失败，系统自动尝试一次 retry session 流程。自动 retry 失败、超时或无响应时，在用户消息旁显示红点；用户点击红点后进入 loading 并执行手动 retry。自动 retry 不消耗用户的 2 次手动 retry 机会；第 2 次手动 retry 仍失败时，判定为永久失败，revert 并丢弃该 pending 用户消息。最终 revert 后的极小概率迟到事件不做专门保障，按黑天鹅异常处理。 |
+| 验收标准 | 1) UI 历史从 agent-chat DB 恢复，刷新后 thinking/tool/artifact 等过程信息不丢；2) 首次发送 5 秒内无响应时自动进入 retry session 流程；3) 任意 Adapter 回复（包括 syncing）都会阻止红点进入；4) 首次 retry 失败或无响应时，用户消息旁显示红点；5) 点击红点后显示 loading 并重试；6) 手动 retry 失败后恢复红点；7) 自动 retry 不消耗用户手动 retry 次数；8) 刷新后保留红点和剩余手动 retry 次数；9) 手动 retry 2 次仍失败时，消息被 revert 并从正常聊天历史中丢弃；10) Adapter 已接收或 replay 成功后，消息保持为 delivered，不再显示异常状态。 |
+| 测试用例 | HC-001~HC-010（会话历史一致性与 retry 交互，待开发阶段转为自动化测试） |
 | 影响模块 | packages/server, packages/protocol, packages/web, [external] PI Adapter |
-| 备注 | 当前实现以 SQLite 历史为 UI 读取源，存在与 PI 原始会话不一致的风险；本需求先做方案讨论，不在当前版本落地 |
+| 备注 | 纳入 v1.3.0。Adapter 外部依赖见 Linear AIT-59：recreateSession、sendUserMessage.clientMessageId 幂等投递，以及 Adapter 的任意明确回复可作为链路恢复信号。 |
+
+#### FEAT-029 测试用例
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---|---|---|
+| HC-001 | 刷新页面后从 agent-chat DB 恢复历史 | thinking、tool、interaction、artifact 等过程信息仍可展示，不依赖 PI/Claude 原始会话重放 |
+| HC-002 | 首次发送 5 秒内收到普通 ack / assistant event | 消息进入 delivered 或继续正常流式状态，不显示红点 |
+| HC-003 | 首次发送 5 秒内收到 syncing / progress | 视为链路有响应，不触发红点和自动 retry |
+| HC-004 | 首次发送 5 秒无响应后自动 retry 成功 | 自动 retry session 流程执行后消息进入 delivered，用户无感知异常 |
+| HC-005 | 自动 retry 失败或无响应 | 用户消息旁显示红点，消息保持 pending/retryable 状态 |
+| HC-006 | 用户点击红点触发手动 retry | 红点变为 loading，执行 retry session 流程 |
+| HC-007 | 第一次手动 retry 失败 | loading 结束后恢复红点，剩余手动 retry 次数为 1 |
+| HC-008 | 手动 retry 成功 | 消息进入 delivered，红点消失，后续 assistant 事件正常归入该轮 |
+| HC-009 | 刷新页面恢复 retry 状态 | 红点状态和剩余手动 retry 次数保留；自动 retry 不消耗 2 次手动机会 |
+| HC-010 | 第二次手动 retry 仍失败 | 消息被 revert 并从正常聊天历史中丢弃，流程结束 |
 
 ### FEAT-030: 消息 hover 时间戳布局微调
 
@@ -223,14 +302,25 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-030 |
 | 标题 | 消息 hover 时间戳布局微调 |
-| 状态 | 待讨论 |
-| 版本 | TBD（后续版本讨论） |
+| 状态 | 测试中 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-12 |
-| 描述 | 优化消息 hover 时显示的时间戳布局，使其更接近 iMessage 风格的气泡内侧水平贴边样式。重点讨论：1) user / assistant 气泡内时间戳的精确位置与对齐；2) 与 UsageBadge 共存时的布局策略；3) hover 态出现时是否应避免额外撑高消息气泡；4) 多行消息、流式消息、含 ToolCard / DiffCard 时的视觉一致性 |
-| 验收标准 | TBD |
-| 测试用例 | TBD |
+| 描述 | 优化消息时间戳展示。桌面端 hover 时显示时间戳，时间戳放在气泡外侧靠近边缘；移动端无 hover，改为长按消息显示时间戳。UsageBadge 共存策略本版本先不处理。 |
+| 验收标准 | 1) 桌面端 hover 消息时，在气泡外侧靠近边缘显示时间戳；2) 不 hover 时不显示时间戳，不干扰阅读；3) 移动端长按消息显示时间戳；4) 时间戳不撑高消息气泡、不遮挡正文；5) 多行消息、流式消息、ToolCard、DiffCard 场景布局稳定；6) 本版本不处理 UsageBadge 共存。 |
+| 测试用例 | MT-001~MT-006（消息时间戳展示，待开发阶段转为自动化测试） |
 | 影响模块 | packages/web |
-| 备注 | 当前已做一版内侧右下角布局，但位置与交互细节仍需继续打磨 |
+| 备注 | 纳入 v1.3.0，与 FEAT-021 消息列表日期分割线一并处理 |
+
+#### FEAT-030 测试用例
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---|---|---|
+| MT-001 | 桌面端 hover 用户消息 | 时间戳显示在用户气泡外侧靠近边缘，不遮挡正文 |
+| MT-002 | 桌面端 hover assistant 消息 | 时间戳显示在 assistant 气泡外侧靠近边缘，不撑高消息气泡 |
+| MT-003 | 桌面端非 hover 状态 | 时间戳不显示，不影响消息阅读和布局 |
+| MT-004 | 移动端长按消息 | 长按后显示时间戳；无 hover 环境下仍可查看时间 |
+| MT-005 | 多行消息、流式消息、ToolCard、DiffCard | 时间戳显示不造成布局跳动、遮挡或内容错位 |
+| MT-006 | UsageBadge 存在的消息 | 本版本不处理共存策略，但不得因时间戳改动导致 UsageBadge 原有展示回归 |
 
 ### FEAT-016: R2 云端产物上传下载
 
@@ -238,26 +328,37 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-016 |
 | 标题 | R2 云端产物上传下载 |
-| 状态 | 待讨论 |
-| 版本 | 待定版本 |
+| 状态 | 测试中 |
+| 版本 | v1.3.0 |
 | 提出时间 | 2026-05-10 |
-| 描述 | 话题级产物上传到 R2 云存储，Agent 可消费产物。包含：1) 用户在话题内上传文件 → R2 存储 → 关联到话题；2) 用户 @产物 发消息 → server 将产物信息（名称、下载 URL）传给 PI Agent → Agent 可读取内容并加工；3) R2 presigned URL 上传、下载链接生成 |
-| 验收标准 | 用户上传文件到 R2 成功、Agent 能读取上传产物内容并加工、下载链接可访问 |
-| 测试用例 | R2-001~R2-005（R2 集成，待需求确认后补充）；D1 迁移测试（DA-001~DA-010）已归入 v1.2.0 cloudflare-migration-plan.md |
-| 影响模块 | packages/server (r2/client.ts), packages/web |
-| 备注 | 从 FEAT-008 拆出，FEAT-008 为本地产物系统（已回归），本需求为 R2 云端部分 |
+| 描述 | agent-chat 只做产物控制面，不做文件数据面中转。文件上传/下载只发生在 IM 或 Agent 与 Cloudflare R2 之间；Adapter 与 agent-chat 之间不传输文件正文。用户可在聊天输入框通过附件上传；Agent 在话题中产生中间产物时也会触发产物上传。用户上传和 Agent 中间产物都进入 X-Buffer 产物体系，并按 topic 分类展示。默认产物属于当前 topic；删除 topic 时，用户可选择将产物迁移到全局产物池，或跟随 topic 删除。 |
+| 验收标准 | 1) 用户附件可上传到 R2 并生成当前 topic artifact；2) Agent 中间产物可上传到 R2 并生成当前 topic artifact；3) X-Buffer 按 topic 展示话题产物，全局产物池展示已迁移产物；4) 删除 topic 时可选择迁移产物到全局或跟随删除；5) @产物 后 Adapter 收到 metadata + signed download URL，而不是文件正文；6) 话题产物和全局产物都可打开预览；7) 文件上传/下载数据面不经过 agent-chat 与 Adapter 之间的链路。 |
+| 测试用例 | R2-001~R2-018（R2 产物上传下载、Adapter 反向 RPC 与预览，开发阶段转为自动化测试） |
+| 影响模块 | packages/server, packages/web, [external] Agent Adapter, Cloudflare R2 |
+| 备注 | 纳入 v1.3.0；从 FEAT-008 拆出，FEAT-008 为本地产物系统（已发布），本需求为 R2 云端部分。Adapter 外部依赖见 Linear AIT-60：中间产物直传 R2、仅回报 metadata、消费 @产物 时自行通过 signed download URL 拉取内容。 |
 
 #### FEAT-016 测试用例
 
-##### R2 集成测试 (R2-001~R2-005)
-
 | 用例 ID | 测试内容 | 通过标准 |
-|---------|----------|----------|
-| R2-001 | presigned URL 生成 | 生成的 URL 有效且可访问 |
-| R2-002 | 文件上传流程 | 文件成功上传到 R2，可通过 URL 下载 |
-| R2-003 | 多文件并发上传 | 10 个文件同时上传无冲突 |
-| R2-004 | R2 权限验证 | 未授权访问返回 403 |
-| R2-005 | R2 删除后访问 | 删除的文件 URL 返回 404 |
+|---|---|---|
+| R2-001 | 用户附件请求 presigned upload URL | server 返回限定 object、方法、content-type、content-length 的短期上传 URL |
+| R2-002 | 用户附件直传 R2 | IM 直接上传到 R2，agent-chat 不接收文件正文 |
+| R2-003 | upload complete 创建 topic artifact | 上传完成后 DB 写入 artifact metadata / object key / name / mime / size / topicId，并广播到当前 topic |
+| R2-004 | 单条消息附件限制 | 单文件超过 20MB、单条超过 5 个附件、并发超过 5 个时被拒绝或排队处理 |
+| R2-005 | Agent 中间产物请求或接收 presigned upload URL | Agent/Adapter 可使用该 URL 直接上传到 R2，不通过 agent-chat 传正文 |
+| R2-006 | Agent 中间产物 upload complete | 上传完成后仅回报 metadata/object key，agent-chat 生成当前 topic artifact |
+| R2-007 | @产物消费 | server 传给 Adapter artifact metadata + signed download URL，不传文件正文 |
+| R2-008 | signed download URL 授权 | IM 和 Adapter 使用同一套短期 signed URL 授权；第一版有效期 10 分钟 |
+| R2-009 | 话题产物预览 | topic artifact 可打开预览；图片/PDF/文本类按定义展示，文本类最多读取前 256KB |
+| R2-010 | 全局产物预览 | 全局产物池 artifact 可打开同一套预览组件 |
+| R2-011 | 删除 topic 时迁移产物 | 用户选择保留时，topic artifact 迁移到全局产物池，R2 object 保留 |
+| R2-012 | 删除 topic 时跟随删除产物 | 用户选择删除时，topic artifact 记录删除，并清理对应 R2 object 或进入可追踪清理流程 |
+| R2-013 | Adapter 通过 WS 反向 RPC 申请中间产物 upload URL | agent-chat 返回 artifactId/uploadId/uploadUrl/method/expiresAt/maxBytes/headers，且不传输文件正文 |
+| R2-014 | Adapter 中间产物 upload complete | agent-chat 根据 uploadId 创建/更新 topic artifact，状态为 uploaded，并广播 artifact.added |
+| R2-015 | Adapter 中间产物 upload failed | agent-chat 创建/更新 upload_failed artifact，记录失败 code/message，并广播给 UI 展示 |
+| R2-016 | failed artifact 展示与使用限制 | Inspector/X-Buffer 显示失败文件名和原因；预览、下载、@ 引用均不可用 |
+| R2-017 | Adapter signed download URL refresh | Adapter 通过反向 RPC 获取新的 download URL；权限不匹配或 artifact 不存在时返回 rpc.error |
+| R2-018 | Adapter artifact RPC 权限校验 | sessionId 必须能映射到 topic；topicId 不匹配、uploadId 过期、artifact 无权访问时拒绝 |
 
 ### FEAT-009: 定时任务管理
 
@@ -265,7 +366,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-009 |
 | 标题 | 定时任务管理 (Cron) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 (Part 1 基础) / v1.1.0 (完善) |
 | 提出时间 | 2026-05-09 |
 | 描述 | 话题内自然语言创建 cron, 触发结果回到原话题, 系统话题"定时任务管理"列表/暂停/编辑/删除 |
@@ -280,7 +381,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-010 |
 | 标题 | 创建话题向导 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 创建话题向导 (programming/general 分支表单)。Programming 类型工作目录由 PI Agent 按 topicId 自动生成，用户无需手动填写 |
@@ -299,15 +400,15 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-011 |
 | 标题 | PWA + 部署 + 优化 |
-| 状态 | 部分完成 |
-| 版本 | v1.2.0 |
+| 状态 | 已发布 |
+| 版本 | v1.2.0（部署）/ 待定版本（PWA 本体） |
 | 提出时间 | 2026-05-09 |
 | 描述 | manifest + SW, Cloudflare 部署（前端 Pages + 后端 Workers），Lighthouse PWA/Performance ≥90, iPhone 实测 |
 | 验收标准 | Lighthouse PWA ≥90, iPhone 添加到主屏幕可启动 |
 | 测试用例 | 详细测试用例见 `.omc/plans/cloudflare-migration-plan.md`（HR-001~008, DO-001~013, P-001~005）；下方为概要 |
 | 影响模块 | web, 部署配置 |
 | 对应步骤 | 设计文档 Phase 6 |
-| 备注 | Cloudflare 部署部分已完成：Workers、Pages、CI/CD 已成功部署。PWA 本体未完成：源码中未发现 manifest、service worker 注册或 next-pwa 配置；当前只有基础 metadata / theme-color。 |
+| 备注 | Cloudflare 部署部分已完成：Workers、Pages、CI/CD 已成功部署。PWA 本体不纳入 v1.3.0，先放入待定版本。 |
 
 #### FEAT-011 测试用例
 
@@ -354,7 +455,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-031 |
 | 标题 | SQLite → Cloudflare D1 数据库迁移 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将后端数据库从 better-sqlite3（本地同步 API）迁移到 Cloudflare D1（异步 API）。包含：1) 6 个 repo 文件（topic/message/artifact/cron/interaction/usage）全部改为 async/await；2) Drizzle ORM 切换到 `drizzle-orm/d1`；3) 数据迁移脚本（旧 SQLite → D1）；4) FTS5 虚拟表兼容性验证。这是本次迁移改动量最大、最易出错的部分，必须优先完成 |
@@ -368,7 +469,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-032 |
 | 标题 | Fastify → Hono 路由迁移 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将 Node.js Fastify 后端改造为 Cloudflare Workers 兼容的 Hono 应用。包含：1) 重写 `index.ts` 为 Workers 入口；2) `/healthz` 迁移到 Hono，返回 D1 连接状态（而非 SQLite 文件大小）；3) Node 环境变量访问替换为 Workers 运行时配置访问；4) 访问控制中间件、CORS、错误响应格式保持一致 |
@@ -382,7 +483,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-033 |
 | 标题 | ws → Durable Objects WebSocket 迁移 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 将 Node.js ws 全局 WsHub 迁移到 Cloudflare Durable Objects（每 Topic 一个 DO 实例）。包含：1) 编写 `TopicDurableObject` 类，管理前端 WS 连接 + PI WS 连接；2) 心跳从 `setInterval` 改为 DO `alarm()` API；3) PI session 冷启动恢复（从 DO Storage 读取 pi_session_id）；4) 广播、消息路由、断线重连逻辑迁移 |
@@ -396,7 +497,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-034 |
 | 标题 | CI/CD Pipeline（GitHub → Cloudflare）+ 本地开发环境迁移 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.2.0 |
 | 提出时间 | 2026-05-12 |
 | 描述 | 建立 GitHub → Cloudflare 自动部署流水线，并更新本地开发环境。包含：1) 创建 `.github/workflows/deploy.yml`（test → D1 migration → Workers deploy 顺序）；2) Cloudflare Pages 连接 GitHub repo，PR 自动生成 Preview URL；3) 更新 `pnpm dev` 中 server 启动命令为 `wrangler dev --local`（miniflare 模拟 D1/DO） |
@@ -410,7 +511,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-012 |
 | 标题 | 视觉打磨 + 响应式 + 移动端适配 (Part 2) |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 替换占位设计变量为设计稿最终值, Liquid Glass 工具类, 响应式断点。设计稿已喂入，设计变量/globals.css/核心组件已改造完成。移动端和交互增强拆到 FEAT-019 ~ FEAT-023 |
@@ -426,7 +527,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-017 |
 | 标题 | 创建话题改为 Glass Modal 弹窗 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S3 显示创建话题为 glass-3 毛玻璃模态弹窗（带半透明遮罩层），当前实现为 Sidebar 内嵌表单。需将创建话题从内联表单改为独立 Modal，包含：1) glass-3 背景 + backdrop blur 遮罩；2) 居中弹出动画；3) 点击遮罩或 ESC 关闭 |
@@ -434,7 +535,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 测试用例 | TBD |
 | 影响模块 | packages/web (Sidebar + 新 Modal 组件) |
 | 设计稿 | S3 创建话题 |
-| 备注 | 从设计稿审查发现。FEAT-010 已回归 inline form，本需求升级为 modal 形态 |
+| 备注 | 从设计稿审查发现。FEAT-010 已发布 inline form，本需求升级为 modal 形态 |
 
 ### FEAT-018: 创建话题高级选项交互
 
@@ -442,7 +543,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-018 |
 | 标题 | 创建话题高级选项 — Segmented Control / YOLO 开关 / Permission Mode |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S3 包含以下高级交互控件，当前实现为简陋的 select/checkbox，需升级为设计稿形态：1) Agent 类型选择：Segmented control 分段选择器 + 选中 glow 效果；2) YOLO Mode：iOS 风格 switch toggle（非 checkbox）；3) Permission Mode：Radio button 列表 + 每项描述文字（Default: 需审批/Accept Edits: 自动接受编辑/Plan Only: 仅规划/Bypass: 全自动）；4) Working Directory：Folder picker 按钮（非文本输入框） |
@@ -458,7 +559,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-019 |
 | 标题 | AgentStatusBar 完整交互 — 状态指示 + 计时器 + 快捷键 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S2 显示话题顶部有 AgentStatusBar 组件，当前仅有骨架但未细化。需补充：1) Agent 状态文字 (Thinking / Using tool / Idle) + 金色 pulse 动画；2) 已用时间计时器 (0:42 格式)；3) Stop 按钮 + ⌘. 快捷键提示；4) 状态跟随 agent.status 事件变化 |
@@ -474,15 +575,15 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-020 |
 | 标题 | Cron 管理卡片增强 — 筛选 / 错误展示 / Resume |
-| 状态 | 待讨论 |
-| 版本 | v1.3.0 |
+| 状态 | 开发中 |
+| 版本 | 待定版本 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S7 显示定时任务管理有丰富的卡片交互，当前实现简陋。需补充：1) 筛选 chips (全部 / Active / Paused / Error)；2) Cron 卡片增强：来源话题 chip + 上次/下次执行时间 + 状态 badge；3) Error banner：显示错误详情 + 红色背景；4) 操作按钮增加 Resume / Retry（不仅仅是 Pause/Delete）；5) Hover 状态：蓝色边框 glow |
 | 验收标准 | 筛选可切换、Error cron 显示错误详情、Pause 的 cron 可 Resume |
 | 测试用例 | TBD |
 | 影响模块 | packages/web (CronAdminView + cron-store) |
 | 设计稿 | S7 定时任务管理 |
-| 备注 | 从设计稿审查发现。FEAT-009 基础已回归，本需求为 UI 增强 |
+| 备注 | 从设计稿审查发现。FEAT-009 基础已发布，本需求为 UI 增强；不纳入 v1.3.0，先放入待定版本 |
 
 ### FEAT-021: 消息列表日期分割线
 
@@ -490,15 +591,25 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-021 |
 | 标题 | 消息列表日期分割线 |
-| 状态 | 待讨论 |
+| 状态 | 测试中 |
 | 版本 | v1.3.0 |
 | 提出时间 | 2026-05-10 |
-| 描述 | 设计稿 S13 显示消息列表中有日期标签（如"今天 · 14:32"），按天分组消息。当前消息列表无日期分割，连续消息无法区分日期边界。需在 MessageList 中按 started_at 日期分组，渲染居中的日期分割线 |
-| 验收标准 | 不同日期的消息之间显示日期标签，同一天内不重复显示 |
-| 测试用例 | TBD |
+| 描述 | 消息列表按浏览器本地时间对 `started_at` 做自然日分组，在日期边界渲染居中的日期分割线。当前消息列表无日期分割，连续消息无法区分日期边界。 |
+| 验收标准 | 1) 使用用户浏览器本地时区计算消息日期；2) 不同日期的消息之间显示日期标签；3) 同一天内不重复显示日期分割线；4) 刷新历史后日期分组稳定；5) 流式消息追加时不导致已有分割线抖动。 |
+| 测试用例 | ML-001~ML-005（消息日期分割线，待开发阶段转为自动化测试） |
 | 影响模块 | packages/web (MessageList 组件) |
 | 设计稿 | S13 iPhone |
-| 备注 | 从设计稿审查发现 |
+| 备注 | 纳入 v1.3.0，与 FEAT-030 消息 hover 时间戳微调一并处理 |
+
+#### FEAT-021 测试用例
+
+| 用例 ID | 测试内容 | 通过标准 |
+|---|---|---|
+| ML-001 | 同一天消息列表 | 不显示重复日期分割线；同一天内消息连续展示 |
+| ML-002 | 跨自然日消息列表 | 浏览器本地时间日期发生变化处显示居中日期分割线 |
+| ML-003 | 今天 / 昨天 / 更早日期格式 | 日期标签按本地时间稳定格式化，用户可理解日期边界 |
+| ML-004 | 空消息列表和单条消息 | 空列表不报错；单条消息最多显示一个对应日期分割线 |
+| ML-005 | 历史加载与流式追加 | 刷新历史或追加流式消息时，已有日期分割线不抖动、不重复 |
 
 ### FEAT-022: Plan Tab 进度追踪
 
@@ -506,7 +617,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-022 |
 | 标题 | Inspector Plan Tab 进度追踪 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S2 显示 Inspector 面板 Plan tab 有：1) Markdown 渲染的计划内容；2) Checkbox 进度追踪（可勾选已完成项）；3) 进度百分比显示；4) 预估时间 (est. time)。当前 PlanTab 仅渲染纯文本 plan 字符串 |
@@ -522,7 +633,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-023 |
 | 标题 | iPhone 移动端专属布局 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S13 显示 iPhone 专属布局，需单独适配：1) 抽屉式 Sidebar（左滑打开，覆盖在主面板上方）；2) 大标题导航栏 (Large Title)；3) 底部固定 Composer；4) Agent 状态条（顶部窄条）；5) Dynamic Island 适配（顶部 safe area）；6) Home Indicator Bar 适配（底部 safe area）；7) Inspector 面板改为底部 sheet |
@@ -538,7 +649,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-024 |
 | 标题 | Permission Mode UI 重构 — YOLO/普通 简化 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 创建编程话题时权限模式简化为两个选项：YOLO（跳过所有权限检查，Agent 自由操作）和 普通（Agent 修改文件时需逐一确认）。Default/AcceptEdits 由 PI Agent 在会话中动态决定（每次修改发 interaction.request），不在创建时选择。Plan 模式作为话题内可切换的独立开关（见 FEAT-025）。去掉了原来冗余的 permissionMode 下拉框 + YOLO checkbox + Plan checkbox |
@@ -553,7 +664,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-025 |
 | 标题 | Plan 模式话题内切换 — 编程话题 header 开关 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 编程话题进入后，在话题 header 提供 Plan 模式切换按钮。Plan 模式开启时 Agent 只读不修改文件；关闭时 Agent 按原始权限模式（default/acceptEdits/yolo）操作。按钮用金色高亮标识 Plan 状态。当前仅实现前端 UI，PI Agent 侧需配合支持动态切换（见 pi-agent-requirements.md C16） |
@@ -568,7 +679,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-026 |
 | 标题 | S9 删除话题弹窗 — Glass modal + 产物策略选择 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S9 实现：删除话题时弹出 Liquid Glass modal，包含红色垃圾桶 glyph、话题名称、产物数量摘要、mime chip 预览行。Radio 选项：「转入产物池(保留)」(带绿色推荐 badge) vs「跟随话题一起删除」(红色警告)。底栏 Esc 快捷键 + 确认删除按钮(红色渐变)。TopicItem hover 显示垃圾桶图标，系统话题不可删 |
@@ -584,7 +695,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-027 |
 | 标题 | S6 @产物选择器升级 — Filter pills + Mime 图标 + 键盘导航 |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 设计稿 S6 实现：MessageInput 输入 @ 弹出升级版产物选择器 popover (640px glass modal)。Tab 栏（当前话题/产物池）含蓝色 count badge；搜索框 + filter pills（全部/表格/图片/文档）；分组列表（最近用过/本话题其它）；每行含 mime 色块图标 + 名称 + 来源话题 + 时间 + 大小；选中行高亮 + ↵ 引用提示；键盘导航（↑↓ 移动、Enter 选中、Tab 切 Tab、Esc 关闭）；底栏快捷键提示 |
@@ -602,7 +713,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-028 |
 | 标题 | Turn ID — 消息轮次聚合（server + 前端） |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.1.0 |
 | 提出时间 | 2026-05-11 |
 | 描述 | 适配层（PI Adapter）v1.2.0 C19 会在每轮 user message 时生成 `turnId`，该轮所有事件都携带该字段。本系统需配合改造：1) server 首次收到某个 `turnId` 时建立 turnId↔topicId 映射，后续同一 turnId 的事件直接归入对应 topic；2) `messages.history` 返回时同一 turnId 的 message 归为一组；3) 前端按 turnId 将相邻 assistant message 合并渲染，纯 thinking + stopReason=tool_use 的过渡 message 不再单独渲染成空泡；4) `artifact.created` 在主聊天流中展示产物创建卡片 |
@@ -619,7 +730,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-013 |
 | 标题 | PI Session 持久化与自动恢复 (Per-session WS + Resume) |
-| 状态 | 已验证 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-09 |
 | 描述 | 每个 topic 独享一条 PI WS 连接，避免多 session 事件交叉。Server 重启或 PI Agent 意外退出后，已有 topic 的 session 能自动恢复：1) Server 启动时遍历有 pi_session_id 的 topic，为每个 session 重新建立 WS 连接；2) sendUserMessage 失败时检测 session 失效，自动 resume 或提示用户；3) Topic 删除时关闭对应的 WS 连接 |
@@ -636,7 +747,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 |---|---|
 | ID | FEAT-014 |
 | 标题 | 协议补充 — session.health / topic.resume / cron.run.completed |
-| 状态 | 已回归 |
+| 状态 | 已发布 |
 | 版本 | v1.0.0 |
 | 提出时间 | 2026-05-10 |
 | 描述 | 补充三个 WS 事件：1) `session.health` (Server→Client): PI 连接状态通知 (connected/disconnected/reconnecting)，Server 自动重试 N 次后推送 disconnected 让前端显示手动重连；2) `topic.resume` (Client→Server): 用户手动触发 PI session 重连；3) `cron.run.completed` (Server→Client): 定时任务执行结果回调 (success/failed/timeout + summary + duration) |
@@ -681,6 +792,16 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 - **状态**: 待改 (PI v1.2.0 C19, 本系统 FEAT-028)
 - **版本**: 待定版本
 - **要求**: 详见 `.omc/plans/pi-agent-requirements.md` §2 v1.2.0 C19 + 本文件 FEAT-028
+
+### E7: recreateSession — 覆盖式重建丢失的 Agent Session
+- **状态**: 待改 (PI v1.3.0 C23, 本系统 FEAT-029)
+- **版本**: v1.3.0
+- **要求**: Adapter 新增 `recreateSession({ sessionId, kind, ...spec })` RPC。仅当原 session 明确不存在或损坏时,允许用同一个 `sessionId` 重建执行上下文;如果只是临时不可用、仍可 attach 或正在 streaming,必须返回明确错误,不能覆盖。详见 `.omc/plans/pi-agent-requirements.md` C23。
+
+### E8: sendUserMessage.clientMessageId — 用户消息 retry 幂等投递
+- **状态**: 待改 (PI v1.3.0 C24, 本系统 FEAT-029)
+- **版本**: v1.3.0
+- **要求**: Adapter 的 `sendUserMessage` 支持 `clientMessageId`。同一 `sessionId + clientMessageId` 的 retry 必须幂等: 已接收/处理中/已完成时返回同一结果,不能重复创建 assistant turn;请求体不一致时返回 `idempotency_conflict`。agent-chat retry 明确失败后会撤销 pending 用户消息。详见 `.omc/plans/pi-agent-requirements.md` C24。
 
 ### 其他已有外部需求
 - PI Adapter 接口 (WebSocket + JSON-RPC)

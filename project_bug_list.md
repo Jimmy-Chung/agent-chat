@@ -9,9 +9,46 @@
 
 ---
 
-## 待修复
+## 清单维护规则
 
-当前无本仓库内已确认、未修复的 `v1.2.x` 阻断 bug。
+- 每次新增 bug 或变更 bug 状态时，必须同步更新 Linear issue，并维护下方 `BUG ID -> Linear ID` 映射。
+- 新增 bug 时先检查已有 `BUG-*` 编号；如果目标 ID 已存在或发生冲突，自动使用下一个未占用的 `BUG-*` ID。
+- Bug 状态机：`新建 -> 处理中 -> 已修复 -> 重新打开`；建单后确认不是 bug 或无需修复时，状态改为 `已关闭`。
+- Linear issue 必须标记 `Bug`，并按本地状态同步对应的 `status: ...` 标签；涉及 PI Adapter、Cloudflare、GitHub Actions 等外部系统时，同时标记 `External dependency`。
+- 本清单可公开发布；不得写入真实 token、鉴权值、密钥或环境变量值。
+
+---
+
+## Linear 映射
+
+| BUG ID | Linear ID |
+|---|---|
+| BUG-001 | AIT-39 |
+| BUG-002 | AIT-40 |
+| BUG-003 | AIT-41 |
+| BUG-015 | AIT-42 |
+| BUG-016 | AIT-43 |
+| BUG-017 | AIT-44 |
+| BUG-018 | AIT-45 |
+| BUG-019 | AIT-46 |
+| BUG-020 | AIT-47 |
+| BUG-021 | AIT-48 |
+| BUG-022 | AIT-49 |
+| BUG-023 | AIT-50 |
+| BUG-024 | AIT-51 |
+| BUG-025 | AIT-52 |
+| BUG-026 | AIT-53 |
+| BUG-027 | AIT-54 |
+| BUG-028 | AIT-55 |
+| BUG-029 | AIT-56 |
+| BUG-030 | AIT-57 |
+| BUG-031 | AIT-58 |
+
+---
+
+## 未完成
+
+当前无本仓库内处于 `新建`、`处理中` 或 `重新打开` 的 `v1.2.x` 阻断 bug。
 
 ---
 
