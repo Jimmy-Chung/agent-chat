@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.3.0 |
-| 更新时间 | 2026-05-14 |
+| 当前版本 | v1.3.1 |
+| 更新时间 | 2026-05-15 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -44,10 +44,27 @@
 | BUG-030 | AIT-57 |
 | BUG-031 | AIT-58 |
 | BUG-032 | AIT-105 |
+| BUG-033 | AIT-107 |
+| BUG-034 | AIT-109 |
+| BUG-035 | AIT-110 |
 
 ---
 
 ## 未完成
+
+### BUG-033: 手机宽度下 @ 产物选择弹窗横向溢出
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-033 |
+| 标题 | 手机宽度下 @ 产物选择弹窗横向溢出 |
+| 状态 | 处理中 |
+| 发现时间 | 2026-05-14 |
+| 修复版本 | v1.4.0（已在 v1.4.0 stash 中修复，待合并） |
+| 影响模块 | packages/web（MessageInput / @ 产物选择弹窗） |
+| 描述 | 在手机宽度下，聊天输入框的 @ 产物选择弹窗仍按桌面宽度渲染，出现横向溢出，影响当前话题/产物池筛选与键盘提示区域显示。 |
+| 根因 | 弹窗宽度硬编码为 640px，窄屏下溢出 viewport。 |
+| 修复方案 | 宽度改为 min(640px, calc(100vw - 32px))；filter pills 加 overflow-x: auto；底部快捷键提示窄屏隐藏。 |
 
 当前无本仓库内处于 `新建`、`处理中` 或 `重新打开` 的 `v1.2.x` 阻断 bug。
 
@@ -68,6 +85,36 @@
 ---
 
 ## 已修复
+
+### BUG-034: 发消息后立即触发重试，未等待 5 秒响应窗口
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-034 |
+| 标题 | 发消息后立即触发重试，未等待 5 秒响应窗口 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-15 |
+| 修复时间 | 2026-05-15 |
+| 修复版本 | v1.3.1 |
+| 影响模块 | packages/server（message-delivery.ts、pi/client.ts） |
+| 描述 | 用户发送消息后，系统未等待 FEAT-029 定义的 5 秒响应窗口，直接进入自动重试流程，消息瞬间出现红点。 |
+| 根因 | `ensureDeliverableSession` 在 PI 连接失败时立即返回 null，绕过了 5 秒 timer。自动重试循环无延迟，飞速执行后将消息置为 needs_retry。 |
+| 修复方案 | 在 `deliverUserMessage` 非手动路径中，首次 `attemptDelivery` 失败后补足距发送时刻的剩余时间（最小 AUTO_RETRY_DELAY_MS），保证与 FEAT-029 规格对齐。 |
+
+### BUG-035: 产物预览失效（popup 被拦截 + 生成产物无 r2_key）
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-035 |
+| 标题 | 产物预览失效（popup 被拦截 + 生成产物无 r2_key） |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-15 |
+| 修复时间 | 2026-05-15 |
+| 修复版本 | v1.3.1 |
+| 影响模块 | packages/web（InspectorPanel）、packages/server（artifact-control.ts） |
+| 描述 | 点击"预览"按钮无效，窗口不打开，没有任何提示。 |
+| 根因 | 1) `window.open()` 在 WS 回调异步上下文中调用，被浏览器弹窗拦截器静默阻止；2) PI 生成产物 `r2_key` 为空，`initArtifactDownload` 抛出异常，前端未处理 error 事件。 |
+| 修复方案 | 同步点击时先 `window.open('about:blank')` 获取 window 引用，URL 到达后设置 `location.href`；同步监听 `agent-chat:error` 捕获 `ARTIFACT_DOWNLOAD_UNAVAILABLE` 后关闭空窗并提示。 |
 
 ### BUG-032: 旧 Topic 恢复后 Adapter session attach / recreate 链路异常
 
