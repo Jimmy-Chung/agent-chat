@@ -5,9 +5,14 @@ dist/
 *.db-journal
 .env
 .env.local
+.dev.vars
 .DS_Store
 *.tsbuildinfo
 coverage/
 .turbo/
 data/
 .omc/
+packages/server/.wrangler/
+packages/web/out/
+test-results/
+*.tar.gz
