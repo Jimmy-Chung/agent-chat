@@ -114,4 +114,19 @@ describe('ArtifactStore', () => {
     useArtifactStore.getState().setPoolArtifacts(artifacts)
     expect(useArtifactStore.getState().poolArtifacts).toEqual(artifacts)
   })
+
+  it('stores failed artifact status metadata', () => {
+    const artifact = makeArtifact({
+      id: 'failed-1',
+      topic_id: 't1',
+      upload_status: 'upload_failed',
+      failure_code: 'size_exceeded',
+      failure_message: '文件过大',
+    })
+
+    useArtifactStore.getState().addArtifact(artifact)
+
+    expect(useArtifactStore.getState().byTopic.t1[0].upload_status).toBe('upload_failed')
+    expect(useArtifactStore.getState().byTopic.t1[0].failure_message).toBe('文件过大')
+  })
 })

@@ -341,17 +341,66 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
               {artifactPath(a)}
             </div>
           )}
+          {(a.upload_status ?? 'uploaded') === 'upload_failed' && (
+            <div className="mt-1.5 text-[11px]" style={{ color: '#ff6b6b' }}>
+              上传失败{a.failure_message ? `: ${a.failure_message}` : ''}
+            </div>
+          )}
           <div className="mt-1.5 flex items-center gap-3">
             {a.mime && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{a.mime}</span>}
             {a.size_bytes != null && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{formatSize(a.size_bytes)}</span>}
-            <span className="rounded px-1.5 py-0.5 text-[11px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
+            <span
+              className="rounded px-1.5 py-0.5 text-[11px]"
+              style={artifactSourceStyle(a.source)}
+            >
               {a.source === 'generated' ? '生成' : '上传'}
+            </span>
+            <span className="ml-auto flex items-center gap-1.5">
+              <ArtifactAccessButton artifact={a} mode="preview" />
+              <ArtifactAccessButton artifact={a} mode="download" />
             </span>
           </div>
         </div>
       ))}
     </div>
   )
+}
+
+function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
+  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded'
+  const requestAccess = () => {
+    if (disabled) return
+    const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
+    if (url && !url.startsWith('/api/artifacts/')) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const onReady = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { artifactId: string; downloadUrl: string; previewUrl?: string }
+      if (detail.artifactId !== artifact.id) return
+      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
+      window.open(mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl, '_blank', 'noopener,noreferrer')
+    }
+    window.addEventListener('agent-chat:artifact-download-ready', onReady)
+    getWsClient().send({ type: 'artifact.download.init', data: { artifactId: artifact.id } })
+  }
+
+  return (
+    <button
+      onClick={requestAccess}
+      disabled={disabled}
+      className="rounded px-1.5 py-0.5 text-[11px]"
+      style={{ background: 'var(--glass-1)', color: disabled ? 'var(--fg-dim)' : 'var(--fg-regular)', border: '1px solid var(--hairline)', opacity: disabled ? 0.55 : 1 }}
+    >
+      {mode === 'preview' ? '预览' : '下载'}
+    </button>
+  )
+}
+
+function artifactSourceStyle(source: import('@agent-chat/protocol').Artifact['source']): React.CSSProperties {
+  return source === 'generated'
+    ? { background: 'rgba(247, 194, 107, 0.16)', color: '#d89b32', border: '1px solid rgba(247, 194, 107, 0.28)' }
+    : { background: 'rgba(48, 209, 88, 0.14)', color: '#2ea85b', border: '1px solid rgba(48, 209, 88, 0.26)' }
 }
 
 function CronTab({ topicId }: { topicId: string | null }) {

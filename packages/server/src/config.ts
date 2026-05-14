@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database
   TOPIC_DO: DurableObjectNamespace
+  R2?: R2Bucket
   AGENT_CHAT_TOKEN?: string
   PI_ADAPTER_URL?: string
   PI_ADAPTER_TOKEN?: string
@@ -16,6 +17,7 @@ export interface AppConfig {
   token: string
   piAdapterUrl: string
   piAdapterToken: string
+  artifactTokenSecret: string
   logLevel: string
   r2: {
     accountId: string
@@ -33,6 +35,7 @@ export function createConfig(env: Env): AppConfig {
       env.PI_ADAPTER_URL ||
       'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
     piAdapterToken: env.PI_ADAPTER_TOKEN || '',
+    artifactTokenSecret: env.AGENT_CHAT_TOKEN || env.PI_ADAPTER_TOKEN || 'agent-chat-local-artifacts',
     logLevel: env.LOG_LEVEL || 'info',
     r2: {
       accountId: env.R2_ACCOUNT_ID || '',

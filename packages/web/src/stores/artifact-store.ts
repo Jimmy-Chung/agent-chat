@@ -6,6 +6,7 @@ interface ArtifactState {
   byTopic: Record<string, Artifact[]>
   poolArtifacts: Artifact[]
   addArtifact: (artifact: Artifact) => void
+  updateArtifactAccess: (id: string, access: { download_url?: string; preview_url?: string }) => void
   removeArtifact: (id: string) => void
   moveArtifact: (id: string, fromTopicId: string | null, toTopicId: string | null) => void
   setTopicArtifacts: (topicId: string, artifacts: Artifact[]) => void
@@ -21,10 +22,25 @@ export const useArtifactStore = create<ArtifactState>()(
       set((s) => {
         if (artifact.topic_id) {
           if (!s.byTopic[artifact.topic_id]) s.byTopic[artifact.topic_id] = []
-          s.byTopic[artifact.topic_id].push(artifact)
+          const idx = s.byTopic[artifact.topic_id].findIndex((a) => a.id === artifact.id)
+          if (idx >= 0) s.byTopic[artifact.topic_id][idx] = artifact
+          else s.byTopic[artifact.topic_id].push(artifact)
         } else {
-          s.poolArtifacts.push(artifact)
+          const idx = s.poolArtifacts.findIndex((a) => a.id === artifact.id)
+          if (idx >= 0) s.poolArtifacts[idx] = artifact
+          else s.poolArtifacts.push(artifact)
         }
+      })
+    },
+
+    updateArtifactAccess: (id, access) => {
+      set((s) => {
+        for (const topicId of Object.keys(s.byTopic)) {
+          const artifact = s.byTopic[topicId].find((a) => a.id === id)
+          if (artifact) Object.assign(artifact, access)
+        }
+        const poolArtifact = s.poolArtifacts.find((a) => a.id === id)
+        if (poolArtifact) Object.assign(poolArtifact, access)
       })
     },
 

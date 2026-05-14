@@ -314,19 +314,23 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
   const isActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(state)
   const latestStreaming = [...messages].reverse().find((m) => m.role === 'assistant' && m.status === 'streaming')
+  const activeSinceRef = useRef<number | null>(null)
   const [elapsedMs, setElapsedMs] = useState(0)
 
   useEffect(() => {
-    if (!latestStreaming?.started_at || !isActive) {
+    if (!isActive) {
+      activeSinceRef.current = null
       setElapsedMs(0)
       return
     }
 
-    const tick = () => setElapsedMs(Date.now() - latestStreaming.started_at!)
+    const startedAt = latestStreaming?.started_at ?? activeSinceRef.current ?? Date.now()
+    activeSinceRef.current = startedAt
+    const tick = () => setElapsedMs(Date.now() - startedAt)
     tick()
     const timer = window.setInterval(tick, 1000)
     return () => window.clearInterval(timer)
-  }, [isActive, latestStreaming?.started_at])
+  }, [isActive, latestStreaming?.started_at, state])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -587,9 +591,49 @@ function ArtifactPoolView() {
           {artifactPath(a) && <div className="mt-1 truncate text-xs" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>{artifactPath(a)}</div>}
           {a.mime && <div className="mt-1 text-xs" style={{ color: 'var(--fg-dim)' }}>{a.mime}</div>}
           {a.size_bytes && <div className="text-xs" style={{ color: 'var(--fg-dim)' }}>{(a.size_bytes / 1024).toFixed(1)} KB</div>}
+          {(a.upload_status ?? 'uploaded') === 'upload_failed' && (
+            <div className="mt-1 text-xs" style={{ color: '#ff6b6b' }}>
+              上传失败{a.failure_message ? `: ${a.failure_message}` : ''}
+            </div>
+          )}
+          <div className="mt-2 flex gap-1.5">
+            <ArtifactAccessButton artifact={a} mode="preview" />
+            <ArtifactAccessButton artifact={a} mode="download" />
+          </div>
         </div>
       ))}
     </div>
+  )
+}
+
+function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
+  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded'
+  const requestAccess = () => {
+    if (disabled) return
+    const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
+    if (url && !url.startsWith('/api/artifacts/')) {
+      window.open(url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const onReady = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { artifactId: string; downloadUrl: string; previewUrl?: string }
+      if (detail.artifactId !== artifact.id) return
+      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
+      window.open(mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl, '_blank', 'noopener,noreferrer')
+    }
+    window.addEventListener('agent-chat:artifact-download-ready', onReady)
+    getWsClient().send({ type: 'artifact.download.init', data: { artifactId: artifact.id } })
+  }
+
+  return (
+    <button
+      onClick={requestAccess}
+      disabled={disabled}
+      className="rounded px-1.5 py-0.5 text-[11px]"
+      style={{ background: 'var(--glass-1)', color: disabled ? 'var(--fg-dim)' : 'var(--fg-regular)', border: '1px solid var(--hairline)', opacity: disabled ? 0.55 : 1 }}
+    >
+      {mode === 'preview' ? '预览' : '下载'}
+    </button>
   )
 }
 

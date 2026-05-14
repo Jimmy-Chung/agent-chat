@@ -27,9 +27,8 @@ interface TopicActions {
 
 const requestTopicData = (topicId: string) => {
   const client = getWsClient()
-  client.send({ type: 'messages.load', data: { topicId } })
-  client.send({ type: 'topic.resume', data: { topicId } })
   client.send({ type: 'topic.select', data: { topicId } })
+  client.send({ type: 'messages.load', data: { topicId } })
 }
 
 export const useTopicStore = create<TopicState & TopicActions>()(

@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS artifacts (
   size_bytes INTEGER,
   r2_key TEXT NOT NULL,
   source TEXT NOT NULL,
+  upload_status TEXT NOT NULL DEFAULT 'uploaded',
+  failure_code TEXT,
+  failure_message TEXT,
   created_at INTEGER NOT NULL,
   metadata_json TEXT
 );

@@ -13,6 +13,9 @@ export async function createArtifact(input: {
   sizeBytes?: number | null
   r2Key: string
   source: Artifact['source']
+  uploadStatus?: Artifact['upload_status']
+  failureCode?: string | null
+  failureMessage?: string | null
   metadataJson?: string | null
 }): Promise<Artifact> {
   const row = {
@@ -24,6 +27,9 @@ export async function createArtifact(input: {
     sizeBytes: input.sizeBytes ?? null,
     r2Key: input.r2Key,
     source: input.source,
+    uploadStatus: input.uploadStatus ?? 'uploaded',
+    failureCode: input.failureCode ?? null,
+    failureMessage: input.failureMessage ?? null,
     createdAt: Date.now(),
     metadataJson: input.metadataJson ?? null,
   }
@@ -89,6 +95,9 @@ function toDomain(row: Record<string, unknown>): Artifact {
     size_bytes: (row.sizeBytes as number) || null,
     r2_key: row.r2Key as string,
     source: row.source as Artifact['source'],
+    upload_status: ((row.uploadStatus as Artifact['upload_status'] | undefined) ?? 'uploaded'),
+    failure_code: (row.failureCode as string) || null,
+    failure_message: (row.failureMessage as string) || null,
     created_at: row.createdAt as number,
     metadata_json: (row.metadataJson as string) || null,
   }

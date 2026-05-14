@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
 import worker from '../worker'
 import { setupTestDb } from './db-helper'
+import { createArtifactTokenWithSecret } from '../r2/artifact-access'
 
 describe('Worker HTTP endpoints', () => {
   beforeAll(async () => {
@@ -65,5 +66,37 @@ describe('Worker WS upgrade auth', () => {
       },
     })
     expect(res.status).toBe(101)
+  })
+})
+
+describe('Worker artifact access CORS', () => {
+  beforeAll(async () => {
+    await setupTestDb()
+  })
+
+  async function fetch(path: string, init?: RequestInit) {
+    return worker.fetch(new Request(`http://localhost${path}`, init), env)
+  }
+
+  it('allows browser preflight for direct R2 upload', async () => {
+    const key = 'topics/topic-1/upload-1/file.txt'
+    const token = await createArtifactTokenWithSecret('test-token', {
+      action: 'upload',
+      key,
+      maxBytes: 1024,
+    })
+    const res = await fetch(`/api/artifacts/upload/${encodeURIComponent(key)}?token=${token}`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'http://localhost:3001',
+        'Access-Control-Request-Method': 'PUT',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+    })
+
+    expect(res.status).toBe(204)
+    expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    expect(res.headers.get('access-control-allow-methods')).toContain('PUT')
+    expect(res.headers.get('access-control-allow-headers')).toContain('content-type')
   })
 })

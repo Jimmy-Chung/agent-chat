@@ -8,6 +8,10 @@ binding = "DB"
 database_name = "agent-chat"
 database_id = "616c7032-f040-4178-8c04-6f5db71434a1"
 
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "agent-chat-artifacts"
+
 [[durable_objects.bindings]]
 name = "TOPIC_DO"
 class_name = "TopicDurableObject"

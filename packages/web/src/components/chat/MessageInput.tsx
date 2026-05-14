@@ -68,6 +68,7 @@ interface MessageInputProps {
 export function MessageInput({ topicId }: MessageInputProps) {
   const [value, setValue] = useState('')
   const [mentions, setMentions] = useState<Mention[]>([])
+  const [uploading, setUploading] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerQuery, setPickerQuery] = useState('')
   const [pickerTab, setPickerTab] = useState<'topic' | 'pool'>('topic')
@@ -75,6 +76,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const [filterType, setFilterType] = useState<FilterType>('all')
   const pickerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const wsClient = getWsClient()
 
   const streamingMessageId = useMessageStore((s) => s.streamingMessageId)
@@ -102,6 +104,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
       data: {
         topicId,
         content: trimmed,
+        clientMessageId: `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         mentions: mentions.map((m) => ({ id: m.id, name: m.name })),
       },
     })
@@ -114,6 +117,55 @@ export function MessageInput({ topicId }: MessageInputProps) {
       type: 'user.action',
       data: { topicId, action: 'abort' },
     })
+  }, [topicId, wsClient])
+
+  const handleFileUpload = useCallback(async (file: File) => {
+    setUploading(true)
+    try {
+      const ready = await new Promise<{ uploadId: string; uploadUrl: string; method: 'PUT' }>((resolve, reject) => {
+        const onReady = (event: MessageEvent | Event) => {
+          const detail = (event as CustomEvent).detail as { uploadId: string; uploadUrl: string; method: 'PUT' }
+          cleanup()
+          resolve(detail)
+        }
+        const onError = (event: MessageEvent | Event) => {
+          const detail = (event as CustomEvent).detail as { code?: string; message?: string }
+          cleanup()
+          reject(new Error(detail.message ?? detail.code ?? 'Upload init failed'))
+        }
+        const cleanup = () => {
+          window.removeEventListener('agent-chat:artifact-upload-ready', onReady)
+          window.removeEventListener('agent-chat:error', onError)
+        }
+        window.addEventListener('agent-chat:artifact-upload-ready', onReady, { once: true })
+        window.addEventListener('agent-chat:error', onError, { once: true })
+        wsClient.send({
+          type: 'artifact.upload.init',
+          data: {
+            topicId,
+            name: file.name,
+            mime: file.type || 'application/octet-stream',
+            sizeBytes: file.size,
+          },
+        })
+      })
+      const response = await fetch(ready.uploadUrl, {
+        method: ready.method,
+        headers: { 'content-type': file.type || 'application/octet-stream' },
+        body: file,
+      })
+      if (!response.ok) throw new Error(`Upload failed: ${response.status}`)
+      wsClient.send({
+        type: 'artifact.upload.complete',
+        data: { uploadId: ready.uploadId, topicId },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed'
+      console.error('Artifact upload failed', error)
+      window.alert(`上传失败: ${message}`)
+    } finally {
+      setUploading(false)
+    }
   }, [topicId, wsClient])
 
   const handleKeyDown = useCallback(
@@ -173,6 +225,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
     const source = pickerTab === 'topic' ? topicArtifacts : poolArtifacts
     return source
       .filter((a) => {
+        if ((a.upload_status ?? 'uploaded') !== 'uploaded') return false
         if (pickerQuery && !a.name.toLowerCase().includes(pickerQuery)) return false
         const ext = getExt(a.name)
         return FILTER_MAP[filterType](ext)
@@ -236,6 +289,17 @@ export function MessageInput({ topicId }: MessageInputProps) {
       )}
 
       <div className="relative">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".txt,.md,.json,.csv,.html,.css,.png,.jpg,.jpeg,.webp,.gif,.svg,.pdf,.doc,.docx,.xls,.xlsx"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.currentTarget.value = ''
+            if (file) void handleFileUpload(file)
+          }}
+        />
         {/* Artifact selector popover (S6) */}
         {showPicker && (
           <div
@@ -474,7 +538,13 @@ export function MessageInput({ topicId }: MessageInputProps) {
           {/* Toolbar */}
           <div className="flex items-center gap-1.5">
             <div className="flex gap-1">
-              <button title="附件" className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors" style={{ color: 'var(--fg-dim)' }}>
+              <button
+                title="附件"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors disabled:opacity-50"
+                style={{ color: uploading ? 'var(--role-user)' : 'var(--fg-dim)' }}
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
               </button>
               <button title="提及" onClick={() => { setShowPicker(true); setPickerQuery(''); setHighlightIndex(0) }} className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors" style={{ color: 'var(--fg-dim)' }}>

@@ -7,6 +7,7 @@ import { logger, setLogLevel } from './logger'
 import { seedSystemTopics } from './seed'
 import { initR2 } from './r2/client'
 import { getD1 } from './db/migrate'
+import { handleArtifactAccessRequest } from './r2/artifact-access'
 
 let initialized = false
 let appConfig: AppConfig | null = null
@@ -57,6 +58,11 @@ export default {
     }
 
     const url = new URL(request.url)
+
+    if (!appConfig) return new Response('init error: config missing', { status: 500 })
+
+    const artifactResponse = await handleArtifactAccessRequest(request, env, appConfig)
+    if (artifactResponse) return artifactResponse
 
     // WebSocket upgrade → route to DO
     if (url.pathname === '/ws') {
