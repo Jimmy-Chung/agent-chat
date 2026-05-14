@@ -375,13 +375,35 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       window.open(url, '_blank', 'noopener,noreferrer')
       return
     }
+
+    // Pre-open window synchronously on user click so popup blockers don't interfere.
+    // The URL is filled in asynchronously once the server returns a signed URL.
+    const newWindow = window.open('about:blank', '_blank')
+
+    const cleanup = () => {
+      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
+      window.removeEventListener('agent-chat:error', onError)
+    }
     const onReady = (event: Event) => {
       const detail = (event as CustomEvent).detail as { artifactId: string; downloadUrl: string; previewUrl?: string }
       if (detail.artifactId !== artifact.id) return
-      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
-      window.open(mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl, '_blank', 'noopener,noreferrer')
+      cleanup()
+      const targetUrl = mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl
+      if (newWindow && !newWindow.closed) {
+        newWindow.location.href = targetUrl
+      } else {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer')
+      }
+    }
+    const onError = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { code?: string }
+      if (detail.code !== 'ARTIFACT_DOWNLOAD_UNAVAILABLE') return
+      cleanup()
+      if (newWindow && !newWindow.closed) newWindow.close()
+      alert('该产物暂不支持预览（文件尚未上传到云端）')
     }
     window.addEventListener('agent-chat:artifact-download-ready', onReady)
+    window.addEventListener('agent-chat:error', onError)
     getWsClient().send({ type: 'artifact.download.init', data: { artifactId: artifact.id } })
   }
 
