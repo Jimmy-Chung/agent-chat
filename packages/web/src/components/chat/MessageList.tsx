@@ -4,6 +4,7 @@ import { useRef, useEffect } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import type { ToolResultInfo } from './ToolCard'
 import { MessageBubble } from './MessageBubble'
+import { formatDateDivider, shouldShowDateDivider } from '@/lib/message-time'
 
 interface MessageListProps {
   messages: Message[]
@@ -74,24 +75,28 @@ export function MessageList({
       {turns.map((turn, turnIdx) => {
         return (
           <div key={turn.key}>
-            {turnIdx > 0 && (
-              <DateDivider
-                prevTs={turns[turnIdx - 1].messages[turns[turnIdx - 1].messages.length - 1].started_at}
-                nextTs={turn.messages[0].started_at}
-              />
-            )}
-            {turn.messages.map((msg, msgIdx) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                parts={partsByMessage[msg.id] ?? []}
-                toolResults={toolResults}
-                usage={usageByMessage[msg.id] ?? null}
-                approval={approvalsByMessage[msg.id] ?? null}
-                cronTriggered={cronByMessage[msg.id] ?? null}
-                isLast={turnIdx === turns.length - 1 && msgIdx === turn.messages.length - 1}
-              />
-            ))}
+            {turn.messages.map((msg, msgIdx) => {
+              const previousMessage = msgIdx > 0
+                ? turn.messages[msgIdx - 1]
+                : turns[turnIdx - 1]?.messages.at(-1)
+
+              return (
+                <div key={msg.id}>
+                  {shouldShowDateDivider(previousMessage?.started_at ?? null, msg.started_at) && (
+                    <DateDivider timestamp={msg.started_at} />
+                  )}
+                  <MessageBubble
+                    message={msg}
+                    parts={partsByMessage[msg.id] ?? []}
+                    toolResults={toolResults}
+                    usage={usageByMessage[msg.id] ?? null}
+                    approval={approvalsByMessage[msg.id] ?? null}
+                    cronTriggered={cronByMessage[msg.id] ?? null}
+                    isLast={turnIdx === turns.length - 1 && msgIdx === turn.messages.length - 1}
+                  />
+                </div>
+              )
+            })}
           </div>
         )
       })}
@@ -201,10 +206,7 @@ function messageHasVisibleContent(msg: Message, partsByMessage: Record<string, M
   })
 }
 
-function DateDivider({ prevTs, nextTs }: { prevTs: number; nextTs: number }) {
-  if (!prevTs || !nextTs) return null
-  if (isSameDay(prevTs, nextTs)) return null
-
+function DateDivider({ timestamp }: { timestamp: number }) {
   return (
     <div className="flex items-center px-4 py-4">
       <div style={{ height: 1, flex: 1, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.08))' }} />
@@ -217,42 +219,9 @@ function DateDivider({ prevTs, nextTs }: { prevTs: number; nextTs: number }) {
           fontFeatureSettings: '"tnum"',
         }}
       >
-        {formatDateDivider(nextTs)}
+        {formatDateDivider(timestamp)}
       </span>
       <div style={{ height: 1, flex: 1, background: 'linear-gradient(90deg, rgba(255,255,255,0.08), transparent)' }} />
     </div>
   )
-}
-
-function isSameDay(a: number, b: number): boolean {
-  const da = new Date(a)
-  const db = new Date(b)
-  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate()
-}
-
-function formatDateDivider(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-
-  const time = new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-
-  if (isSameDay(date.getTime(), now.getTime())) {
-    return `今天 · ${time}`
-  }
-
-  if (isSameDay(date.getTime(), yesterday.getTime())) {
-    return `昨天 · ${time}`
-  }
-
-  const day = new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-  }).format(date)
-
-  return `${day} · ${time}`
 }

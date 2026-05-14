@@ -181,6 +181,30 @@ code, pre {
 }
 .role-bubble-assistant:hover { background: rgba(255, 255, 255, 0.08); }
 
+.message-bubble-shell {
+  position: relative;
+  max-width: 100%;
+}
+
+.message-edge-timestamp {
+  position: absolute;
+  bottom: 2px;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  font-size: 10px;
+  line-height: 1;
+  font-feature-settings: "tnum";
+  pointer-events: none;
+}
+
+.message-bubble-shell.is-user .message-edge-timestamp {
+  right: calc(100% + 8px);
+}
+
+.message-bubble-shell.is-assistant .message-edge-timestamp {
+  left: calc(100% + 8px);
+}
+
 .message-retry-dot {
   position: absolute;
   top: 50%;

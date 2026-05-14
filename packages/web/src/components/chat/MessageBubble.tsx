@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useDeferredValue } from 'react'
+import { useRef, useState, useDeferredValue } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCard, type ToolCallInfo, type ToolResultInfo } from './ToolCard'
@@ -10,6 +10,7 @@ import { UsageBadge } from './UsageBadge'
 import { CronIndicator } from './CronIndicator'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { useMessageStore } from '@/stores/message-store'
+import { formatMessageTime } from '@/lib/message-time'
 import { getWsClient } from '@/lib/ws-client'
 
 interface MessageBubbleProps {
@@ -38,6 +39,8 @@ export function MessageBubble({
   isLast,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
+  const [touchTimeVisible, setTouchTimeVisible] = useState(false)
+  const longPressTimerRef = useRef<number | null>(null)
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const rawStreamingText = useMessageStore(
@@ -53,10 +56,7 @@ export function MessageBubble({
   const visiblePartCount = parts.filter((part) => hasVisibleContent(part, isUser)).length
   const hasStreamingContent = message.status === 'streaming' && isLast && !isUser && !hasPersistedTextPart && streamingText.trim().length > 0
   const shouldShowBubble = !isUser ? visiblePartCount > 0 || hasStreamingContent || !!approval || !!cronTriggered : true
-  const time = new Date(message.started_at).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const time = formatMessageTime(message.started_at)
 
   if (!isSystem && !shouldShowBubble) {
     return null
@@ -65,7 +65,7 @@ export function MessageBubble({
   const isStreaming = hasStreamingContent
   const showInlineStreamingPulse = message.status === 'streaming' && isLast && !isUser && !hasStreamingContent && visiblePartCount > 0
   const hasVisibleBody = visiblePartCount > 0 || hasStreamingContent
-  const showTimestampRow = hovered && hasVisibleBody
+  const showTimestamp = hasVisibleBody && (hovered || touchTimeVisible)
   const showRetryDot = isUser && message.status === 'needs_retry'
   const showRetryLoading = isUser && message.status === 'retrying'
 
@@ -100,6 +100,30 @@ export function MessageBubble({
       className={`flex ${isUser ? 'justify-end' : 'justify-start'} px-6 py-0.5`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onTouchStart={() => {
+        if (longPressTimerRef.current != null) {
+          window.clearTimeout(longPressTimerRef.current)
+        }
+        longPressTimerRef.current = window.setTimeout(() => {
+          setTouchTimeVisible(true)
+        }, 420)
+      }}
+      onTouchEnd={() => {
+        if (longPressTimerRef.current != null) {
+          window.clearTimeout(longPressTimerRef.current)
+          longPressTimerRef.current = null
+        }
+        window.setTimeout(() => {
+          setTouchTimeVisible(false)
+        }, 1800)
+      }}
+      onTouchCancel={() => {
+        if (longPressTimerRef.current != null) {
+          window.clearTimeout(longPressTimerRef.current)
+          longPressTimerRef.current = null
+        }
+        setTouchTimeVisible(false)
+      }}
     >
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {/* Cron indicator */}
@@ -125,7 +149,7 @@ export function MessageBubble({
 
         {/* Bubble */}
         {hasVisibleBody && (
-          <div className="relative">
+          <div className={`message-bubble-shell ${isUser ? 'is-user' : 'is-assistant'}`}>
             {showRetryDot && (
               <button
                 type="button"
@@ -136,10 +160,7 @@ export function MessageBubble({
               />
             )}
             {showRetryLoading && <span className="message-retry-loading" />}
-            <div
-              className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}
-              style={{ paddingBottom: showTimestampRow ? (isUser ? 26 : 30) : undefined }}
-            >
+            <div className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}>
               {/* Message parts */}
               {parts.map((part) => (
                 <MessagePartRenderer
@@ -161,31 +182,19 @@ export function MessageBubble({
               )}
             </div>
 
-            {showTimestampRow && (
-              <>
-                <span
-                  className="pointer-events-none absolute bottom-2 right-3 text-[10px] transition-opacity"
-                  style={{
-                    opacity: hovered ? 1 : 0,
-                    color: isUser ? 'rgba(255,255,255,0.78)' : 'var(--fg-dim)',
-                    fontFeatureSettings: '"tnum"',
-                  }}
-                >
-                  {time}
-                </span>
-                {usage && !isUser && (
-                  <div
-                    className="pointer-events-none absolute bottom-1.5 left-3 transition-opacity"
-                    style={{ opacity: hovered ? 1 : 0 }}
-                  >
-                    <UsageBadge
-                      inputTokens={usage.inputTokens}
-                      outputTokens={usage.outputTokens}
-                      model={usage.model}
-                    />
-                  </div>
-                )}
-              </>
+            {showTimestamp && (
+              <span className="message-edge-timestamp">
+                {time}
+              </span>
+            )}
+            {usage && !isUser && hovered && (
+              <div className="pointer-events-none absolute -bottom-6 left-0">
+                <UsageBadge
+                  inputTokens={usage.inputTokens}
+                  outputTokens={usage.outputTokens}
+                  model={usage.model}
+                />
+              </div>
             )}
           </div>
         )}
