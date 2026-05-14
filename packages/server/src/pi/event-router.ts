@@ -15,6 +15,10 @@ export interface EventBroadcaster {
 const lastSeqBySession = new Map<string, number>()
 
 export function routePiEvents(pi: PiClient, broadcaster: EventBroadcaster): void {
+  pi.on('session.recreated', ({ sessionId }: { sessionId: string }) => {
+    lastSeqBySession.delete(sessionId)
+  })
+
   pi.on('event', (event: PIEvent) => {
     const lastSeq = lastSeqBySession.get(event.sessionId) ?? 0
     if (event.seq <= lastSeq) return

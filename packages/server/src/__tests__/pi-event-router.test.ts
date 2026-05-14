@@ -115,6 +115,30 @@ describe('Event router — session.health', () => {
 
     expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
   })
+
+  it('accepts low seq events again after session recreate reset', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Recreate Reset', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-reset-1' })
+
+    mockPi.emit('event', {
+      seq: 5,
+      sessionId: 'sess-reset-1',
+      ts: Date.now(),
+      payload: { kind: 'session.health', state: 'connected', piSessionId: 'sess-reset-1' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    mockPi.emit('session.recreated', { sessionId: 'sess-reset-1' })
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-reset-1',
+      ts: Date.now(),
+      payload: { kind: 'session.health', state: 'connected', piSessionId: 'sess-reset-1' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(mockHub.broadcast).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('Event router — cron.run.completed', () => {

@@ -132,11 +132,20 @@ export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boo
 
   const promise = (async () => {
     try {
-      await pi.reconnectSession(sessionId)
-      return true
-    } catch (err) {
-      logger.warn({ err, topicId: topic.id, sessionId }, 'attach failed while entering topic session')
-      return false
+      try {
+        await pi.reconnectSession(sessionId)
+        return true
+      } catch (err) {
+        logger.warn({ err, topicId: topic.id, sessionId }, 'attach failed while entering topic session')
+      }
+
+      try {
+        await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
+        return true
+      } catch (err) {
+        logger.warn({ err, topicId: topic.id, sessionId }, 'recreate failed while entering topic session')
+        return false
+      }
     } finally {
       restorePromisesBySession.delete(sessionId)
     }
