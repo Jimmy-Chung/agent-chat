@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-05-14 [v1.3.0] — 云端产物、历史一致性与消息时间体验发布
+
+### FEAT-016: R2 云端产物上传下载
+- 用户附件与 Agent 中间产物改为走 R2 数据面，agent-chat 只保留 artifact 控制面与 metadata
+- 话题产物、全局产物池、signed upload/download URL 与 Adapter 反向 RPC 链路已接通
+- `@` 产物消费透传 metadata + signed download URL，不再在 agent-chat / Adapter 之间传文件正文
+
+### FEAT-029: 会话历史一致性优化
+- 以 agent-chat DB 为投影视图事实源，刷新后保留 thinking / tool / artifact / interaction 等过程历史
+- 发送链路补齐自动 retry、手动 retry、recreateSession 兜底与 needs_retry / revert 状态恢复
+- 旧 Topic 恢复时，attach 失败会自动自愈到 recreate，并在 recreate 后清理旧 `lastSeq` 过滤状态
+
+### FEAT-021: 消息列表日期分割线
+- 消息列表按浏览器本地自然日插入日期分割线
+- 历史加载与流式追加时保持分组稳定，不重复插入同日分割线
+
+### FEAT-030: hover / long-press 时间戳
+- 桌面端 hover 显示气泡外侧时间戳，移动端改为长按展示
+- 多行消息、流式消息与富内容气泡的时间戳布局一并微调
+
+### BUG-032: 旧 Topic 恢复后 Adapter session attach / recreate 链路异常
+- `recreateSession()` 成功后补齐 `attachSession()`，避免新 session 创建成功但当前连接未订阅事件流
+- recreate 成功后清理 server 端旧 `lastSeqBySession` 高水位，避免误杀新事件流
+- 旧 Topic attach 失败后自动 fallback 到 recreate，并回收失败路径上的临时 PI 连接
+
+### 验收
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅
+- `pnpm -r build` ✅
+- `pnpm test:e2e` ✅
+
+---
+
 ## 2026-05-13 [v1.2.25] — 修复 Inspector Cron 渲染循环
 
 ### BUG-029: Inspector Cron selector 返回新数组导致 React 最大更新深度错误

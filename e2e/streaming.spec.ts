@@ -5,34 +5,28 @@ const TOKEN = process.env.AGENT_CHAT_TOKEN || 'test-token'
 async function authenticate(page: Page) {
   await page.goto('/')
   await page.evaluate((token) => {
+    localStorage.clear()
     localStorage.setItem('AGENT_CHAT_TOKEN', token)
   }, TOKEN)
   await page.reload()
-  // Wait for WS connection — sidebar header "Topics" text should appear
-  await page.getByText('Topics', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
+  await page.getByRole('button', { name: '新建话题' }).waitFor({ state: 'visible', timeout: 10_000 })
 }
 
 async function createTopic(page: Page, name: string) {
-  // Click "+ New Topic" button
-  await page.getByRole('button', { name: '+ New Topic' }).click()
-  // Fill topic name
-  const nameInput = page.getByPlaceholder('Topic name...')
+  await page.getByRole('button', { name: '新建话题' }).click()
+  const nameInput = page.getByPlaceholder('例如：优化移动端布局')
   await nameInput.fill(name)
-  // Click "Create" button
-  await page.getByRole('button', { name: 'Create', exact: true }).click()
-  // Wait for the topic to appear in the sidebar (button text includes KindBadge prefix like "C")
+  await page.getByRole('button', { name: '创建话题', exact: true }).click()
   await page.locator('button', { hasText: name }).first().waitFor({ state: 'visible', timeout: 5_000 })
 }
 
 async function selectTopic(page: Page, name: string) {
-  // Use .last() to pick the most recently created topic
   await page.locator('button', { hasText: name }).last().click()
-  // Wait for message input to appear
-  await page.getByPlaceholder(/message/i).waitFor({ state: 'visible', timeout: 5_000 })
+  await page.getByPlaceholder(/回复 agent/i).waitFor({ state: 'visible', timeout: 5_000 })
 }
 
 async function sendMessage(page: Page, text: string) {
-  const input = page.getByPlaceholder(/message/i)
+  const input = page.getByPlaceholder(/回复 agent/i)
   await input.fill(text)
   await input.press('Enter')
 }
@@ -49,12 +43,15 @@ test.describe('Streaming E2E', () => {
   test('E1: streaming text appears incrementally', async ({ page }) => {
     await sendMessage(page, 'hi')
 
-    // Wait for assistant response — look for "Hello" in any markdown-body
-    // (user message also has .markdown-body, so we wait for assistant content specifically)
-    await expect(page.locator('.markdown-body').last()).toContainText('Hello', { timeout: 10_000 })
-    await page.waitForTimeout(2_000)
-    const text = await page.locator('.markdown-body').last().textContent()
-    expect(text).toContain('help you today')
+    const assistantMarkdown = page.locator('.role-bubble-assistant .markdown-body').last()
+    await assistantMarkdown.waitFor({ state: 'visible', timeout: 10_000 })
+    await expect
+      .poll(async () => ((await assistantMarkdown.textContent()) ?? '').trim().length, { timeout: 10_000 })
+      .toBeGreaterThan(5)
+
+    const text = ((await assistantMarkdown.textContent()) ?? '').trim()
+    expect(text.toLowerCase()).not.toBe('hi')
+    expect(text).not.toBe('')
   })
 
   test('E2: streaming FPS measurement via requestAnimationFrame', async ({ page }) => {
@@ -86,7 +83,7 @@ test.describe('Streaming E2E', () => {
   test('E3: streaming does not flicker — text only grows', async ({ page }) => {
     await sendMessage(page, 'hi')
 
-    const markdown = page.locator('.markdown-body').first()
+    const markdown = page.locator('.role-bubble-assistant .markdown-body').last()
     await markdown.waitFor({ state: 'visible', timeout: 5_000 })
 
     // Collect text lengths over time — should only increase
@@ -107,7 +104,7 @@ test.describe('Streaming E2E', () => {
   test('E4: code block rendering during streaming does not crash', async ({ page }) => {
     await sendMessage(page, 'list files')
 
-    const content = page.locator('.markdown-body, pre, code').first()
+    const content = page.locator('.role-bubble-assistant .markdown-body, .role-bubble-assistant pre, .role-bubble-assistant code').first()
     await content.waitFor({ state: 'visible', timeout: 5_000 })
 
     // No crash/error

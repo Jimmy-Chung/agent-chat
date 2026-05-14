@@ -212,6 +212,33 @@ export class PiClient extends EventEmitter {
     this.config = config
   }
 
+  private adoptSessionConn(conn: PiSessionConn, sessionId: string, action: 'created' | 'recreated' | 'reconnected'): void {
+    conn.on('event', (event: PIEvent) => {
+      this.emit('event', event)
+    })
+    conn.on('rpc', (request: AdapterRpcRequest) => {
+      this.emit('rpc', request)
+    })
+    conn.on('close', () => {
+      this.sessions.delete(sessionId)
+      logger.info({ sessionId }, 'PI session removed from pool')
+    })
+
+    this.sessions.set(sessionId, conn)
+    logger.info({ sessionId, totalSessions: this.sessions.size }, `PI session ${action} and connected`)
+
+    this.emit('event', {
+      seq: 0,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'session.health' as const, state: 'connected' as const, piSessionId: sessionId },
+    })
+  }
+
+  private cleanupTransientConn(conn: PiSessionConn): void {
+    conn.close()
+  }
+
   get isConnected(): boolean {
     return this.sessions.size > 0
   }
@@ -223,36 +250,21 @@ export class PiClient extends EventEmitter {
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {
     const tempId = `pending-${Date.now()}`
     const conn = new PiSessionConn(tempId, this.config)
-    await conn.connect()
 
-    const result = await conn.rpc('createSession', params)
-    const sessionId = (result as { sessionId: string }).sessionId
-    ;(conn as { sessionId: string }).sessionId = sessionId
+    try {
+      await conn.connect()
+      const result = await conn.rpc('createSession', params)
+      const sessionId = (result as { sessionId: string }).sessionId
+      ;(conn as { sessionId: string }).sessionId = sessionId
 
-    await conn.rpc('attachSession', { sessionId })
+      await conn.rpc('attachSession', { sessionId })
+      this.adoptSessionConn(conn, sessionId, 'created')
 
-    conn.on('event', (event: PIEvent) => {
-      this.emit('event', event)
-    })
-    conn.on('rpc', (request: AdapterRpcRequest) => {
-      this.emit('rpc', request)
-    })
-    conn.on('close', () => {
-      this.sessions.delete(sessionId)
-      logger.info({ sessionId }, 'PI session removed from pool')
-    })
-
-    this.sessions.set(sessionId, conn)
-    logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session created and connected')
-
-    this.emit('event', {
-      seq: 0,
-      sessionId,
-      ts: Date.now(),
-      payload: { kind: 'session.health' as const, state: 'connected' as const, piSessionId: sessionId },
-    })
-
-    return result as PiRpcMethod['createSession']['result']
+      return result as PiRpcMethod['createSession']['result']
+    } catch (err) {
+      this.cleanupTransientConn(conn)
+      throw err
+    }
   }
 
   async recreateSession(params: PiRpcMethod['recreateSession']['params']): Promise<PiRpcMethod['recreateSession']['result']> {
@@ -263,32 +275,21 @@ export class PiClient extends EventEmitter {
     }
 
     const conn = new PiSessionConn(params.sessionId, this.config)
-    await conn.connect()
-    const result = await conn.rpc('recreateSession', params)
-    const sessionId = (result as { sessionId: string }).sessionId
 
-    conn.on('event', (event: PIEvent) => {
-      this.emit('event', event)
-    })
-    conn.on('rpc', (request: AdapterRpcRequest) => {
-      this.emit('rpc', request)
-    })
-    conn.on('close', () => {
-      this.sessions.delete(sessionId)
-      logger.info({ sessionId }, 'PI session removed from pool')
-    })
+    try {
+      await conn.connect()
+      const result = await conn.rpc('recreateSession', params)
+      const sessionId = (result as { sessionId: string }).sessionId
 
-    this.sessions.set(sessionId, conn)
-    logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session recreated and connected')
+      await conn.rpc('attachSession', { sessionId })
+      this.adoptSessionConn(conn, sessionId, 'recreated')
+      this.emit('session.recreated', { sessionId })
 
-    this.emit('event', {
-      seq: 0,
-      sessionId,
-      ts: Date.now(),
-      payload: { kind: 'session.health' as const, state: 'connected' as const, piSessionId: sessionId },
-    })
-
-    return result as PiRpcMethod['recreateSession']['result']
+      return result as PiRpcMethod['recreateSession']['result']
+    } catch (err) {
+      this.cleanupTransientConn(conn)
+      throw err
+    }
   }
 
   async reconnectSession(sessionId: string): Promise<void> {
@@ -298,29 +299,15 @@ export class PiClient extends EventEmitter {
     }
 
     const conn = new PiSessionConn(sessionId, this.config)
-    await conn.connect()
-    await conn.rpc('attachSession', { sessionId })
 
-    conn.on('event', (event: PIEvent) => {
-      this.emit('event', event)
-    })
-    conn.on('rpc', (request: AdapterRpcRequest) => {
-      this.emit('rpc', request)
-    })
-    conn.on('close', () => {
-      this.sessions.delete(sessionId)
-      logger.info({ sessionId }, 'PI session removed from pool')
-    })
-
-    this.sessions.set(sessionId, conn)
-    logger.info({ sessionId, totalSessions: this.sessions.size }, 'PI session reconnected')
-
-    this.emit('event', {
-      seq: 0,
-      sessionId,
-      ts: Date.now(),
-      payload: { kind: 'session.health' as const, state: 'connected' as const, piSessionId: sessionId },
-    })
+    try {
+      await conn.connect()
+      await conn.rpc('attachSession', { sessionId })
+      this.adoptSessionConn(conn, sessionId, 'reconnected')
+    } catch (err) {
+      this.cleanupTransientConn(conn)
+      throw err
+    }
   }
 
   async rpc<K extends keyof PiRpcMethod>(

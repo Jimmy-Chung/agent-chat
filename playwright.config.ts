@@ -7,6 +7,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:3000',
     headless: true,
+    viewport: { width: 1440, height: 900 },
   },
   projects: [
     {
@@ -22,8 +23,8 @@ export default defineConfig({
       timeout: 10_000,
     },
     {
-      command: 'pnpm -F server dev',
-      port: 8080,
+      command: 'PI_ADAPTER_URL=ws://127.0.0.1:7331/api/agent-chat/v1/socket PI_ADAPTER_TOKEN= AGENT_CHAT_TOKEN=test-token pnpm -F server exec wrangler dev --local --port 8787',
+      port: 8787,
       reuseExistingServer: true,
       timeout: 10_000,
     },

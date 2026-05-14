@@ -2,10 +2,10 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.2.0 |
-| 更新时间 | 2026-05-13 |
+| 当前版本 | v1.3.0 |
+| 更新时间 | 2026-05-14 |
 
-> 版本说明：顶部版本表示当前大版本线。`v1.2.1` ~ `v1.2.x` 的补丁修复记录追加在“v1.2.x 修复过程记录”中，不改顶部大版本号。
+> 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
 ---
 
@@ -43,6 +43,7 @@
 | BUG-029 | AIT-56 |
 | BUG-030 | AIT-57 |
 | BUG-031 | AIT-58 |
+| BUG-032 | AIT-105 |
 
 ---
 
@@ -67,6 +68,21 @@
 ---
 
 ## 已修复
+
+### BUG-032: 旧 Topic 恢复后 Adapter session attach / recreate 链路异常
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-032 |
+| 标题 | 旧 Topic 恢复后 Adapter session attach / recreate 链路异常 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-14 |
+| 修复时间 | 2026-05-14 |
+| 修复版本 | v1.3.0 |
+| 影响模块 | packages/server/src/pi/client.ts, packages/server/src/pi/event-router.ts, packages/server/src/ws/message-delivery.ts |
+| 描述 | 旧 Topic 刷新或重新进入后，已绑定的 Adapter session 在 attach 失败、recreate 后 seq 重置、或连接失败回收等路径上会导致消息无回复、进入 needs_retry，无法继续正常会话。 |
+| 根因 | 1) `recreateSession()` 成功后未继续 `attachSession()`；2) server 仅按 `sessionId` 记录 `lastSeq`，误杀 recreate 后从小值重新开始的新事件流；3) 旧 Topic attach 失败后没有自愈到 recreate，且临时 PI 连接失败路径未及时回收。 |
+| 修复方案 | 在 `PiClient` 中补齐 `recreateSession -> attachSession`，为 recreate 成功后清理 `lastSeqBySession` 增加内部 lifecycle 事件，并让 `enterTopicSession()` 在 attach 失败时自动 fallback 到 recreate；同时补充回归测试与 E2E 适配。 |
 
 ### BUG-031: Workers 访问控制失效 + WebSocket 心跳超时断线
 
