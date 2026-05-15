@@ -19,7 +19,7 @@ import * as sopRepo from '../db/repos/sop_template.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
-import { createPendingUserMessage, deliverUserMessage, restoreExistingTopicSession, startAutoDelivery } from './message-delivery'
+import { buildSessionParams, createPendingUserMessage, deliverUserMessage, restoreExistingTopicSession, startAutoDelivery } from './message-delivery'
 import { ARTIFACT_UPLOAD_MAX_BYTES } from '../r2/artifact-access'
 import {
   artifactToPayload,
@@ -630,7 +630,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
       case 'user.message': {
         const data = userMessageSchema.parse(frame.d)
-        const topic = await topicRepo.getTopic(data.topicId)
+        let topic = await topicRepo.getTopic(data.topicId)
         if (!topic) {
           logger.warn({ topicId: data.topicId }, 'Topic not found for user message')
           break
@@ -646,6 +646,23 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
         const pi = await this.ensurePiClient()
         if (!pi) break
+
+        // If the topic has no PI session yet, create one here in the handler context
+        // (not inside the void promise) so the WebSocket connection to the adapter
+        // is established while we still have a proper CF Workers request context.
+        if (!topic.pi_session_id) {
+          try {
+            const result = await pi.createSession(buildSessionParams(topic))
+            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+            if (updated) {
+              topic = updated
+              this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+            }
+          } catch (err) {
+            logger.error({ err, topicId: topic.id }, 'createSession failed before first message')
+            // Delivery will proceed and fail gracefully → needs_retry shown to user
+          }
+        }
 
         void startAutoDelivery({
           topicId: data.topicId,

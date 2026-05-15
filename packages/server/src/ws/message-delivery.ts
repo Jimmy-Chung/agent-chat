@@ -309,7 +309,7 @@ async function buildMentionedArtifactRefs(
   return refs
 }
 
-function buildSessionParams(topic: Topic): Parameters<PiClient['createSession']>[0] {
+export function buildSessionParams(topic: Topic): Parameters<PiClient['createSession']>[0] {
   return {
     kind: topic.agent_type,
     topicId: topic.id,
