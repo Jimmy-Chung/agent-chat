@@ -236,6 +236,11 @@ export const sessionHealthSchema = z.object({
   lastError: z.string().optional(),
 })
 
+export const sessionStatusSchema = z.object({
+  topicId: z.string(),
+  ready: z.boolean(),
+})
+
 export const cronRunCompletedSchema = z.object({
   cronId: z.string(),
   runId: z.string(),
@@ -316,6 +321,7 @@ export type ServerEvent =
   | { type: 'sop_template.list'; data: z.infer<typeof sopTemplateListSchema> }
   | { type: 'usage.snapshot'; data: z.infer<typeof usageSnapshotSchema> }
   | { type: 'session.health'; data: z.infer<typeof sessionHealthSchema> }
+  | { type: 'session.status'; data: z.infer<typeof sessionStatusSchema> }
   | { type: 'cron.run.completed'; data: z.infer<typeof cronRunCompletedSchema> }
   | { type: 'error'; data: z.infer<typeof errorSchema> }
   | {
@@ -351,6 +357,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'sop_template.list': sopTemplateListSchema,
   'usage.snapshot': usageSnapshotSchema,
   'session.health': sessionHealthSchema,
+  'session.status': sessionStatusSchema,
   'cron.run.completed': cronRunCompletedSchema,
   error: errorSchema,
   'messages.history': messagesHistorySchema,

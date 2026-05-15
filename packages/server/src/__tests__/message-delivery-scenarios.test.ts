@@ -135,7 +135,7 @@ describe('Scenario A — new topic, first message', () => {
 
     expect(result).toBe('delivered')
     expect(pi.createSession).not.toHaveBeenCalled()
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-pre' }))
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-pre' }), expect.anything())
     expect(updateMessage).toHaveBeenCalledWith('msg-1', expect.objectContaining({ status: 'done' }))
   })
 
@@ -169,7 +169,7 @@ describe('Scenario A — new topic, first message', () => {
     expect((deliveryEvent?.data as Record<string, unknown>)?.status).toBe('needs_retry')
   })
 
-  it('manual retry creates session when pi_session_id is still null', async () => {
+  it('manual retry returns retryable when pi_session_id is null (session is gateway responsibility)', async () => {
     const topic = makeTopic({ pi_session_id: null })
     const msg = makeMessage({ retry_count: 0 })
 
@@ -193,12 +193,10 @@ describe('Scenario A — new topic, first message', () => {
       manual: true,
     })
 
-    expect(result).toBe('delivered')
-    expect(pi.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'general', topicId: 'topic-1' }),
-    )
-    expect(updateTopic).toHaveBeenCalledWith('topic-1', { pi_session_id: 'sess-created' })
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-created' }))
+    // Session creation is the gateway's job, not delivery's.
+    // When gateway fails to establish session, delivery returns retryable.
+    expect(result).toBe('retryable')
+    expect(pi.createSession).not.toHaveBeenCalled()
   })
 
   it('shows needs_retry when sendUserMessage RPC times out on both attempts', async () => {
@@ -274,7 +272,7 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     expect(result).toBe('delivered')
     expect(pi.createSession).not.toHaveBeenCalled()
     expect(pi.reconnectSession).toHaveBeenCalledWith('sess-existing')
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }))
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }), expect.anything())
     expect(updateMessage).toHaveBeenCalledWith('msg-1', expect.objectContaining({ status: 'done' }))
   })
 
@@ -305,7 +303,7 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     expect(result).toBe('delivered')
     expect(pi.reconnectSession).not.toHaveBeenCalled()
     expect(pi.createSession).not.toHaveBeenCalled()
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }))
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }), expect.anything())
   })
 
   it('auto delivery shows needs_retry when reconnect fails (no auto recreate)', async () => {
@@ -339,7 +337,7 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     expect((deliveryEvent?.data as Record<string, unknown>)?.status).toBe('needs_retry')
   })
 
-  it('manual retry recreates session when reconnect fails', async () => {
+  it('manual retry returns retryable when reconnect fails (recreate is gateway responsibility)', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-existing' })
     const msg = makeMessage({ retry_count: 0 })
 
@@ -365,11 +363,167 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
       manual: true,
     })
 
+    // Session recreation is the gateway's job. Delivery only does reconnect + retry.
+    expect(result).toBe('retryable')
+    expect(pi.reconnectSession).toHaveBeenCalled()
+    expect(pi.recreateSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('Error code handling — session_not_found', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    updateTopic.mockResolvedValue(makeTopic({ pi_session_id: 'sess-stale' }))
+    updateMessage.mockResolvedValue(undefined)
+    createMessagePart.mockResolvedValue(undefined)
+  })
+
+  it('ensureDeliverableSession recreates session on session_not_found (TC-10)', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-stale' })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(false),
+      reconnectSession: vi.fn().mockRejectedValue(new PiRpcError('session_not_found', 'Session gone')),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
+      rpc: vi.fn().mockResolvedValue({}),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Hello',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
     expect(result).toBe('delivered')
-    expect(pi.reconnectSession).toHaveBeenCalledWith('sess-existing')
-    expect(pi.recreateSession).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 'sess-existing', kind: 'general' }),
-    )
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }))
+    expect(pi.reconnectSession).toHaveBeenCalledWith('sess-stale')
+    expect(pi.recreateSession).toHaveBeenCalled()
+  })
+
+  it('ensureDeliverableSession returns null on unknown error code', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-stale' })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(false),
+      reconnectSession: vi.fn().mockRejectedValue(new PiRpcError('internal', 'Something broke')),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
+      rpc: vi.fn().mockResolvedValue({}),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Hello',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
+    // internal error → don't recreate, just retryable
+    expect(result).toBe('retryable')
+    expect(pi.recreateSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('Error code handling — session_busy', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    updateTopic.mockResolvedValue(makeTopic({ pi_session_id: 'sess-busy' }))
+    updateMessage.mockResolvedValue(undefined)
+    createMessagePart.mockResolvedValue(undefined)
+  })
+
+  it('retries sendUserMessage with backoff on session_busy (TC-11)', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-busy' })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    let rpcAttempts = 0
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(true),
+      rpc: vi.fn().mockImplementation(() => {
+        rpcAttempts++
+        if (rpcAttempts <= 2) {
+          return Promise.reject(new PiRpcError('session_busy', 'try later'))
+        }
+        return Promise.resolve({})
+      }),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage, _setMinRetryWaitForTest } = await import('../ws/message-delivery')
+    _setMinRetryWaitForTest(0)
+
+    vi.useFakeTimers()
+    const promise = deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Hello',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+    // Advance through backoff delays: 1s + 2s + buffer
+    await vi.advanceTimersByTimeAsync(5000)
+    const result = await promise
+    vi.useRealTimers()
+
+    expect(result).toBe('delivered')
+    expect(rpcAttempts).toBe(3) // 2 busy + 1 success
+  })
+
+  it('fails after exhausting session_busy retries', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-busy' })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(true),
+      reconnectSession: vi.fn().mockResolvedValue(undefined),
+      rpc: vi.fn().mockRejectedValue(new PiRpcError('session_busy', 'always busy')),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage, _setMinRetryWaitForTest } = await import('../ws/message-delivery')
+    _setMinRetryWaitForTest(0)
+
+    vi.useFakeTimers()
+    const promise = deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Hello',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+    await vi.advanceTimersByTimeAsync(10000)
+    const result = await promise
+    vi.useRealTimers()
+
+    expect(result).toBe('retryable')
   })
 })

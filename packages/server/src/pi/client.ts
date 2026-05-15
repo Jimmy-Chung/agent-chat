@@ -12,6 +12,15 @@ import {
   type RpcError,
 } from '@agent-chat/protocol'
 
+export class PiRpcError extends Error {
+  readonly code: string
+  constructor(code: string, message: string) {
+    super(`RPC error: ${code} - ${message}`)
+    this.name = 'PiRpcError'
+    this.code = code
+  }
+}
+
 interface PendingRpc {
   resolve: (value: unknown) => void
   reject: (reason: unknown) => void
@@ -26,12 +35,17 @@ export interface AdapterRpcRequest {
   reply: (error: RpcError | null, result?: unknown) => void
 }
 
+const ADAPTER_READY_TIMEOUT_MS = 3_000
+
 class PiSessionConn extends EventEmitter {
   private ws: WebSocket | null = null
   private rpcId = 0
   private pending = new Map<number, PendingRpc>()
   readonly sessionId: string
   private config: AppConfig
+  private ready = false
+  public lastSeq = 0
+  private readyResolve: (() => void) | null = null
 
   constructor(sessionId: string, config: AppConfig) {
     super()
@@ -39,12 +53,27 @@ class PiSessionConn extends EventEmitter {
     this.config = config
   }
 
+  private waitForReady(): Promise<void> {
+    if (this.ready) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      this.readyResolve = resolve
+      setTimeout(() => {
+        if (!this.ready) {
+          logger.warn({ sessionId: this.sessionId }, 'adapter.ready timeout, proceeding anyway')
+          this.ready = true
+          resolve()
+        }
+      }, ADAPTER_READY_TIMEOUT_MS)
+    })
+  }
+
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = buildPiAdapterUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
       const ws = new WebSocket(url)
-      ws.addEventListener('open', () => {
+      ws.addEventListener('open', async () => {
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
+        await this.waitForReady()
         resolve()
       })
 
@@ -91,6 +120,14 @@ class PiSessionConn extends EventEmitter {
       case 'pi.event':
       case 'event': {
         const event = piEventSchema.parse(frame.d)
+        if (event.payload?.kind === 'adapter.ready') {
+          logger.info({ sessionId: this.sessionId, adapterInstanceId: (event.payload as { adapterInstanceId?: string }).adapterInstanceId }, 'adapter.ready received')
+          this.ready = true
+          this.readyResolve?.()
+          this.readyResolve = null
+          return
+        }
+        if (event.seq > this.lastSeq) this.lastSeq = event.seq
         this.emit('event', event)
         break
       }
@@ -147,7 +184,7 @@ class PiSessionConn extends EventEmitter {
     this.pending.delete(id)
     clearTimeout(pending.timer)
     if (error) {
-      pending.reject(new Error(`RPC error: ${error.code} - ${error.message}`))
+      pending.reject(new PiRpcError(error.code, error.message))
     } else {
       pending.resolve(result)
     }
@@ -156,6 +193,7 @@ class PiSessionConn extends EventEmitter {
   async rpc<K extends keyof PiRpcMethod>(
     method: K,
     params: PiRpcMethod[K]['params'],
+    options?: { signal?: AbortSignal },
   ): Promise<PiRpcMethod[K]['result']> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -179,7 +217,29 @@ class PiSessionConn extends EventEmitter {
         timer,
       })
 
-      this.ws.send(encoded)
+      if (options?.signal) {
+        const onAbort = () => {
+          const entry = this.pending.get(id)
+          if (entry) {
+            clearTimeout(entry.timer)
+            this.pending.delete(id)
+            reject(new Error(`RPC aborted: ${method} (session ${this.sessionId})`))
+          }
+        }
+        options.signal.addEventListener('abort', onAbort, { once: true })
+      }
+
+      try {
+        this.ws.send(encoded)
+      } catch (err) {
+        // ws.send threw — connection is dead. Clean up pending entry and close.
+        const entry = this.pending.get(id)
+        if (entry) {
+          clearTimeout(entry.timer)
+          this.pending.delete(id)
+        }
+        reject(new Error(`RPC send failed: ${method} (session ${this.sessionId})`))
+      }
     })
   }
 
@@ -188,6 +248,8 @@ class PiSessionConn extends EventEmitter {
       this.ws.close()
       this.ws = null
     }
+    this.ready = false
+    this.readyResolve = null
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer)
       pending.reject(new Error('PI session disconnected'))
@@ -247,6 +309,10 @@ export class PiClient extends EventEmitter {
     return this.sessions.has(sessionId)
   }
 
+  getLastSeq(sessionId: string): number {
+    return this.sessions.get(sessionId)?.lastSeq ?? 0
+  }
+
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {
     const tempId = `pending-${Date.now()}`
     const conn = new PiSessionConn(tempId, this.config)
@@ -257,7 +323,8 @@ export class PiClient extends EventEmitter {
       const sessionId = (result as { sessionId: string }).sessionId
       ;(conn as { sessionId: string }).sessionId = sessionId
 
-      await conn.rpc('attachSession', { sessionId })
+      // Adapter v1.6.0 auto-attaches on createSession — skip explicit attachSession
+      // await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
       this.adoptSessionConn(conn, sessionId, 'created')
 
       return result as PiRpcMethod['createSession']['result']
@@ -281,7 +348,7 @@ export class PiClient extends EventEmitter {
       const result = await conn.rpc('recreateSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
 
-      await conn.rpc('attachSession', { sessionId })
+      await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
       this.adoptSessionConn(conn, sessionId, 'recreated')
       this.emit('session.recreated', { sessionId })
 
@@ -293,8 +360,10 @@ export class PiClient extends EventEmitter {
   }
 
   async reconnectSession(sessionId: string): Promise<void> {
-    if (this.sessions.has(sessionId)) {
-      await this.rpc('attachSession', { sessionId })
+    const existing = this.sessions.get(sessionId)
+    if (existing) {
+      const lastSeq = existing.lastSeq
+      await this.rpc('attachSession', { sessionId, lastSeq })
       return
     }
 
@@ -302,7 +371,7 @@ export class PiClient extends EventEmitter {
 
     try {
       await conn.connect()
-      await conn.rpc('attachSession', { sessionId })
+      await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
       this.adoptSessionConn(conn, sessionId, 'reconnected')
     } catch (err) {
       this.cleanupTransientConn(conn)
@@ -313,6 +382,7 @@ export class PiClient extends EventEmitter {
   async rpc<K extends keyof PiRpcMethod>(
     method: K,
     params: PiRpcMethod[K]['params'],
+    options?: { signal?: AbortSignal },
   ): Promise<PiRpcMethod[K]['result']> {
     const p = params as Record<string, unknown>
     const sessionId = p.sessionId as string | undefined
@@ -325,7 +395,7 @@ export class PiClient extends EventEmitter {
       throw new Error(`PI session ${sessionId} not found`)
     }
 
-    return conn.rpc(method, params)
+    return conn.rpc(method, params, options)
   }
 
   async rpcGlobal<K extends keyof PiRpcMethod>(

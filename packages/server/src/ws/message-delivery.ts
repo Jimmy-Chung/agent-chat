@@ -1,5 +1,6 @@
 import type { ArtifactRef, Message, Topic } from '@agent-chat/protocol'
 import type { PiClient } from '../pi/client'
+import { PiRpcError } from '../pi/client'
 import * as messageRepo from '../db/repos/message.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
@@ -83,17 +84,19 @@ export function startAutoDelivery(input: DeliverUserMessageInput): Promise<'deli
 
 // ─── Core delivery ────────────────────────────────────────────────────────────
 //
-// Mental model (matches user expectation):
-//   Normal:      sendUserMessage RPC acknowledged → message delivered
-//   Abnormal 1:  session not in piClient → reconnect existing session → retry RPC
-//   Abnormal 2:  reconnect fails, manual retry → recreateSession → retry RPC
-//   All fail:    needs_retry button shown to user; no silent auto-retry loops
+// Mental model:
+//   Session is guaranteed by the gateway (topic.create / topic.select).
+//   Delivery only needs to handle: send RPC → reconnect on failure → retry once.
+//   All fail → needs_retry button shown to user.
 
 export async function deliverUserMessage(
   input: DeliverUserMessageInput,
 ): Promise<'delivered' | 'retryable' | 'reverted'> {
   const msg = await messageRepo.getMessage(input.messageId)
-  if (!msg) return 'reverted'
+  if (!msg) {
+    broadcastDelivery(input.broadcaster, input.topicId, input.messageId, 'error', 0, 0)
+    return 'reverted'
+  }
   if (msg.status === 'done') return 'delivered'
 
   const retryCount = input.manual ? msg.retry_count + 1 : msg.retry_count
@@ -103,25 +106,16 @@ export async function deliverUserMessage(
     broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'retrying', retryCount, msg.max_retries)
   }
 
-  if (input.manual) {
-    // Manual retry: force full session recovery (reconnect → recreate) then attempt.
-    const delivered = await attemptDelivery(input, msg, { retryCount, forceRecovery: true })
-    if (delivered) return 'delivered'
-    return handleRetryFailure(input, msg, retryCount)
-  }
+  // First attempt with existing session
+  if (await attemptDelivery(input, msg, { retryCount })) return 'delivered'
 
-  // Auto delivery: try with existing session first.
-  if (await attemptDelivery(input, msg, { retryCount, forceRecovery: false })) return 'delivered'
-
-  // First attempt failed. Reconnect the session (re-sends attachSession to PI so it knows
-  // the client is ready) and try once more before showing needs_retry to the user.
-  // This handles PI not being fully initialised when sendUserMessage first arrives.
+  // Reconnect session (re-sends attachSession to PI) and try once more.
   const freshTopic = await topicRepo.getTopic(input.topicId)
   if (freshTopic?.pi_session_id) {
     try {
       await input.pi.reconnectSession(freshTopic.pi_session_id)
-    } catch { /* reconnect failed — proceed to needs_retry */ }
-    if (await attemptDelivery(input, msg, { retryCount, forceRecovery: false })) return 'delivered'
+    } catch { /* reconnect failed — proceed to retry attempt */ }
+    if (await attemptDelivery(input, msg, { retryCount })) return 'delivered'
   }
 
   return handleRetryFailure(input, msg, retryCount)
@@ -150,6 +144,18 @@ export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boo
     await pi.recreateSession({ ...buildSessionParams(topic), sessionId: topic.pi_session_id })
     return true
   } catch (err) {
+    // session_exists means the session was actually created by the failed reconnect attempt
+    const code = (err as { code?: string })?.code
+    if (code === 'session_exists') {
+      logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'session_exists, retrying reconnect')
+      try {
+        await pi.reconnectSession(topic.pi_session_id)
+        return true
+      } catch (retryErr) {
+        logger.warn({ err: retryErr, topicId: topic.id }, 'reconnect after session_exists also failed')
+        return false
+      }
+    }
     logger.warn({ err, topicId: topic.id, sessionId: topic.pi_session_id }, 'recreate failed in enterTopicSession')
     return false
   }
@@ -160,45 +166,59 @@ export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boo
 async function attemptDelivery(
   input: DeliverUserMessageInput,
   msg: Message,
-  options: { retryCount: number; forceRecovery: boolean },
+  options: { retryCount: number },
 ): Promise<boolean> {
   const topic = await topicRepo.getTopic(input.topicId)
-  const sessionId = await ensureDeliverableSession(topic, input.pi, {
-    forceRecovery: options.forceRecovery,
-  })
+  const sessionId = await ensureDeliverableSession(topic, input.pi)
   if (!topic || !sessionId) {
-    logger.warn({ topicId: input.topicId, forceRecovery: options.forceRecovery }, 'no deliverable session')
+    logger.warn({ topicId: input.topicId }, 'no deliverable session')
     return false
   }
 
   try {
     const mentionedArtifacts = await buildMentionedArtifactRefs(input)
-    await withTimeout(
-      input.pi.rpc('sendUserMessage', {
-        sessionId,
-        clientMessageId: msg.client_message_id ?? msg.id,
-        content: input.content,
-        mentionedArtifacts,
-        streamingBehavior: 'followUp',
-      }),
-      RPC_TIMEOUT_MS,
-      'sendUserMessage RPC timeout',
-    )
-    // RPC acknowledged by adapter — delivery confirmed.
-    // The agent's actual response arrives independently via event-router.
-    await messageRepo.updateMessage(msg.id, {
-      status: 'done',
-      finished_at: Date.now(),
-      stop_reason: 'end_turn',
-      retry_count: options.retryCount,
-    })
-    input.broadcaster.broadcast('message.end', {
-      topicId: input.topicId,
-      messageId: msg.id,
-      stopReason: 'end_turn',
-    })
-    broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'done', options.retryCount, msg.max_retries)
-    return true
+
+    // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const abortController = new AbortController()
+        await withTimeout(
+          input.pi.rpc('sendUserMessage', {
+            sessionId,
+            clientMessageId: msg.client_message_id ?? msg.id,
+            content: input.content,
+            mentionedArtifacts,
+            streamingBehavior: 'followUp',
+          }, { signal: abortController.signal }),
+          RPC_TIMEOUT_MS,
+          'sendUserMessage RPC timeout',
+          () => abortController.abort(),
+        )
+        // RPC acknowledged by adapter — delivery confirmed.
+        await messageRepo.updateMessage(msg.id, {
+          status: 'done',
+          finished_at: Date.now(),
+          stop_reason: 'end_turn',
+          retry_count: options.retryCount,
+        })
+        input.broadcaster.broadcast('message.end', {
+          topicId: input.topicId,
+          messageId: msg.id,
+          stopReason: 'end_turn',
+        })
+        broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'done', options.retryCount, msg.max_retries)
+        return true
+      } catch (rpcErr) {
+        if (rpcErr instanceof PiRpcError && rpcErr.code === 'session_busy' && attempt < 2) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 4000)
+          logger.info({ topicId: input.topicId, attempt, delay }, 'session_busy, retrying with backoff')
+          await new Promise((r) => setTimeout(r, delay))
+          continue
+        }
+        throw rpcErr
+      }
+    }
+    return false
   } catch (err) {
     logger.warn(
       { err, topicId: input.topicId, messageId: msg.id, manual: input.manual, retryCount: options.retryCount },
@@ -208,64 +228,34 @@ async function attemptDelivery(
   }
 }
 
-// Ensures a usable PI session exists, creating or restoring one as needed.
-//
-// forceRecovery=false (auto):  use existing in-memory session if alive,
-//                              reconnect if stale; skip recreate.
-// forceRecovery=true (manual): same, plus recreate if reconnect fails.
+// Ensures a usable PI session exists. Session is expected to be established
+// by the gateway (topic.create / topic.select); this just handles reconnection
+// if the in-memory session was lost (e.g. after DO hibernation).
 async function ensureDeliverableSession(
   topic: Topic | undefined,
   pi: PiClient,
-  options: { forceRecovery: boolean },
 ): Promise<string | null> {
-  if (!topic) return null
-
-  // No session yet (topic.create's createSession may still be initialising on the PI side).
-  // Auto delivery: return null immediately → message shows needs_retry, user retries once ready.
-  // Manual retry: create a fresh session (PI has had time to settle by now).
-  if (!topic.pi_session_id) {
-    if (!options.forceRecovery) {
-      logger.warn({ topicId: topic.id }, 'no pi_session_id on auto delivery — needs_retry')
-      return null
-    }
-    try {
-      const result = await pi.createSession(buildSessionParams(topic))
-      await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-      logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'PI session created on manual retry')
-      return result.sessionId
-    } catch (err) {
-      logger.warn({ err, topicId: topic.id }, 'createSession failed on manual retry')
-      return null
-    }
-  }
+  if (!topic?.pi_session_id) return null
 
   const sessionId = topic.pi_session_id
+  if (pi.hasSession(sessionId)) return sessionId
 
-  // Session exists and is live in this piClient instance — use it directly.
-  if (pi.hasSession(sessionId) && !options.forceRecovery) {
-    return sessionId
-  }
-
-  // Session exists in DB but not in this piClient (e.g. after DO hibernation).
-  // Try to reattach to the existing PI session.
   try {
     await pi.reconnectSession(sessionId)
-    logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected')
+    logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected for delivery')
     return sessionId
   } catch (err) {
-    logger.warn({ err, topicId: topic.id, sessionId }, 'reconnectSession failed')
-  }
-
-  // Reconnect failed. On manual retry only, try to recreate the session.
-  // Auto-delivery does not recreate — show the retry button instead.
-  if (!options.forceRecovery) return null
-
-  try {
-    await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
-    logger.info({ topicId: topic.id, sessionId }, 'PI session recreated')
-    return sessionId
-  } catch (err) {
-    logger.warn({ err, topicId: topic.id, sessionId }, 'recreateSession failed')
+    if (err instanceof PiRpcError && err.code === 'session_not_found') {
+      logger.info({ topicId: topic.id, sessionId }, 'session not found, attempting recreate')
+      try {
+        const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
+        return (result as { sessionId: string }).sessionId
+      } catch (recreateErr) {
+        logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
+        return null
+      }
+    }
+    logger.warn({ err, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
     return null
   }
 }
@@ -338,14 +328,17 @@ export function buildSessionParams(topic: Topic): Parameters<PiClient['createSes
   } as Parameters<PiClient['createSession']>[0]
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string, onTimeout?: () => void): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
   promise.catch(() => undefined)
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+        timer = setTimeout(() => {
+          onTimeout?.()
+          reject(new Error(message))
+        }, timeoutMs)
       }),
     ])
   } finally {

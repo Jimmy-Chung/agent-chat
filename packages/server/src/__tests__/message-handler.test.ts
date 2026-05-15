@@ -196,7 +196,7 @@ describe('Message handler', () => {
       sessionId: 'pi-sess-msg',
       content: 'List files',
       clientMessageId: expect.any(String),
-    }))
+    }), expect.anything())
   })
 
   it('keeps waiting when PI emits already-processing followUp notice before normal events', async () => {

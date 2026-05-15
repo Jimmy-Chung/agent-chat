@@ -178,6 +178,25 @@ export const cronRunCompletedPayloadSchema = z.object({
   completedAt: z.number(),
 })
 
+export const cronUpdatedPayloadSchema = z.object({
+  kind: z.literal('cron.updated'),
+  cronId: z.string(),
+  status: z.enum(['active', 'paused', 'error']),
+  nextRunAt: z.number().optional(),
+})
+
+export const cronDeletedPayloadSchema = z.object({
+  kind: z.literal('cron.deleted'),
+  cronId: z.string(),
+})
+
+export const adapterReadyPayloadSchema = z.object({
+  kind: z.literal('adapter.ready'),
+  adapterInstanceId: z.string(),
+  startupTime: z.number(),
+  version: z.string(),
+})
+
 // ─── Payload type exports ─────────────────────────────────────────
 
 export type MessageStartPayload = z.infer<typeof messageStartPayloadSchema>
@@ -199,6 +218,9 @@ export type ArtifactCreatedPayload = z.infer<typeof artifactCreatedPayloadSchema
 export type ErrorPayload = z.infer<typeof errorPayloadSchema>
 export type SessionHealthPayload = z.infer<typeof sessionHealthPayloadSchema>
 export type CronRunCompletedPayload = z.infer<typeof cronRunCompletedPayloadSchema>
+export type CronUpdatedPayload = z.infer<typeof cronUpdatedPayloadSchema>
+export type CronDeletedPayload = z.infer<typeof cronDeletedPayloadSchema>
+export type AdapterReadyPayload = z.infer<typeof adapterReadyPayloadSchema>
 
 // ─── PIEvent ──────────────────────────────────────────────────────
 
@@ -220,6 +242,9 @@ export type PIPayload =
   | ErrorPayload
   | SessionHealthPayload
   | CronRunCompletedPayload
+  | CronUpdatedPayload
+  | CronDeletedPayload
+  | AdapterReadyPayload
 
 const payloadSchema = z.discriminatedUnion('kind', [
   messageStartPayloadSchema,
@@ -239,6 +264,9 @@ const payloadSchema = z.discriminatedUnion('kind', [
   errorPayloadSchema,
   sessionHealthPayloadSchema,
   cronRunCompletedPayloadSchema,
+  cronUpdatedPayloadSchema,
+  cronDeletedPayloadSchema,
+  adapterReadyPayloadSchema,
 ])
 
 export const piEventSchema = z.object({

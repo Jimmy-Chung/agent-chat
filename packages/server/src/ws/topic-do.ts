@@ -322,15 +322,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const d = frame.d as { topicId: string }
         this.sendTo(ws, 'topic.selected', frame.d)
 
-        void this.ensurePiClient()
-          .then((pi) => {
-            if (!pi) return false
-            return restoreExistingTopicSession(d.topicId, pi)
-          })
-          .catch((err) => {
-            logger.warn({ err, topicId: d.topicId }, 'Failed to restore PI session on topic.select')
-          })
-
         // Load artifacts for the selected topic
         try {
           if (d.topicId === 'system_artifact_pool') {
@@ -357,6 +348,23 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             logger.warn({ err }, 'Failed to load cron jobs')
           }
         }
+
+        // Session gateway: await session restoration for normal topics before allowing messages.
+        // System topics (artifact pool, cron admin) don't have PI sessions.
+        const isSystemTopic = d.topicId.startsWith('system_')
+        if (!isSystemTopic) {
+          const pi = await this.ensurePiClient()
+          let sessionReady = false
+          if (pi) {
+            try {
+              sessionReady = await restoreExistingTopicSession(d.topicId, pi)
+            } catch (err) {
+              logger.warn({ err, topicId: d.topicId }, 'Failed to restore PI session on topic.select')
+            }
+          }
+          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: sessionReady })
+        }
+
         break
       }
 
@@ -382,9 +390,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
           break
         }
-        // Resolve SOP template params before topic creation so they're baked into
-        // general_spec_json. Session creation is deferred to first message delivery
-        // to avoid a race where user.message arrives before createSession completes.
         const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
         const generalSpecJson = sopTemplate
           ? JSON.stringify({
@@ -406,24 +411,37 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           sopTemplateId: data.sopTemplateId,
         })
 
-        // Create PI session BEFORE broadcasting topic.created so that pi_session_id
-        // is already in the DB when the client sees the new topic. This eliminates the
-        // race where user.message arrives while createSession is still in flight.
-        let topicToSend: typeof topic = topic
-        const piForCreate = await this.ensurePiClient()
-        if (piForCreate) {
-          try {
-            const result = await piForCreate.createSession(
-              buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0],
-            )
-            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-            if (updated) topicToSend = updated
-          } catch (err) {
-            logger.error({ err, topicId: topic.id }, 'createSession failed in topic.create')
-            this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
+        // Broadcast topic immediately so sidebar shows it, then establish session.
+        this.broadcastAll('topic.created', {
+          ...(topic as unknown as Record<string, unknown>),
+          sessionReady: false,
+        })
+
+        // Session gateway: await createSession directly in the handler.
+        // DO guarantees webSocketMessage handler runs to completion — no GC risk.
+        logger.info({ topicId: topic.id }, 'topic.create: starting session gateway')
+        try {
+          const piForCreate = await this.ensurePiClient()
+          logger.info({ topicId: topic.id, hasPi: !!piForCreate }, 'topic.create: ensurePiClient resolved')
+          if (!piForCreate) {
+            this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'No PI client available' })
+            this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
+            break
           }
+          const params = buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0]
+          logger.info({ topicId: topic.id, params }, 'topic.create: calling createSession')
+          const result = await piForCreate.createSession(params)
+          logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'topic.create: createSession succeeded')
+          const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+          if (updated) {
+            this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+          }
+          this.sendTo(ws, 'session.status', { topicId: topic.id, ready: true })
+        } catch (err) {
+          logger.error({ err, topicId: topic.id }, 'createSession failed in topic.create')
+          this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
+          this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
         }
-        this.broadcastAll('topic.created', topicToSend as unknown as Record<string, unknown>)
         break
       }
 
