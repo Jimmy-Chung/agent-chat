@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-05-16 [v1.4.8] — Session Gateway 架构 + Streaming 安全网
+
+### AIT-113: 通信稳定性加固 — Session Gateway
+- Session 生命周期从消息投递中剥离，topic.select/topic.create 时 await session 就绪后才开放输入
+- 新增 `session.status` 事件协议，前端追踪 session 就绪状态
+- PI client: PiRpcError 类型化、adapter.ready 等待、lastSeq 跟踪、AbortSignal 超时清理
+- 投递逻辑简化：删除 forceRecovery 分支，session_busy 指数退避，session_exists 竞态修复
+- mock-pi 对齐真实 adapter 行为（adapter.ready、resumeSession、auto-attach）
+
+### AIT-114 BUG-037: PI 断连时消息永远卡在 streaming
+- 新增 `finalizeStaleMessagesByTopic` 查询
+- `session.health { disconnected }` 时自动 finalize 所有 streaming 消息为 done + error
+- 与 PI adapter 团队达成共识，双方并行修复（adapter 补发 message.end，server 加安全网）
+
+### AIT-112 BUG-036: Thinking 阶段 Stop 按钮补充修复
+- 增加 `hasPendingUserMessage` 条件：用户消息 pending 期间也显示 Stop 按钮
+- AgentStatusBar 同步 pending 状态检测
+
 ## 2026-05-15 [v1.4.0] — PWA 推送、Token 鉴权体验与连接状态指示
 
 ### FEAT-011: Web Push 推送通知（PWA Push Notification）
