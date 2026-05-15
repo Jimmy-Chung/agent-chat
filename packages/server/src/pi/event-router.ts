@@ -443,6 +443,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         piSessionId: payload.piSessionId,
         lastError: payload.lastError,
       })
+      if (payload.state === 'disconnected') {
+        const finalized = await messageRepo.finalizeStaleMessagesByTopic(topicId)
+        for (const messageId of finalized) {
+          await messageRepo.flushParts()
+          hub.broadcast('message.end', { topicId, messageId, stopReason: 'error' })
+        }
+      }
       break
     }
 

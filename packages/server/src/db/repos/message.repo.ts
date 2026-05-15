@@ -329,6 +329,34 @@ export async function searchMessages(
   }>
 }
 
+// ─── Stale streaming cleanup ────────────────────────────────────────
+
+export async function finalizeStaleMessagesByTopic(topicId: string): Promise<string[]> {
+  const rows = await getDb()
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.topicId, topicId),
+        eq(messages.status, 'streaming'),
+      ),
+    )
+    .all()
+
+  if (rows.length === 0) return []
+
+  const ids = rows.map((r) => r.id as string)
+  const now = Date.now()
+  for (const id of ids) {
+    await getDb()
+      .update(messages)
+      .set({ status: 'done', finishedAt: now, stopReason: 'error' })
+      .where(eq(messages.id, id))
+      .run()
+  }
+  return ids
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────
 
 function toMessageDomain(row: Record<string, unknown>): Message {
