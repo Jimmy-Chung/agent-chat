@@ -10,6 +10,7 @@ import { useSopTemplateStore } from '@/stores/sop-template-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { getWsClient } from '@/lib/ws-client'
+import { requestPushPermission } from '@/components/PushSetup'
 
 type PermissionTier = 'yolo' | 'normal'
 
@@ -227,7 +228,8 @@ export function Sidebar() {
             piState={activeTopicId ? sessionHealthByTopic[activeTopicId]?.state : undefined}
             wsStatus={wsStatus}
           />
-          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.0.0</span>
+          <NotificationBell />
+          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.4.0</span>
         </div>
       </div>
 
@@ -628,6 +630,46 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (checked: b
         className="absolute top-0.5 h-6 w-6 rounded-full bg-white transition-all"
         style={{ left: checked ? 22 : 2, boxShadow: '0 3px 10px rgba(0,0,0,.24)' }}
       />
+    </button>
+  )
+}
+
+function NotificationBell() {
+  const [permission, setPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window
+      ? Notification.permission
+      : 'denied',
+  )
+
+  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) return null
+  if (permission === 'denied') return null
+
+  const granted = permission === 'granted'
+
+  const handleClick = async () => {
+    if (granted) return
+    const ok = await requestPushPermission()
+    if (ok) setPermission('granted')
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      title={granted ? '推送通知已开启' : '开启推送通知'}
+      className="inline-flex items-center justify-center rounded-full transition-opacity"
+      style={{
+        width: 22,
+        height: 22,
+        background: granted ? 'rgba(48,209,88,0.12)' : 'rgba(255,255,255,0.06)',
+        border: granted ? '1px solid rgba(48,209,88,0.28)' : '1px solid var(--hairline)',
+        color: granted ? '#6FE39A' : 'var(--fg-dim)',
+        cursor: granted ? 'default' : 'pointer',
+      }}
+    >
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5S10.5 3.17 10.5 4v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+      </svg>
     </button>
   )
 }
