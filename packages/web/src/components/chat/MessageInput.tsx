@@ -5,6 +5,7 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { getWsClient } from '@/lib/ws-client'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore } from '@/stores/message-store'
+import { useWsStore } from '@/stores/ws-store'
 import type { Artifact } from '@agent-chat/protocol'
 
 const EMPTY_ARTIFACTS: Artifact[] = []
@@ -83,7 +84,15 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const isStreaming = streamingTopicId === topicId
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId])
   const isAgentActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(agentStatus ?? '')
-  const showStopButton = isStreaming || isAgentActive
+  const hasPendingUserMessage = useMessageStore((s) => {
+    const msgs = s.byTopic[topicId]
+    if (!msgs?.length) return false
+    const last = msgs[msgs.length - 1]
+    return last?.role === 'user' && last?.status === 'pending'
+  })
+  const showStopButton = isStreaming || isAgentActive || hasPendingUserMessage
+  const sessionReady = useWsStore((s) => s.sessionReadyByTopic[topicId])
+  const sessionLoading = sessionReady !== true
 
   const topicArtifacts = useArtifactStore((s) => s.byTopic[topicId] ?? EMPTY_ARTIFACTS)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
@@ -102,7 +111,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
     const trimmed = value.trim()
     if (!trimmed) return
 
-    wsClient.send({
+    const sent = wsClient.send({
       type: 'user.message',
       data: {
         topicId,
@@ -111,6 +120,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
         mentions: mentions.map((m) => ({ id: m.id, name: m.name })),
       },
     })
+    if (!sent) return
     setValue('')
     setMentions([])
   }, [value, topicId, wsClient, mentions])
@@ -557,10 +567,10 @@ export function MessageInput({ topicId }: MessageInputProps) {
             ref={textareaRef}
             value={value}
             onChange={handleChange}
-            onKeyDown={isStreaming ? undefined : handleKeyDown}
-            placeholder={isStreaming ? 'Agent 正在回复...' : '回复 agent…  按 ⌘↩ 发送 · @ 提及文件 · / 触发命令'}
+            onKeyDown={isStreaming || sessionLoading ? undefined : handleKeyDown}
+            placeholder={sessionLoading ? '正在连接 Agent...' : isStreaming ? 'Agent 正在回复...' : '回复 agent…  按 ⌘↩ 发送 · @ 提及文件 · / 触发命令'}
             maxRows={6}
-            disabled={isStreaming}
+            disabled={isStreaming || sessionLoading}
             className="min-h-[22px] flex-1 resize-none bg-transparent text-sm outline-none disabled:opacity-50"
             style={{ color: 'var(--fg-strong)', lineHeight: 1.5, letterSpacing: '-0.005em' }}
           />
@@ -598,7 +608,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
               ) : (
                 <button
                   onClick={handleSend}
-                  disabled={!value.trim()}
+                  disabled={!value.trim() || sessionLoading}
                   className="flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-30"
                   style={{
                     background: value.trim()

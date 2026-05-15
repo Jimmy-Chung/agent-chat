@@ -312,7 +312,9 @@ const EMPTY_MESSAGES: Message[] = []
 
 function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicId: string; state: string; sessionState?: string; sessionError?: string }) {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
-  const isActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(state)
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
+  const hasPendingUser = lastMsg?.role === 'user' && lastMsg?.status === 'pending'
+  const isActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(state) || hasPendingUser
   const latestStreaming = [...messages].reverse().find((m) => m.role === 'assistant' && m.status === 'streaming')
   const activeSinceRef = useRef<number | null>(null)
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -357,7 +359,7 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
     disconnected: '已断开',
   }
 
-  const statusLabel = labelMap[state] ?? 'Idle'
+  const statusLabel = hasPendingUser && state === 'idle' ? 'Sending' : (labelMap[state] ?? 'Idle')
   const showBar = isActive || !!sessionState || !!sessionError
 
   if (!showBar) return null
