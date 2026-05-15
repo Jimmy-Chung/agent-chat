@@ -65,6 +65,7 @@ export const messageEndPayloadSchema = z.object({
     'aborted',
     'error',
   ]),
+  errorMessage: z.string().optional(),
 })
 
 export const toolCallPayloadSchema = z.object({

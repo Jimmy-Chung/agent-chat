@@ -239,6 +239,16 @@ export const sopTemplates = sqliteTable(
   (table) => [index('idx_sop_templates_type').on(table.agentType)],
 )
 
+// ─── push_subscriptions ─────────────────────────────────────────────────────
+
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+  id: text('id').primaryKey(),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
 // ─── Relations ──────────────────────────────────────────────────────
 
 export const topicsRelations = relations(topics, ({ many }) => ({

@@ -11,6 +11,9 @@ export interface Env {
   R2_BUCKET?: string
   R2_PUBLIC_URL?: string
   LOG_LEVEL?: string
+  VAPID_PUBLIC_KEY?: string
+  VAPID_PRIVATE_KEY?: string
+  VAPID_SUBJECT?: string
 }
 
 export interface AppConfig {
@@ -26,6 +29,9 @@ export interface AppConfig {
     bucket: string
     publicUrl: string
   }
+  vapidPublicKey: string
+  vapidPrivateKey: string
+  vapidSubject: string
 }
 
 export function createConfig(env: Env): AppConfig {
@@ -44,5 +50,8 @@ export function createConfig(env: Env): AppConfig {
       bucket: env.R2_BUCKET || 'agent-chat-artifacts',
       publicUrl: env.R2_PUBLIC_URL || '',
     },
+    vapidPublicKey: env.VAPID_PUBLIC_KEY || '',
+    vapidPrivateKey: env.VAPID_PRIVATE_KEY || '',
+    vapidSubject: env.VAPID_SUBJECT || 'mailto:admin@example.com',
   }
 }

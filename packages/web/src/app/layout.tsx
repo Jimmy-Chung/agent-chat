@@ -1,10 +1,12 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { WsProvider } from '@/components/WsProvider'
+import { PushSetup } from '@/components/PushSetup'
 
 export const metadata: Metadata = {
   title: 'agent-chat',
   description: 'Agent-friendly personal IM',
+  manifest: '/manifest.webmanifest',
 }
 
 export const viewport: Viewport = {
@@ -23,6 +25,7 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <WsProvider>{children}</WsProvider>
+        <PushSetup />
       </body>
     </html>
   )

@@ -101,6 +101,7 @@ export async function deliverUserMessage(input: DeliverUserMessageInput): Promis
     const delivered = await attemptDelivery(input, msg, {
       retryCount: nextRetryCount,
       forceSessionRecovery: true,
+      allowRecreate: true,
     })
     if (delivered) return 'delivered'
     return handleRetryFailure(input, msg, nextRetryCount)
@@ -123,7 +124,8 @@ export async function deliverUserMessage(input: DeliverUserMessageInput): Promis
   for (let attempt = 1; attempt <= AUTO_RETRY_ATTEMPTS; attempt += 1) {
     await messageRepo.updateMessage(msg.id, { status: 'retrying' })
     broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'retrying', msg.retry_count, msg.max_retries)
-    if (await attemptDelivery(input, msg, { retryCount: msg.retry_count, forceSessionRecovery: true })) {
+    // Auto-retry: reconnect only, never recreate (preserves active session)
+    if (await attemptDelivery(input, msg, { retryCount: msg.retry_count, forceSessionRecovery: false, allowRecreate: false })) {
       return 'delivered'
     }
   }
@@ -174,12 +176,13 @@ export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boo
 async function attemptDelivery(
   input: DeliverUserMessageInput,
   msg: Message,
-  options: { retryCount: number; forceSessionRecovery: boolean },
+  options: { retryCount: number; forceSessionRecovery: boolean; allowRecreate?: boolean },
 ): Promise<boolean> {
   const topic = await topicRepo.getTopic(input.topicId)
   const sessionId = await ensureDeliverableSession(topic, input.pi, {
     allowCreate: true,
     forceResume: options.forceSessionRecovery,
+    allowRecreate: options.allowRecreate ?? true,
   })
   if (!topic || !sessionId) return false
 
@@ -333,7 +336,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 async function ensureDeliverableSession(
   topic: Topic | undefined,
   pi: PiClient,
-  options: { allowCreate: boolean; forceResume: boolean },
+  options: { allowCreate: boolean; forceResume: boolean; allowRecreate: boolean },
 ): Promise<string | null> {
   if (!topic) return null
   if (topic.pi_session_id) {
@@ -344,10 +347,16 @@ async function ensureDeliverableSession(
     const restored = await restoreSession(topic, pi, {
       allowCreate: false,
       forceResume: options.forceResume,
+      allowRecreate: options.allowRecreate,
     })
     if (restored) return topic.pi_session_id
   }
   if (!options.allowCreate) return null
+
+  // Only create a brand-new session when the topic has never had one.
+  // If restore failed for an existing session, return null (show retry UI)
+  // rather than clobbering the active session with a new one.
+  if (topic.pi_session_id) return null
 
   try {
     const result = await pi.createSession(buildSessionParams(topic))
@@ -363,7 +372,7 @@ async function ensureDeliverableSession(
 async function restoreSession(
   topic: Topic,
   pi: PiClient,
-  options: { allowCreate: boolean; forceResume: boolean },
+  options: { allowCreate: boolean; forceResume: boolean; allowRecreate: boolean },
 ): Promise<string | null> {
   if (!topic.pi_session_id) return null
   if (pi.hasSession(topic.pi_session_id) && !options.forceResume) return topic.pi_session_id
@@ -378,6 +387,9 @@ async function restoreSession(
   } catch (err) {
     logger.warn({ err, topicId: topic.id, sessionId: topic.pi_session_id }, 'resume failed before message delivery')
   }
+
+  // recreateSession only on manual retry — auto-retry preserves the active session
+  if (!options.allowRecreate) return null
 
   try {
     await pi.recreateSession({ ...buildSessionParams(topic), sessionId: topic.pi_session_id })

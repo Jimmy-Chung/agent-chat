@@ -6,15 +6,77 @@ import * as interactionRepo from '../db/repos/interaction.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as usageRepo from '../db/repos/usage.repo'
 import * as cronRepo from '../db/repos/cron.repo'
+import * as pushRepo from '../db/repos/push-subscription.repo'
+import { buildVapidAuthHeader } from '../lib/vapid'
+import { encryptPushPayload } from '../lib/web-push'
+import type { AppConfig } from '../config'
 import { logger } from '../logger'
 
 export interface EventBroadcaster {
   broadcast(type: string, data: unknown): void
 }
 
-const lastSeqBySession = new Map<string, number>()
+export interface PushPayload {
+  title: string
+  body: string
+  tag?: string
+  url?: string
+}
 
-export function routePiEvents(pi: PiClient, broadcaster: EventBroadcaster): void {
+async function sendPushToAll(payload: PushPayload, config: AppConfig): Promise<void> {
+  if (!config.vapidPublicKey || !config.vapidPrivateKey) return
+  const subs = await pushRepo.listSubscriptions()
+  if (subs.length === 0) return
+
+  await Promise.all(
+    subs.map(async (sub) => {
+      try {
+        const { body, contentEncoding } = await encryptPushPayload(
+          JSON.stringify(payload),
+          sub,
+        )
+        const authHeader = await buildVapidAuthHeader(
+          sub.endpoint,
+          config.vapidPrivateKey,
+          config.vapidPublicKey,
+          config.vapidSubject,
+        )
+        const res = await fetch(sub.endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/octet-stream',
+            'Content-Encoding': contentEncoding,
+            TTL: '86400',
+          },
+          body,
+        })
+        if (res.ok) {
+          logger.info({ endpoint: sub.endpoint.slice(0, 60) }, 'Push sent OK')
+        } else {
+          const text = await res.text().catch(() => '')
+          logger.warn({ status: res.status, body: text.slice(0, 200), endpoint: sub.endpoint.slice(0, 60) }, 'Push send failed (HTTP)')
+          // 410 Gone or 404 → subscription expired, remove it
+          if (res.status === 410 || res.status === 404) {
+            await pushRepo.deleteSubscription(sub.endpoint).catch(() => {})
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, endpoint: sub.endpoint.slice(0, 60) }, 'Push send failed (exception)')
+      }
+    }),
+  )
+}
+
+const lastSeqBySession = new Map<string, number>()
+// Track current assistant messageId per session so error events can inject error text
+const currentAssistantBySession = new Map<string, string>()
+
+export function routePiEvents(
+  pi: PiClient,
+  broadcaster: EventBroadcaster,
+  config?: AppConfig,
+): void {
   pi.on('session.recreated', ({ sessionId }: { sessionId: string }) => {
     lastSeqBySession.delete(sessionId)
   })
@@ -26,7 +88,7 @@ export function routePiEvents(pi: PiClient, broadcaster: EventBroadcaster): void
 
     logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
     try {
-      routeEvent(event, broadcaster)
+      routeEvent(event, broadcaster, config)
     } catch (err) {
       logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
     }
@@ -39,7 +101,7 @@ async function findTopicIdBySession(sessionId: string): Promise<string | null> {
   return match?.id ?? null
 }
 
-async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> {
+async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppConfig): Promise<void> {
   const payload = event.payload
   const sessionId = event.sessionId
   const topicId = await findTopicIdBySession(sessionId)
@@ -55,6 +117,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
           id: payload.messageId,
         })
       }
+      currentAssistantBySession.set(sessionId, msg.id)
       hub.broadcast('message.start', {
         topicId,
         messageId: msg.id,
@@ -87,6 +150,22 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
     case 'message.end': {
       if (!topicId) return
       await messageRepo.flushParts()
+
+      // If the SDK returned an error, inject the error text as a text part before finalizing
+      if (payload.stopReason === 'error' && payload.errorMessage) {
+        const errorText = payload.errorMessage
+        await messageRepo.createMessagePart({
+          messageId: payload.messageId,
+          kind: 'text',
+          contentJson: JSON.stringify({ content: errorText }),
+        })
+        hub.broadcast('message.delta', {
+          topicId,
+          messageId: payload.messageId,
+          part: { kind: 'text', content: errorText },
+        })
+      }
+
       await messageRepo.updateMessage(payload.messageId, {
         status: 'done',
         finished_at: Date.now(),
@@ -97,6 +176,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
         messageId: payload.messageId,
         stopReason: payload.stopReason,
       })
+      if (config) {
+        const topic = await topicRepo.getTopic(topicId)
+        sendPushToAll(
+          { title: 'agent-chat', body: `${topic?.name ?? '话题'} 有新回复`, tag: `msg-${topicId}`, url: `/?topic=${topicId}` },
+          config,
+        ).catch(() => {})
+      }
       break
     }
 
@@ -197,6 +283,12 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
         options: payload.options,
         defaultTimeoutMs: payload.defaultTimeoutMs,
       })
+      if (config) {
+        sendPushToAll(
+          { title: 'agent-chat · 需要审批', body: payload.prompt.slice(0, 120), tag: `approval-${interaction.id}`, url: `/?topic=${topicId}` },
+          config,
+        ).catch(() => {})
+      }
       break
     }
 
@@ -321,7 +413,25 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
     }
 
     case 'error': {
-      hub.broadcast('error', { code: payload.code, message: payload.message })
+      if (!topicId) {
+        hub.broadcast('error', { code: payload.code, message: payload.message })
+        break
+      }
+      const errorText = `[${payload.code}] ${payload.message}`
+      const errMsg = await messageRepo.createMessage({ topicId, role: 'system' })
+      await messageRepo.createMessagePart({
+        messageId: errMsg.id,
+        kind: 'text',
+        contentJson: JSON.stringify({ content: errorText }),
+      })
+      await messageRepo.updateMessage(errMsg.id, {
+        status: 'done',
+        finished_at: Date.now(),
+        stop_reason: 'error',
+      })
+      hub.broadcast('message.start', { topicId, messageId: errMsg.id, role: 'system' })
+      hub.broadcast('message.delta', { topicId, messageId: errMsg.id, part: { kind: 'text', content: errorText } })
+      hub.broadcast('message.end', { topicId, messageId: errMsg.id, stopReason: 'error' })
       break
     }
 
@@ -359,6 +469,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster): Promise<void> 
         duration: payload.duration,
         completedAt: payload.completedAt,
       })
+      if (config) {
+        const statusLabel = payload.status === 'success' ? '完成' : '失败'
+        sendPushToAll(
+          { title: `定时任务${statusLabel}`, body: payload.summary?.slice(0, 120) ?? job.prompt.slice(0, 120), tag: `cron-${payload.cronId}`, url: `/?topic=${job.origin_topic_id}` },
+          config,
+        ).catch(() => {})
+      }
       break
     }
 

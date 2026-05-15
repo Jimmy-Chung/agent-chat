@@ -8,6 +8,7 @@ import { seedSystemTopics } from './seed'
 import { initR2 } from './r2/client'
 import { getD1 } from './db/migrate'
 import { handleArtifactAccessRequest } from './r2/artifact-access'
+import { createPushRoutes } from './routes/push'
 
 let initialized = false
 let appConfig: AppConfig | null = null
@@ -36,6 +37,14 @@ app.get('/healthz', async (c) => {
   } catch {
     return c.json({ status: 'degraded', db: 'disconnected', timestamp: Date.now() }, 503)
   }
+})
+
+// Push notification routes — strip /push prefix before forwarding to sub-app
+app.use('/push/*', async (c) => {
+  if (!appConfig) return c.json({ error: 'not initialized' }, 500)
+  const url = new URL(c.req.raw.url)
+  url.pathname = url.pathname.replace(/^\/push/, '') || '/'
+  return createPushRoutes(appConfig).fetch(new Request(url.toString(), c.req.raw))
 })
 
 app.get('/debug', (c) => {

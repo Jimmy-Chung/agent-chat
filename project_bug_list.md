@@ -47,10 +47,25 @@
 | BUG-033 | AIT-107 |
 | BUG-034 | AIT-109 |
 | BUG-035 | AIT-110 |
+| BUG-036 | AIT-112 |
 
 ---
 
 ## 未完成
+
+### BUG-036: Thinking 阶段 Stop 按钮失效 + 计时器无法停止
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-036 |
+| 标题 | Thinking 阶段 Stop 按钮失效 + 计时器无法停止 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-15 |
+| 修复时间 | 2026-05-15 |
+| 影响模块 | packages/web/src/components/chat/MessageInput.tsx, packages/web/src/lib/ws-client.ts |
+| 描述 | PI 在 thinking 阶段回复一条消息后长时间无新事件：1) 计时器持续跑，因为 `agent.status: idle` 未到达；2) `message.end` 未到达时 `isStreaming` 永远 true，用户点 Stop 后虽然 server 广播了 `agent.status: idle`，但 `streamingTopicId` 未清除，Stop 按钮仍在且再点无视觉反馈。另外，`message.end` 已到达（`isStreaming = false`）但 `agent.status` 仍为 thinking 时，Stop 按钮消失，用户完全无法中断。 |
+| 根因 | Stop 可见条件只绑定 `isStreaming`，未考虑 agent 处于活跃非 streaming 状态；`agent.status: idle` 事件处理时未同步清理残留 streaming 状态。 |
+| 修复方案 | 1) `MessageInput` 新增 `isAgentActive` 计算，`showStopButton = isStreaming \|\| isAgentActive`；2) `ws-client` 在 `agent.status: idle` 处理中，若 `streamingTopicId` 匹配则强制 `endStreaming` 并将消息标为 `aborted`。 |
 
 ### BUG-033: 手机宽度下 @ 产物选择弹窗横向溢出
 
@@ -66,7 +81,23 @@
 | 根因 | 弹窗宽度硬编码为 640px，窄屏下溢出 viewport。 |
 | 修复方案 | 宽度改为 min(640px, calc(100vw - 32px))；filter pills 加 overflow-x: auto；底部快捷键提示窄屏隐藏。 |
 
-当前无本仓库内处于 `新建`、`处理中` 或 `重新打开` 的 `v1.2.x` 阻断 bug。
+当前其余本仓库内处于 `新建`、`处理中` 或 `重新打开` 的阻断 bug 暂无。
+
+---
+
+## v1.3.1 修复过程记录
+
+| 版本 | 日期 | 内容 |
+|---|---|---|
+| v1.3.1 | 2026-05-15 | 修复 BUG-034 发消息立即重试问题；修复 BUG-035 产物预览失效 |
+
+---
+
+## v1.3.0 修复过程记录
+
+| 版本 | 日期 | 内容 |
+|---|---|---|
+| v1.3.0 | 2026-05-14 | 发布 FEAT-016 / FEAT-029 / FEAT-021 / FEAT-030；修复 BUG-032 旧 Topic 恢复后 Adapter session attach / recreate 链路异常 |
 
 ---
 

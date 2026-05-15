@@ -160,7 +160,13 @@ export function MessageBubble({
               />
             )}
             {showRetryLoading && <span className="message-retry-loading" />}
-            <div className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}>
+            <div
+              className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}
+              style={!isUser && message.stop_reason === 'error' ? {
+                border: '1px solid rgba(255,69,58,0.40)',
+                background: 'rgba(255,69,58,0.08)',
+              } : undefined}
+            >
               {/* Message parts */}
               {parts.map((part) => (
                 <MessagePartRenderer

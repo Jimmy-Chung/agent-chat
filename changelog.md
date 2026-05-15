@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-05-15 [v1.4.0] — PWA 推送、Token 鉴权体验与连接状态指示
+
+### FEAT-011: Web Push 推送通知（PWA Push Notification）
+- VAPID 密钥签名 + RFC 8291 aes128gcm 端对端加密，完整 Web Push 协议实现
+- push_subscriptions 表持久化多设备订阅，支持 upsert/删除过期订阅
+- Service Worker 处理 push 事件并展示系统通知，notificationclick 跳转到对应话题
+- assistant 回复、interaction.request 审批请求、cron.run.completed 三类事件触发推送
+- PI 侧 error 事件（如欠费异常）转换为系统消息气泡展示给用户
+
+### FEAT-035: Token 校验自动跳回鉴权页 + PI 连接状态指示
+- Token 无效/缺失时始终跳转至鉴权页，不允许绕过进入主界面
+- Sidebar 左下角实时显示 server↔PI adapter WSS 连接状态（connected/reconnecting/disconnected）
+
+### BUG-036: Thinking 阶段 Stop 按钮失效 + 计时器无法停止
+- Stop 按钮可见条件扩展为 `isStreaming || isAgentActive`，thinking/tool 等非 streaming 活跃状态下同样可见
+- 收到 `agent.status: idle` 时强制清除残留 streaming 状态，避免 Stop 点击后无视觉反馈
+
 ## 2026-05-14 [v1.3.0] — 云端产物、历史一致性与消息时间体验发布
 
 ### FEAT-016: R2 云端产物上传下载

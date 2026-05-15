@@ -11,7 +11,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
-      streamingMessageId: null,
+      streamingTopicId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
@@ -36,7 +36,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
       retry_count: 0,
       max_retries: 2,
     })
-    store.startStreaming(messageId)
+    store.startStreaming(topicId, messageId)
   }
 
   function simulateMessageDelta(messageId: string, content: string) {
@@ -46,7 +46,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
 
   function simulateMessageEnd(messageId: string, stopReason: string) {
     const store = useMessageStore.getState()
-    if (store.streamingMessageId === messageId) {
+    if (store.streamingText[messageId] !== undefined) {
       const streamText = store.streamingText[messageId]
       if (streamText) {
         store.appendPart(messageId, {
@@ -69,7 +69,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
   it('C1: message.start 初始化流式状态', () => {
     simulateMessageStart('topic1', 'msg1')
     const state = useMessageStore.getState()
-    expect(state.streamingMessageId).toBe('msg1')
+    expect(state.streamingTopicId).toBe('topic1')
     expect(state.streamingText['msg1']).toBe('')
     const msg = state.byTopic['topic1']?.[0]
     expect(msg).toBeDefined()
@@ -90,7 +90,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
     simulateMessageEnd('msg1', 'end_turn')
 
     const state = useMessageStore.getState()
-    expect(state.streamingMessageId).toBeNull()
+    expect(state.streamingTopicId).toBeNull()
     expect(state.streamingText['msg1']).toBeUndefined()
 
     const msg = state.byTopic['topic1']?.[0]

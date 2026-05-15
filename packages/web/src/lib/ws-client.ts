@@ -69,10 +69,15 @@ class WsClient {
       }
     }
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event: CloseEvent) => {
       if (this.pingTimer) {
         clearInterval(this.pingTimer)
         this.pingTimer = null
+      }
+      if (event.code === 4401) {
+        // Token invalid — signal auth failure, do not reconnect
+        useWsStore.getState().setUnauthorized()
+        return
       }
       useWsStore.getState().setStatus('disconnected')
       this.scheduleReconnect()
@@ -176,7 +181,7 @@ class WsClient {
           max_retries: event.data.maxRetries ?? 2,
         })
         if (event.data.role === 'assistant') {
-          messageStore.startStreaming(event.data.messageId)
+          messageStore.startStreaming(event.data.topicId, event.data.messageId)
         }
         break
 
@@ -209,9 +214,7 @@ class WsClient {
       }
 
       case 'message.end':
-        if (messageStore.streamingMessageId === event.data.messageId) {
-          messageStore.endStreaming(event.data.messageId)
-        }
+        messageStore.endStreaming(event.data.messageId)
         messageStore.updateMessage(event.data.messageId, {
           status: event.data.stopReason === 'aborted' ? 'aborted' : 'done',
           finished_at: Date.now(),
@@ -435,7 +438,21 @@ class WsClient {
 
       case 'agent.status': {
         const d = event.data as Record<string, unknown>
-        messageStore.setAgentStatus(d.topicId as string, d.state as string)
+        const agentTopicId = d.topicId as string
+        const agentState = d.state as string
+        messageStore.setAgentStatus(agentTopicId, agentState)
+        // When agent becomes idle, clear any streaming state that never got a message.end
+        if (agentState === 'idle') {
+          const { streamingTopicId, streamingMessageId } = useMessageStore.getState()
+          if (streamingTopicId === agentTopicId && streamingMessageId) {
+            messageStore.endStreaming(streamingMessageId)
+            messageStore.updateMessage(streamingMessageId, {
+              status: 'aborted',
+              finished_at: Date.now(),
+              stop_reason: 'aborted',
+            })
+          }
+        }
         break
       }
 

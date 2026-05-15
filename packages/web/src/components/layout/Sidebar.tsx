@@ -34,6 +34,7 @@ export function Sidebar() {
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
   const templates = useSopTemplateStore((s) => s.templates)
   const wsStatus = useWsStore((s) => s.status)
+  const sessionHealthByTopic = useWsStore((s) => s.sessionHealthByTopic)
   const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
 
@@ -222,39 +223,10 @@ export function Sidebar() {
           className="flex shrink-0 items-center gap-2 px-3.5 py-2.5 text-xs"
           style={{ borderTop: '1px solid var(--hairline)', color: 'var(--fg-dim)' }}
         >
-          {wsStatus === 'connected' ? (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-              style={{
-                height: 22,
-                background: 'rgba(48,209,88,0.10)',
-                color: '#6FE39A',
-                border: '1px solid rgba(48,209,88,0.22)',
-              }}
-            >
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: 'var(--state-ok)', boxShadow: '0 0 8px var(--state-ok)' }}
-              />
-              已连接
-            </span>
-          ) : (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-              style={{
-                height: 22,
-                background: 'rgba(255,69,58,0.10)',
-                color: '#FF6B6B',
-                border: '1px solid rgba(255,69,58,0.22)',
-              }}
-            >
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: 'var(--state-danger)' }}
-              />
-              {wsStatus === 'connecting' ? '连接中...' : '已断开'}
-            </span>
-          )}
+          <PiStatusBadge
+            piState={activeTopicId ? sessionHealthByTopic[activeTopicId]?.state : undefined}
+            wsStatus={wsStatus}
+          />
           <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.0.0</span>
         </div>
       </div>
@@ -657,5 +629,66 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (checked: b
         style={{ left: checked ? 22 : 2, boxShadow: '0 3px 10px rgba(0,0,0,.24)' }}
       />
     </button>
+  )
+}
+
+function PiStatusBadge({ piState, wsStatus }: {
+  piState: string | undefined
+  wsStatus: string
+}) {
+  // PI adapter connected
+  if (piState === 'connected') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ height: 22, background: 'rgba(48,209,88,0.10)', color: '#6FE39A', border: '1px solid rgba(48,209,88,0.22)' }}
+      >
+        <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-ok)', boxShadow: '0 0 8px var(--state-ok)' }} />
+        PI 已连接
+      </span>
+    )
+  }
+  // PI adapter reconnecting
+  if (piState === 'reconnecting') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ height: 22, background: 'rgba(255,159,10,0.12)', color: '#FFB340', border: '1px solid rgba(255,159,10,0.28)' }}
+      >
+        <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#FFB340' }} />
+        重连中...
+      </span>
+    )
+  }
+  // PI adapter explicitly disconnected
+  if (piState === 'disconnected') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ height: 22, background: 'rgba(255,69,58,0.10)', color: '#FF6B6B', border: '1px solid rgba(255,69,58,0.22)' }}
+      >
+        <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-danger)' }} />
+        PI 已断开
+      </span>
+    )
+  }
+  // No PI session yet — fall back to server WS status
+  const ok = wsStatus === 'connected'
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      style={{
+        height: 22,
+        background: ok ? 'rgba(48,209,88,0.10)' : 'rgba(255,69,58,0.10)',
+        color: ok ? '#6FE39A' : '#FF6B6B',
+        border: ok ? '1px solid rgba(48,209,88,0.22)' : '1px solid rgba(255,69,58,0.22)',
+      }}
+    >
+      <span
+        className="inline-block h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: ok ? 'var(--state-ok)' : 'var(--state-danger)', boxShadow: ok ? '0 0 8px var(--state-ok)' : 'none' }}
+      />
+      {ok ? '已连接' : wsStatus === 'connecting' ? '连接中...' : '已断开'}
+    </span>
   )
 }
