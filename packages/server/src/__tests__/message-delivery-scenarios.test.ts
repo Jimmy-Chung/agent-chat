@@ -201,7 +201,7 @@ describe('Scenario A — new topic, first message', () => {
     expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-created' }))
   })
 
-  it('shows needs_retry when sendUserMessage RPC times out', async () => {
+  it('shows needs_retry when sendUserMessage RPC times out on both attempts', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-pre' })
     const msg = makeMessage()
 
@@ -210,12 +210,14 @@ describe('Scenario A — new topic, first message', () => {
 
     const pi = makePi({
       hasSession: vi.fn().mockReturnValue(true),
+      reconnectSession: vi.fn().mockResolvedValue(undefined),
       rpc: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
     })
     const broadcaster = makeBroadcaster()
 
     const { deliverUserMessage, RPC_TIMEOUT_MS } = await import('../ws/message-delivery')
 
+    // Auto delivery: 1st attempt times out → reconnect → 2nd attempt also times out
     vi.useFakeTimers()
     const promise = deliverUserMessage({
       topicId: 'topic-1',
@@ -225,14 +227,14 @@ describe('Scenario A — new topic, first message', () => {
       broadcaster,
       manual: false,
     })
-    await vi.advanceTimersByTimeAsync(RPC_TIMEOUT_MS + 100)
+    await vi.advanceTimersByTimeAsync((RPC_TIMEOUT_MS + 100) * 2)
     const result = await promise
     vi.useRealTimers()
 
     expect(result).toBe('retryable')
     const deliveryEvent = broadcaster.events.find((e) => e.type === 'message.delivery')
     expect((deliveryEvent?.data as Record<string, unknown>)?.status).toBe('needs_retry')
-  })
+  }, 30000)
 })
 
 describe('Scenario B — existing topic, message after DO hibernation (reconnect path)', () => {
