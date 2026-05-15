@@ -79,8 +79,11 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const wsClient = getWsClient()
 
-  const streamingMessageId = useMessageStore((s) => s.streamingMessageId)
-  const isStreaming = streamingMessageId !== null
+  const streamingTopicId = useMessageStore((s) => s.streamingTopicId)
+  const isStreaming = streamingTopicId === topicId
+  const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId])
+  const isAgentActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(agentStatus ?? '')
+  const showStopButton = isStreaming || isAgentActive
 
   const topicArtifacts = useArtifactStore((s) => s.byTopic[topicId] ?? EMPTY_ARTIFACTS)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
@@ -306,7 +309,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             ref={pickerRef}
             className="absolute bottom-full left-0 z-20 flex flex-col overflow-hidden"
             style={{
-              width: 'min(640px, calc(100vw - 32px))',
+              width: 'min(640px, 100%)',
               maxHeight: 400,
               marginBottom: 8,
               borderRadius: 'var(--r-modal, 20px)',
@@ -394,8 +397,8 @@ export function MessageInput({ topicId }: MessageInputProps) {
               </div>
             </div>
 
-            {/* Search + filter pills */}
-            <div className="flex shrink-0 items-center gap-2 overflow-x-auto" style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--hairline)' }}>
+            {/* Search + filter */}
+            <div className="flex shrink-0 items-center gap-2" style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--hairline)' }}>
               <div
                 className="flex flex-1 items-center gap-2"
                 style={{ height: 32, padding: '0 10px', background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', borderRadius: 9, fontSize: 13 }}
@@ -412,24 +415,51 @@ export function MessageInput({ topicId }: MessageInputProps) {
                   autoFocus
                 />
               </div>
-              {(['all', 'spreadsheet', 'image', 'document'] as FilterType[]).map((ft) => (
-                <button
-                  key={ft}
-                  onClick={() => { setFilterType(ft); setHighlightIndex(0) }}
-                  className="inline-flex items-center gap-1"
-                  style={{
-                    height: 24,
-                    padding: '0 9px',
-                    borderRadius: 8,
-                    fontSize: 11.5,
-                    background: filterType === ft ? 'rgba(10,132,255,.14)' : 'var(--glass-1)',
-                    border: filterType === ft ? '1px solid rgba(10,132,255,.32)' : '1px solid var(--hairline)',
-                    color: filterType === ft ? '#7CB6FF' : 'var(--fg-regular)',
-                  }}
-                >
-                  {ft === 'all' ? '全部' : ft === 'spreadsheet' ? '表格' : ft === 'image' ? '图片' : '文档'}
-                </button>
-              ))}
+
+              {/* Wide: pill buttons */}
+              <div className="hidden sm:flex items-center gap-1.5">
+                {(['all', 'spreadsheet', 'image', 'document'] as FilterType[]).map((ft) => (
+                  <button
+                    key={ft}
+                    onClick={() => { setFilterType(ft); setHighlightIndex(0) }}
+                    className="inline-flex items-center"
+                    style={{
+                      height: 24,
+                      padding: '0 9px',
+                      borderRadius: 8,
+                      fontSize: 11.5,
+                      background: filterType === ft ? 'rgba(10,132,255,.14)' : 'var(--glass-1)',
+                      border: filterType === ft ? '1px solid rgba(10,132,255,.32)' : '1px solid var(--hairline)',
+                      color: filterType === ft ? '#7CB6FF' : 'var(--fg-regular)',
+                    }}
+                  >
+                    {ft === 'all' ? '全部' : ft === 'spreadsheet' ? '表格' : ft === 'image' ? '图片' : '文档'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Narrow: dropdown select */}
+              <select
+                className="sm:hidden"
+                value={filterType}
+                onChange={(e) => { setFilterType(e.target.value as FilterType); setHighlightIndex(0) }}
+                style={{
+                  height: 28,
+                  padding: '0 6px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  flexShrink: 0,
+                  background: 'var(--glass-1)',
+                  border: '1px solid var(--hairline)',
+                  color: 'var(--fg-regular)',
+                  outline: 'none',
+                }}
+              >
+                <option value="all">全部</option>
+                <option value="spreadsheet">表格</option>
+                <option value="image">图片</option>
+                <option value="document">文档</option>
+              </select>
             </div>
 
             {/* List */}
@@ -556,7 +586,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              {isStreaming ? (
+              {showStopButton ? (
                 <button
                   onClick={handleAbort}
                   className="flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-opacity hover:opacity-80"

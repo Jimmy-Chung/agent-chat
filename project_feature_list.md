@@ -14,6 +14,7 @@
 |---|---|---|---|
 | PWA 推送 | FEAT-011 PWA 本体补完：Web Push 通知 | 开发中 | manifest + SW + push 订阅/通知（assistant 回复、定时任务、approval） |
 | 移动端适配 | BUG-033 @ 产物弹窗手机端溢出修复 | 开发中 | iPhone 宽度下 @ 产物选择弹窗自适应 |
+| 鉴权体验 | FEAT-035 Token 校验自动跳回鉴权页 + PI 连接状态指示 | 开发中 | token 错/空时始终跳 AuthForm；左下角连接状态反映 server↔PI adapter WSS |
 
 > 范围说明：本版本以 PWA 推送为核心，专注 manifest + Service Worker + Web Push 通知链路，不做离线缓存。BUG-033 为本版本唯一附带 bug 修复。
 
