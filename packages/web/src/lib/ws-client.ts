@@ -105,10 +105,11 @@ class WsClient {
     useWsStore.getState().setStatus('disconnected')
   }
 
-  send(event: ClientEvent): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return
+  send(event: ClientEvent): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false
     const frame = createFrame(event.type, event.data)
     this.ws.send(encodeFrame(frame))
+    return true
   }
 
   private handleFrame(frame: WSFrame): void {
@@ -469,6 +470,12 @@ class WsClient {
       case 'session.health': {
         const d = event.data as Record<string, unknown>
         useWsStore.getState().setSessionHealth(d.topicId as string, d.state as string, d.lastError as string | undefined)
+        break
+      }
+
+      case 'session.status': {
+        const d = event.data as Record<string, unknown>
+        useWsStore.getState().setSessionReady(d.topicId as string, d.ready as boolean)
         break
       }
 

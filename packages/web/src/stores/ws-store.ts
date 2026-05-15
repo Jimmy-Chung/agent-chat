@@ -10,6 +10,7 @@ interface WsState {
   status: ConnectionStatus
   lastSeq: number | null
   sessionHealthByTopic: Record<string, { state: string; lastError?: string }>
+  sessionReadyByTopic: Record<string, boolean>
   unauthorized: boolean
 }
 
@@ -20,6 +21,7 @@ interface WsActions {
   setStatus: (status: ConnectionStatus) => void
   setLastSeq: (seq: number) => void
   setSessionHealth: (topicId: string, state: string, lastError?: string) => void
+  setSessionReady: (topicId: string, ready: boolean) => void
   setUnauthorized: () => void
 }
 
@@ -28,6 +30,7 @@ export const useWsStore = create<WsState & WsActions>()(
     status: 'disconnected' as ConnectionStatus,
     lastSeq: null,
     sessionHealthByTopic: {},
+    sessionReadyByTopic: {},
     unauthorized: false,
 
     connect: () => {
@@ -62,6 +65,12 @@ export const useWsStore = create<WsState & WsActions>()(
     setSessionHealth: (topicId, state, lastError) => {
       set((s) => {
         s.sessionHealthByTopic[topicId] = { state, lastError }
+      })
+    },
+
+    setSessionReady: (topicId, ready) => {
+      set((s) => {
+        s.sessionReadyByTopic[topicId] = ready
       })
     },
 
