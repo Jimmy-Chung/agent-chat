@@ -38,7 +38,7 @@ describe('MessageStore', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
-      streamingMessageId: null,
+      streamingTopicId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
@@ -53,7 +53,7 @@ describe('MessageStore', () => {
     expect(state.partsByMessage).toEqual({})
     expect(state.loading).toBe(false)
     expect(state.streamingText).toEqual({})
-    expect(state.streamingMessageId).toBeNull()
+    expect(state.streamingTopicId).toBeNull()
   })
 
   it('setMessages sets messages for a topic', () => {
@@ -120,21 +120,21 @@ describe('MessageStore', () => {
   })
 
   describe('streaming', () => {
-    it('startStreaming sets streamingMessageId and initializes text', () => {
-      useMessageStore.getState().startStreaming('m1')
+    it('startStreaming sets streamingTopicId and initializes topicId', () => {
+      useMessageStore.getState().startStreaming('topic1', 'm1')
       const state = useMessageStore.getState()
-      expect(state.streamingMessageId).toBe('m1')
+      expect(state.streamingTopicId).toBe('topic1')
       expect(state.streamingText['m1']).toBe('')
     })
 
     it('startStreaming does not overwrite existing streaming text', () => {
       useMessageStore.setState({ streamingText: { m1: 'hello' } })
-      useMessageStore.getState().startStreaming('m1')
+      useMessageStore.getState().startStreaming('topic1', 'm1')
       expect(useMessageStore.getState().streamingText['m1']).toBe('hello')
     })
 
     it('appendDelta appends text to streaming message', () => {
-      useMessageStore.getState().startStreaming('m1')
+      useMessageStore.getState().startStreaming('topic1', 'm1')
       useMessageStore.getState().appendDelta('m1', 'Hello ')
       useMessageStore.getState().appendDelta('m1', 'World')
 
@@ -146,20 +146,20 @@ describe('MessageStore', () => {
       expect(useMessageStore.getState().streamingText['m1']).toBe('text')
     })
 
-    it('endStreaming clears streamingMessageId and removes streamingText', () => {
-      useMessageStore.getState().startStreaming('m1')
+    it('endStreaming clears streamingTopicId and removes streamingText', () => {
+      useMessageStore.getState().startStreaming('topic1', 'm1')
       useMessageStore.getState().appendDelta('m1', 'Hello')
       useMessageStore.getState().endStreaming('m1')
 
       const state = useMessageStore.getState()
-      expect(state.streamingMessageId).toBeNull()
+      expect(state.streamingTopicId).toBeNull()
       expect(state.streamingText['m1']).toBeUndefined()
     })
 
-    it('endStreaming does not clear streamingMessageId if it belongs to a different message', () => {
-      useMessageStore.getState().startStreaming('m1')
+    it('endStreaming does not clear streamingTopicId if it belongs to a different message', () => {
+      useMessageStore.getState().startStreaming('topic1', 'm1')
       useMessageStore.getState().endStreaming('m2')
-      expect(useMessageStore.getState().streamingMessageId).toBe('m1')
+      expect(useMessageStore.getState().streamingTopicId).toBe('topic1')
     })
   })
 

@@ -8,7 +8,7 @@ describe('MessageStore streaming — B: 流式状态', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
-      streamingMessageId: null,
+      streamingTopicId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
@@ -33,8 +33,8 @@ describe('MessageStore streaming — B: 流式状态', () => {
 
   it('B3: 完整流式生命周期', () => {
     const store = useMessageStore.getState()
-    store.startStreaming('m1')
-    expect(useMessageStore.getState().streamingMessageId).toBe('m1')
+    store.startStreaming('topic1', 'm1')
+    expect(useMessageStore.getState().streamingTopicId).toBe('topic1')
     expect(useMessageStore.getState().streamingText['m1']).toBe('')
 
     store.appendDelta('m1', 'Hello ')
@@ -43,16 +43,16 @@ describe('MessageStore streaming — B: 流式状态', () => {
     expect(useMessageStore.getState().streamingText['m1']).toBe('Hello World!')
 
     store.endStreaming('m1')
-    expect(useMessageStore.getState().streamingMessageId).toBeNull()
+    expect(useMessageStore.getState().streamingTopicId).toBeNull()
     expect(useMessageStore.getState().streamingText['m1']).toBeUndefined()
   })
 
   it('B4: endStreaming 保留其他消息的流', () => {
     const store = useMessageStore.getState()
-    store.startStreaming('m1')
-    store.startStreaming('m2')
+    store.startStreaming('topic1', 'm1')
+    store.startStreaming('topic2', 'm2')
     store.endStreaming('m1')
-    expect(useMessageStore.getState().streamingMessageId).toBe('m2')
+    expect(useMessageStore.getState().streamingTopicId).toBe('topic2')
     expect(useMessageStore.getState().streamingText['m1']).toBeUndefined()
   })
 
@@ -63,7 +63,7 @@ describe('MessageStore streaming — B: 流式状态', () => {
 
   it('B6: 高频 appendDelta 性能 (1000次 < 300ms)', () => {
     const store = useMessageStore.getState()
-    store.startStreaming('m1')
+    store.startStreaming('topic1', 'm1')
     const start = performance.now()
     for (let i = 0; i < 1000; i++) {
       store.appendDelta('m1', `chunk${i} `)

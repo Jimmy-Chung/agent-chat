@@ -10,6 +10,7 @@ interface WsState {
   status: ConnectionStatus
   lastSeq: number | null
   sessionHealthByTopic: Record<string, { state: string; lastError?: string }>
+  unauthorized: boolean
 }
 
 interface WsActions {
@@ -19,6 +20,7 @@ interface WsActions {
   setStatus: (status: ConnectionStatus) => void
   setLastSeq: (seq: number) => void
   setSessionHealth: (topicId: string, state: string, lastError?: string) => void
+  setUnauthorized: () => void
 }
 
 export const useWsStore = create<WsState & WsActions>()(
@@ -26,6 +28,7 @@ export const useWsStore = create<WsState & WsActions>()(
     status: 'disconnected' as ConnectionStatus,
     lastSeq: null,
     sessionHealthByTopic: {},
+    unauthorized: false,
 
     connect: () => {
       // Actual connection is managed by ws-client; this updates state
@@ -59,6 +62,13 @@ export const useWsStore = create<WsState & WsActions>()(
     setSessionHealth: (topicId, state, lastError) => {
       set((s) => {
         s.sessionHealthByTopic[topicId] = { state, lastError }
+      })
+    },
+
+    setUnauthorized: () => {
+      set((s) => {
+        s.unauthorized = true
+        s.status = 'disconnected'
       })
     },
   })),

@@ -39,7 +39,7 @@ describe('Streaming performance — D: 量化性能', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
-      streamingMessageId: null,
+      streamingTopicId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
@@ -47,7 +47,7 @@ describe('Streaming performance — D: 量化性能', () => {
       interactions: {},
     })
     const store = useMessageStore.getState()
-    store.startStreaming('perf-m1')
+    store.startStreaming('perf-topic', 'perf-m1')
     const start = performance.now()
     for (let i = 0; i < 1000; i++) {
       store.appendDelta('perf-m1', `x`)
@@ -62,7 +62,7 @@ describe('Streaming performance — D: 量化性能', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
-      streamingMessageId: null,
+      streamingTopicId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
@@ -70,7 +70,7 @@ describe('Streaming performance — D: 量化性能', () => {
       interactions: {},
     })
     const store = useMessageStore.getState()
-    store.startStreaming('perf-m2')
+    store.startStreaming('perf-topic', 'perf-m2')
     const start = performance.now()
     for (let i = 0; i < 1000; i++) {
       store.appendDelta('perf-m2', `chunk${i} `)

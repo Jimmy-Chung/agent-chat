@@ -10,6 +10,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const status = useWsStore((s) => s.status)
+  const unauthorized = useWsStore((s) => s.unauthorized)
 
   useEffect(() => {
     const stored = localStorage.getItem(TOKEN_KEY)
@@ -37,6 +38,11 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     client.disconnect()
     setToken(null)
   }, [])
+
+  // Auto-logout when server rejects the token (close code 4401)
+  useEffect(() => {
+    if (unauthorized) handleLogout()
+  }, [unauthorized, handleLogout])
 
   if (!mounted) return null
 

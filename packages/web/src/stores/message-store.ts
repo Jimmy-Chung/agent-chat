@@ -11,6 +11,7 @@ interface MessageState {
   streamingText: Record<string, string>
   streamingThinking: Record<string, string>
   streamingToolInputs: Record<string, Record<string, string>>
+  streamingTopicId: string | null
   streamingMessageId: string | null
   todosByTopic: Record<string, Array<{ id: string; content: string; status: string; activeForm?: string }>>
   planByTopic: Record<string, string>
@@ -28,7 +29,7 @@ interface MessageActions {
   upsertSnapshotPart: (messageId: string, kind: MessagePart['kind'], contentJson: string, stableId: string) => void
   setMessages: (topicId: string, messages: Message[]) => void
   removeMessagesByTopic: (topicId: string) => void
-  startStreaming: (messageId: string) => void
+  startStreaming: (topicId: string, messageId: string) => void
   appendDelta: (messageId: string, text: string) => void
   appendThinkingDelta: (messageId: string, text: string) => void
   appendToolInputDelta: (messageId: string, toolUseId: string, text: string) => void
@@ -49,6 +50,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     streamingText: {},
     streamingThinking: {},
     streamingToolInputs: {},
+    streamingTopicId: null,
     streamingMessageId: null,
     todosByTopic: {},
     planByTopic: {},
@@ -166,8 +168,9 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       })
     },
 
-    startStreaming: (messageId) => {
+    startStreaming: (topicId, messageId) => {
       set((s) => {
+        s.streamingTopicId = topicId
         s.streamingMessageId = messageId
         if (!s.streamingText[messageId]) {
           s.streamingText[messageId] = ''
@@ -208,6 +211,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     endStreaming: (messageId) => {
       set((s) => {
         if (s.streamingMessageId === messageId) {
+          s.streamingTopicId = null
           s.streamingMessageId = null
         }
         delete s.streamingText[messageId]
