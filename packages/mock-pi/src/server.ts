@@ -42,9 +42,12 @@ export function createMockServer(
   let pingInterval: ReturnType<typeof setInterval> | null = null
 
   wss.on('connection', (ws: WebSocket, req) => {
-    // Auth check
+    // Auth check: accept token from Authorization header OR query parameter
     const authHeader = req.headers.authorization
-    const token = authHeader?.replace('Bearer ', '')
+    const headerToken = authHeader?.replace('Bearer ', '') || undefined
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+    const queryToken = url.searchParams.get('token') ?? undefined
+    const token = headerToken ?? queryToken
 
     if (token !== config.token) {
       log.warn('auth failed, closing with 4401')
@@ -53,6 +56,20 @@ export function createMockServer(
     }
 
     log.info('client connected')
+
+    // Send adapter.ready event immediately after connection
+    const readyEvent = {
+      seq: 0,
+      sessionId: '',
+      ts: Date.now(),
+      payload: {
+        kind: 'adapter.ready',
+        adapterInstanceId: 'mock-pi',
+        startupTime: Date.now(),
+        version: '1.0.0',
+      },
+    }
+    ws.send(encodeFrame(createFrame('event', readyEvent)))
 
     // Ping/pong heartbeat
     const alive = () => {
@@ -110,6 +127,8 @@ export function createMockServer(
     switch (method) {
       case 'createSession': {
         const res = sessionManager.createSession(params)
+        // Auto-attach calling client (matches adapter v1.6.0 behavior)
+        sessionManager.attachSession(res.sessionId, ws)
         return res
       }
       case 'attachSession': {
@@ -127,6 +146,17 @@ export function createMockServer(
       case 'abortSession': {
         sessionManager.abortSession(params.sessionId)
         return { ok: true }
+      }
+      case 'resumeSession': {
+        // Try attach first; if session not found, recreate
+        try {
+          sessionManager.attachSession(params.sessionId, ws)
+          return { sessionId: params.sessionId, resumed: true, replayedCount: 0 }
+        } catch {
+          const result = sessionManager.createSession(params)
+          sessionManager.attachSession(result.sessionId, ws)
+          return { sessionId: result.sessionId, resumed: false, replayedCount: 0 }
+        }
       }
       case 'sendUserMessage': {
         return sessionManager.sendUserMessage(params.sessionId, params.content)
