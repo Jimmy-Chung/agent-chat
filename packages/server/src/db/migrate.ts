@@ -164,6 +164,32 @@ export async function runMigrations() {
     }
   }
 
+  // Run 0005: push_subscriptions table
+  {
+    const hash = '0005_push_subscriptions'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      await d1.prepare(`
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+          id TEXT PRIMARY KEY,
+          endpoint TEXT NOT NULL UNIQUE,
+          p256dh TEXT NOT NULL,
+          auth TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      `).run()
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0005_push_subscriptions')
+    }
+  }
+
   // Create FTS5 virtual table (porter tokenizer not available in D1, use unicode61)
   try {
     await d1

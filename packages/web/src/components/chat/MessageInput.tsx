@@ -306,7 +306,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             ref={pickerRef}
             className="absolute bottom-full left-0 z-20 flex flex-col overflow-hidden"
             style={{
-              width: 640,
+              width: 'min(640px, calc(100vw - 32px))',
               maxHeight: 400,
               marginBottom: 8,
               borderRadius: 'var(--r-modal, 20px)',
@@ -395,7 +395,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             </div>
 
             {/* Search + filter pills */}
-            <div className="flex shrink-0 items-center gap-2" style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--hairline)' }}>
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto" style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--hairline)' }}>
               <div
                 className="flex flex-1 items-center gap-2"
                 style={{ height: 32, padding: '0 10px', background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', borderRadius: 9, fontSize: 13 }}
@@ -481,9 +481,9 @@ export function MessageInput({ topicId }: MessageInputProps) {
               )}
             </div>
 
-            {/* Footer */}
+            {/* Footer — hide on narrow viewports */}
             <div
-              className="flex shrink-0 items-center gap-3.5"
+              className="hidden sm:flex shrink-0 items-center gap-3.5"
               style={{ height: 36, borderTop: '1px solid var(--hairline)', padding: '0 14px', fontSize: 11.5, color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}
             >
               <span className="inline-flex items-center gap-1">

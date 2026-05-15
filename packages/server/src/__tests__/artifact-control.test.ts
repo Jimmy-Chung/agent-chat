@@ -17,6 +17,9 @@ const config = {
   artifactTokenSecret: 'secret',
   logLevel: 'info',
   r2: { accountId: '', accessKeyId: '', secretAccessKey: '', bucket: '', publicUrl: '' },
+  vapidPublicKey: '',
+  vapidPrivateKey: '',
+  vapidSubject: '',
 }
 
 function makeContext(pendingUploads: PendingUploadStore) {

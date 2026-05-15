@@ -57,6 +57,9 @@ describe('Artifact handler — upload.init', () => {
         artifactTokenSecret: 'secret',
         logLevel: 'info',
         r2: { accountId: '', accessKeyId: '', secretAccessKey: '', bucket: '', publicUrl: '' },
+        vapidPublicKey: '',
+        vapidPrivateKey: '',
+        vapidSubject: '',
       },
       baseUrl: 'https://agent-chat.test',
     })

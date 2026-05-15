@@ -2,9 +2,20 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.3.0 |
-| 状态 | v1.3.0 已发布 |
+| 当前版本 | v1.4.0 |
+| 状态 | v1.4.0 规划中 |
 | 更新时间 | 2026-05-14 |
+
+---
+
+## v1.4.0 — 需求范围
+
+| 类别 | 需求 | 状态 | 说明 |
+|---|---|---|---|
+| PWA 推送 | FEAT-011 PWA 本体补完：Web Push 通知 | 开发中 | manifest + SW + push 订阅/通知（assistant 回复、定时任务、approval） |
+| 移动端适配 | BUG-033 @ 产物弹窗手机端溢出修复 | 开发中 | iPhone 宽度下 @ 产物选择弹窗自适应 |
+
+> 范围说明：本版本以 PWA 推送为核心，专注 manifest + Service Worker + Web Push 通知链路，不做离线缓存。BUG-033 为本版本唯一附带 bug 修复。
 
 ---
 
@@ -408,7 +419,7 @@ PI Agent 协议为**增量 delta**（参见 pi-agent-requirements.md §4 "累加
 | 测试用例 | 详细测试用例见 `.omc/plans/cloudflare-migration-plan.md`（HR-001~008, DO-001~013, P-001~005）；下方为概要 |
 | 影响模块 | web, 部署配置 |
 | 对应步骤 | 设计文档 Phase 6 |
-| 备注 | Cloudflare 部署部分已完成：Workers、Pages、CI/CD 已成功部署。PWA 本体不纳入 v1.3.0，先放入待定版本。 |
+| 备注 | Cloudflare 部署部分已完成：Workers、Pages、CI/CD 已成功部署。PWA 本体不纳入 v1.3.0，先放入待定版本；下个版本优先讨论 manifest / SW / 安装体验 / iPhone 主屏启动范围与验收口径。 |
 
 #### FEAT-011 测试用例
 
