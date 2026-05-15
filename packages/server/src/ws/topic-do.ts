@@ -382,36 +382,30 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
           break
         }
+        // Resolve SOP template params before topic creation so they're baked into
+        // general_spec_json. Session creation is deferred to first message delivery
+        // to avoid a race where user.message arrives before createSession completes.
+        const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
+        const generalSpecJson = sopTemplate
+          ? JSON.stringify({
+              systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
+              initialPlan: sopTemplate.plan_template ?? undefined,
+              initialTodos: sopTemplate.todos_template_json
+                ? JSON.parse(sopTemplate.todos_template_json)
+                : undefined,
+              workflowMode: sopTemplate.workflow_mode ?? undefined,
+            })
+          : null
+
         const topic = await topicRepo.createTopic({
           name: data.name,
           kind: 'normal',
           agentType: data.agentType,
           programmingSpecJson: data.programming ? JSON.stringify(data.programming) : null,
+          generalSpecJson,
           sopTemplateId: data.sopTemplateId,
         })
         this.broadcastAll('topic.created', topic as unknown as Record<string, unknown>)
-        const pi = await this.ensurePiClient()
-        if (pi) {
-          try {
-            const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
-            const sessionParams: Record<string, unknown> = { kind: data.agentType, topicId: topic.id }
-            if (data.agentType === 'programming') sessionParams.programming = data.programming
-            if (sopTemplate) {
-              sessionParams.general = {
-                systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
-                initialPlan: sopTemplate.plan_template ?? undefined,
-                initialTodos: sopTemplate.todos_template_json ? JSON.parse(sopTemplate.todos_template_json) : undefined,
-              }
-              sessionParams.workflowMode = sopTemplate.workflow_mode
-            }
-            const result = await pi.createSession(sessionParams as Parameters<typeof pi.createSession>[0])
-            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-            if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
-          } catch (err) {
-            logger.error({ err, topicId: topic.id }, 'Failed to create PI session')
-            this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
-          }
-        }
         break
       }
 
