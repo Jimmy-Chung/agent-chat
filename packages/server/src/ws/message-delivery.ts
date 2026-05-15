@@ -186,7 +186,10 @@ async function attemptDelivery(
   })
   if (!topic || !sessionId) return false
 
-  const responseWaiter = waitForDeliveryResponse(input.pi, sessionId, AUTO_RETRY_DELAY_MS)
+  // Start listening immediately to catch any PI event that arrives during the RPC call,
+  // but do NOT start the timeout yet — PI's first event must arrive within AUTO_RETRY_DELAY_MS
+  // of the RPC completing, not of this waiter being created.
+  const responseWaiter = waitForDeliveryResponse(input.pi, sessionId)
   try {
     const mentionedArtifacts = await buildMentionedArtifactRefs(input)
     await withTimeout(
@@ -200,7 +203,8 @@ async function attemptDelivery(
       AUTO_RETRY_DELAY_MS,
       'sendUserMessage no response',
     )
-    await responseWaiter.promise
+    // RPC delivered — give PI AUTO_RETRY_DELAY_MS to emit its first event
+    await withTimeout(responseWaiter.promise, AUTO_RETRY_DELAY_MS, 'sendUserMessage no agent event')
     await messageRepo.updateMessage(msg.id, {
       status: 'done',
       finished_at: Date.now(),
@@ -261,17 +265,11 @@ async function buildMentionedArtifactRefs(input: DeliverUserMessageInput): Promi
 function waitForDeliveryResponse(
   pi: PiClient,
   sessionId: string,
-  timeoutMs: number,
 ): { promise: Promise<void>; cancel: () => void } {
-  let timer: ReturnType<typeof setTimeout> | null = null
   let settled = false
   let onEvent: ((event: PIEvent) => void) | null = null
 
   const cleanup = () => {
-    if (timer) {
-      clearTimeout(timer)
-      timer = null
-    }
     if (onEvent && typeof (pi as { off?: unknown }).off === 'function') {
       ;(pi as { off: (event: string, listener: (event: PIEvent) => void) => void }).off('event', onEvent)
       onEvent = null
@@ -305,7 +303,6 @@ function waitForDeliveryResponse(
     }
 
     pi.on('event', onEvent)
-    timer = setTimeout(() => finish(new Error('sendUserMessage no agent event')), timeoutMs)
   })
 
   return {
