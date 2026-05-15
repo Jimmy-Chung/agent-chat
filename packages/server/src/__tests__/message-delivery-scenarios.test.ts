@@ -95,6 +95,10 @@ function makeBroadcaster() {
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 describe('Scenario A — new topic, first message', () => {
+  // The PI session is created by topic.create handler (not by delivery).
+  // By the time the user types and sends the first message, the session is
+  // already established in the DB (pi_session_id is set).
+
   beforeEach(() => {
     vi.resetAllMocks()
     updateTopic.mockImplementation(async (_id: string, patch: Record<string, unknown>) =>
@@ -104,15 +108,16 @@ describe('Scenario A — new topic, first message', () => {
     createMessagePart.mockResolvedValue(undefined)
   })
 
-  it('creates a PI session and delivers the message successfully', async () => {
-    const topic = makeTopic({ pi_session_id: null })
+  it('delivers successfully when session was pre-created by topic.create', async () => {
+    // Session already in DB (created by topic.create handler)
+    const topic = makeTopic({ pi_session_id: 'sess-pre' })
     const msg = makeMessage()
 
     getTopic.mockResolvedValue(topic)
     getMessage.mockResolvedValue(msg)
 
     const pi = makePi({
-      createSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
+      hasSession: vi.fn().mockReturnValue(true), // piClient remembers the session
       rpc: vi.fn().mockResolvedValue({}),
     })
     const broadcaster = makeBroadcaster()
@@ -129,27 +134,20 @@ describe('Scenario A — new topic, first message', () => {
     })
 
     expect(result).toBe('delivered')
-    expect(pi.createSession).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'general', topicId: 'topic-1' }),
-    )
-    // Session ID stored in DB after creation
-    expect(updateTopic).toHaveBeenCalledWith('topic-1', { pi_session_id: 'sess-new' })
-    // sendUserMessage RPC called with the new session
-    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-new' }))
-    // User message marked done
+    expect(pi.createSession).not.toHaveBeenCalled()
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-pre' }))
     expect(updateMessage).toHaveBeenCalledWith('msg-1', expect.objectContaining({ status: 'done' }))
   })
 
-  it('shows needs_retry immediately when createSession fails', async () => {
+  it('shows needs_retry immediately on auto delivery when session not yet in DB (topic.create still in flight)', async () => {
+    // pi_session_id still null — topic.create's createSession hasn't completed yet
     const topic = makeTopic({ pi_session_id: null })
     const msg = makeMessage()
 
     getTopic.mockResolvedValue(topic)
     getMessage.mockResolvedValue(msg)
 
-    const pi = makePi({
-      createSession: vi.fn().mockRejectedValue(new Error('adapter unreachable')),
-    })
+    const pi = makePi()
     const broadcaster = makeBroadcaster()
 
     const { deliverUserMessage } = await import('../ws/message-delivery')
@@ -164,29 +162,60 @@ describe('Scenario A — new topic, first message', () => {
     })
 
     expect(result).toBe('retryable')
+    // Auto delivery must NOT call createSession — session creation belongs to topic.create
+    expect(pi.createSession).not.toHaveBeenCalled()
     expect(pi.rpc).not.toHaveBeenCalled()
-    // message.delivery needs_retry broadcast
     const deliveryEvent = broadcaster.events.find((e) => e.type === 'message.delivery')
     expect((deliveryEvent?.data as Record<string, unknown>)?.status).toBe('needs_retry')
   })
 
-  it('shows needs_retry when sendUserMessage RPC times out on first message', async () => {
+  it('manual retry creates session when pi_session_id is still null', async () => {
     const topic = makeTopic({ pi_session_id: null })
+    const msg = makeMessage({ retry_count: 0 })
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const pi = makePi({
+      createSession: vi.fn().mockResolvedValue({ sessionId: 'sess-created' }),
+      rpc: vi.fn().mockResolvedValue({}),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Hello, PI!',
+      pi: pi as never,
+      broadcaster,
+      manual: true,
+    })
+
+    expect(result).toBe('delivered')
+    expect(pi.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'general', topicId: 'topic-1' }),
+    )
+    expect(updateTopic).toHaveBeenCalledWith('topic-1', { pi_session_id: 'sess-created' })
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-created' }))
+  })
+
+  it('shows needs_retry when sendUserMessage RPC times out', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-pre' })
     const msg = makeMessage()
 
     getTopic.mockResolvedValue(topic)
     getMessage.mockResolvedValue(msg)
 
     const pi = makePi({
-      createSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
-      // RPC never resolves — will timeout
-      rpc: vi.fn().mockReturnValue(new Promise(() => {})),
+      hasSession: vi.fn().mockReturnValue(true),
+      rpc: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
     })
     const broadcaster = makeBroadcaster()
 
     const { deliverUserMessage, RPC_TIMEOUT_MS } = await import('../ws/message-delivery')
 
-    // Advance timers past RPC timeout
     vi.useFakeTimers()
     const promise = deliverUserMessage({
       topicId: 'topic-1',

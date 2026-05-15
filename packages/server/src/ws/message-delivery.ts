@@ -207,15 +207,21 @@ async function ensureDeliverableSession(
 ): Promise<string | null> {
   if (!topic) return null
 
-  // No session yet — create one (first message to this topic).
+  // No session yet (topic.create's createSession may still be initialising on the PI side).
+  // Auto delivery: return null immediately → message shows needs_retry, user retries once ready.
+  // Manual retry: create a fresh session (PI has had time to settle by now).
   if (!topic.pi_session_id) {
+    if (!options.forceRecovery) {
+      logger.warn({ topicId: topic.id }, 'no pi_session_id on auto delivery — needs_retry')
+      return null
+    }
     try {
       const result = await pi.createSession(buildSessionParams(topic))
       await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-      logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'PI session created')
+      logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'PI session created on manual retry')
       return result.sessionId
     } catch (err) {
-      logger.warn({ err, topicId: topic.id }, 'createSession failed')
+      logger.warn({ err, topicId: topic.id }, 'createSession failed on manual retry')
       return null
     }
   }

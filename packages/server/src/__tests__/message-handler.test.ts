@@ -242,31 +242,25 @@ describe('Message handler', () => {
     expect(events.some((event: any) => event.type === 'message.delivery' && event.data.status === 'needs_retry')).toBe(false)
   })
 
-  it('creates session for topic without session and still delivers', async () => {
+  it('shows needs_retry for topic without session (session is created by topic.create, not delivery)', async () => {
     const handler = await getHandler('client:user.message')
     const topic = await topicRepo.createTopic({ name: 'No Session', kind: 'normal', agentType: 'general' })
+    // Deliberately leave pi_session_id as null — simulates topic.create's createSession not yet done
 
-    const pending = handler({}, {
+    await handler({}, {
       d: { topicId: topic.id, content: 'Hi', mentions: [] },
     })
-    mockPi.rpc.mockImplementation(async () => {
-      Promise.resolve().then(() => {
-        mockPi.emit('event', {
-          seq: 1,
-          sessionId: 'pi-sess-1',
-          ts: Date.now(),
-          payload: { kind: 'message.start', messageId: 'assistant-nosess', role: 'assistant' },
-        })
-      })
-      return undefined
-    })
-    await vi.advanceTimersByTimeAsync(5100)
-    await pending
-    await flushMicrotasks()
+    // Multiple D1 queries in the delivery chain need enough microtask ticks to settle
+    for (let i = 0; i < 20; i++) await Promise.resolve()
 
-    expect(mockPi.createSession).toHaveBeenCalled()
-    expect(mockHub.getBroadcastEvents().some((e: any) => e.type === 'error')).toBe(false)
-  }, 7000)
+    // Auto delivery does NOT call createSession — that belongs to topic.create
+    expect(mockPi.createSession).not.toHaveBeenCalled()
+    const events = mockHub.getBroadcastEvents()
+    const needsRetry = events.find(
+      (e: any) => e.type === 'message.delivery' && e.data?.status === 'needs_retry',
+    )
+    expect(needsRetry).toBeDefined()
+  }, 3000)
 
   it('marks message retryable when auto delivery fails', async () => {
     const handler = await getHandler('client:user.message')

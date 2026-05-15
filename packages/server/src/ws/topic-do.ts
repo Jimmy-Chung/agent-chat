@@ -406,6 +406,24 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           sopTemplateId: data.sopTemplateId,
         })
         this.broadcastAll('topic.created', topic as unknown as Record<string, unknown>)
+
+        // Create the PI session here so it has time to initialise before the first message.
+        // sendUserMessage must NOT be called immediately after createSession — PI needs a
+        // moment to set up the agent context. Natural user interaction time (navigating to
+        // the topic, typing) provides this window.
+        const piForCreate = await this.ensurePiClient()
+        if (piForCreate) {
+          try {
+            const result = await piForCreate.createSession(
+              buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0],
+            )
+            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+            if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+          } catch (err) {
+            logger.error({ err, topicId: topic.id }, 'createSession failed in topic.create')
+            this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
+          }
+        }
         break
       }
 
@@ -646,23 +664,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
         const pi = await this.ensurePiClient()
         if (!pi) break
-
-        // If the topic has no PI session yet, create one here in the handler context
-        // (not inside the void promise) so the WebSocket connection to the adapter
-        // is established while we still have a proper CF Workers request context.
-        if (!topic.pi_session_id) {
-          try {
-            const result = await pi.createSession(buildSessionParams(topic))
-            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-            if (updated) {
-              topic = updated
-              this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
-            }
-          } catch (err) {
-            logger.error({ err, topicId: topic.id }, 'createSession failed before first message')
-            // Delivery will proceed and fail gracefully → needs_retry shown to user
-          }
-        }
 
         void startAutoDelivery({
           topicId: data.topicId,
