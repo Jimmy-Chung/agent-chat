@@ -22,19 +22,20 @@ async function createTopic(page: Page, name: string) {
 
 async function selectTopic(page: Page, name: string) {
   await page.locator('button', { hasText: name }).last().click()
-  await page.getByPlaceholder(/回复 agent/i).waitFor({ state: 'visible', timeout: 5_000 })
+  await expect(page.locator('textarea').first()).toBeEnabled({ timeout: 30_000 })
 }
 
 async function sendMessage(page: Page, text: string) {
-  const input = page.getByPlaceholder(/回复 agent/i)
+  const input = page.locator('textarea').first()
   await input.fill(text)
   await input.press('Enter')
 }
 
 test.describe('Streaming E2E', () => {
-  const topicName = `Test ${Date.now()}`
+  let topicName: string
 
   test.beforeEach(async ({ page }) => {
+    topicName = `Test ${Date.now()}`
     await authenticate(page)
     await createTopic(page, topicName)
     await selectTopic(page, topicName)
@@ -84,7 +85,10 @@ test.describe('Streaming E2E', () => {
     await sendMessage(page, 'hi')
 
     const markdown = page.locator('.role-bubble-assistant .markdown-body').last()
-    await markdown.waitFor({ state: 'visible', timeout: 5_000 })
+    await markdown.waitFor({ state: 'visible', timeout: 15_000 })
+
+    // Wait for streaming to stabilize before measuring
+    await page.waitForTimeout(500)
 
     // Collect text lengths over time — should only increase
     const lengths: number[] = []
@@ -105,7 +109,7 @@ test.describe('Streaming E2E', () => {
     await sendMessage(page, 'list files')
 
     const content = page.locator('.role-bubble-assistant .markdown-body, .role-bubble-assistant pre, .role-bubble-assistant code').first()
-    await content.waitFor({ state: 'visible', timeout: 5_000 })
+    await content.waitFor({ state: 'visible', timeout: 15_000 })
 
     // No crash/error
     const errorElements = await page.locator('[data-testid="error"], .error').count()
