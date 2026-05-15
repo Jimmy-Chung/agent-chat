@@ -177,13 +177,12 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
   // ─── Session background helpers ─────────────────────────────────────────
 
-  private async restoreSessionInBackground(topicId: string, ws: WebSocket, pi: PiClient): Promise<void> {
+  private async restoreSessionInBackground(topicId: string, pi: PiClient): Promise<void> {
     try {
-      const ready = await restoreExistingTopicSession(topicId, pi)
-      this.sendTo(ws, 'session.status', { topicId, ready })
+      await restoreExistingTopicSession(topicId, pi)
+      logger.info({ topicId }, 'Background session restoration succeeded')
     } catch (err) {
       logger.warn({ err, topicId }, 'Background session restoration failed')
-      this.sendTo(ws, 'session.status', { topicId, ready: false })
     }
   }
 
@@ -361,21 +360,20 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           }
         }
 
-        // Session gateway: check if session is already live, otherwise restore in background.
-        // System topics (artifact pool, cron admin) don't have PI sessions.
+        // Session gateway for topic.select:
+        // Optimistically mark ready — the delivery logic handles session restoration
+        // when the user actually sends a message. Don't block the UI.
         const isSystemTopic = d.topicId.startsWith('system_')
         if (!isSystemTopic) {
+          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: true })
+
+          // Ensure session is live in background (non-blocking)
           const pi = await this.ensurePiClient()
-          const topic = await topicRepo.getTopic(d.topicId)
-          if (pi && topic?.pi_session_id && pi.hasSession(topic.pi_session_id)) {
-            // Session already in pool — immediately ready
-            this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: true })
-          } else if (pi) {
-            // Session not in pool — notify loading, restore in background
-            this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: false })
-            void this.restoreSessionInBackground(d.topicId, ws, pi)
-          } else {
-            this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: false })
+          if (pi) {
+            const topic = await topicRepo.getTopic(d.topicId)
+            if (topic?.pi_session_id && !pi.hasSession(topic.pi_session_id)) {
+              void this.restoreSessionInBackground(d.topicId, pi)
+            }
           }
         }
 
