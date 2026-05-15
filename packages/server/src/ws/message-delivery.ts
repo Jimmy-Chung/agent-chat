@@ -103,14 +103,27 @@ export async function deliverUserMessage(
     broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'retrying', retryCount, msg.max_retries)
   }
 
-  // One attempt. Manual retry forces full session recovery (reconnect → recreate).
-  // Auto delivery uses the existing session if available, reconnects if stale.
-  const delivered = await attemptDelivery(input, msg, {
-    retryCount,
-    forceRecovery: input.manual,
-  })
+  if (input.manual) {
+    // Manual retry: force full session recovery (reconnect → recreate) then attempt.
+    const delivered = await attemptDelivery(input, msg, { retryCount, forceRecovery: true })
+    if (delivered) return 'delivered'
+    return handleRetryFailure(input, msg, retryCount)
+  }
 
-  if (delivered) return 'delivered'
+  // Auto delivery: try with existing session first.
+  if (await attemptDelivery(input, msg, { retryCount, forceRecovery: false })) return 'delivered'
+
+  // First attempt failed. Reconnect the session (re-sends attachSession to PI so it knows
+  // the client is ready) and try once more before showing needs_retry to the user.
+  // This handles PI not being fully initialised when sendUserMessage first arrives.
+  const freshTopic = await topicRepo.getTopic(input.topicId)
+  if (freshTopic?.pi_session_id) {
+    try {
+      await input.pi.reconnectSession(freshTopic.pi_session_id)
+    } catch { /* reconnect failed — proceed to needs_retry */ }
+    if (await attemptDelivery(input, msg, { retryCount, forceRecovery: false })) return 'delivered'
+  }
+
   return handleRetryFailure(input, msg, retryCount)
 }
 
