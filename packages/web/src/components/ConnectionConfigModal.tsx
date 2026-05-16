@@ -6,18 +6,6 @@ import { createPortal } from 'react-dom'
 const PI_WSS_URL_KEY = 'PI_ADAPTER_WSS_URL'
 const PI_TOKEN_KEY = 'PI_ADAPTER_TOKEN'
 
-function getServerUrl(): string {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL
-  if (wsUrl) {
-    try {
-      const u = new URL(wsUrl)
-      return `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
-    } catch { /* fall through */ }
-  }
-  if (typeof window !== 'undefined') return window.location.origin
-  return 'http://127.0.0.1:8787'
-}
-
 interface ConnectionConfigModalProps {
   initialWssUrl?: string
   initialToken?: string
@@ -42,18 +30,10 @@ export function ConnectionConfigModal({
     setTesting(true)
     setTestResult(null)
     try {
-      const base = getServerUrl()
-      const res = await fetch(
-        `${base}/pi-healthz?wssUrl=${encodeURIComponent(wssUrl.trim())}&piToken=${encodeURIComponent(piToken.trim())}`,
-        { signal: AbortSignal.timeout(8_000) },
-      )
-      const data = await res.json()
-      if (!data.ok) {
-        setTestResult({ ok: false, error: data.error || '连接失败' })
-        return
-      }
+      // Validate URL format
+      try { new URL(wssUrl.trim()) } catch { setTestResult({ ok: false, error: '地址格式无效' }); return }
 
-      // Server healthz passed — now probe the full WSS URL from browser
+      // Client-side WS probe — verifies host reachability + full path + token
       const wsProbeOk = await new Promise<boolean>((resolve) => {
         const probeUrl = new URL(wssUrl.trim())
         if (piToken.trim()) probeUrl.searchParams.set('token', piToken.trim())
@@ -71,7 +51,7 @@ export function ConnectionConfigModal({
       })
 
       if (!wsProbeOk) {
-        setTestResult({ ok: false, error: 'WSS 连接失败 — 请检查地址和路径是否正确' })
+        setTestResult({ ok: false, error: '连接失败 — 请检查地址、路径和 Token 是否正确' })
         return
       }
 

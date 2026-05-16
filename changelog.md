@@ -3,7 +3,6 @@
 ## 2026-05-16 [v1.4.12] — PI Adapter 连接配置 + Bug 修复
 
 ### FEAT-036 (AIT-116): PI Adapter 连接配置弹窗 + 持续健康探针
-- 新增 `/pi-healthz` 代理端点，前端可验证 PI Adapter 可达性
 - WS upgrade 支持前端传递 `piWssUrl`/`piToken` 参数覆盖服务端配置
 - `setConfig` 检测 PI 配置变化时自动重建 PiClient
 - PiSessionConn 新增 20s 间隔健康探针，40s 无消息自动断开
