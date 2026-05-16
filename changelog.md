@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-05-16 [v1.4.12] — PI Adapter 连接配置 + Bug 修复
+
+### FEAT-036 (AIT-116): PI Adapter 连接配置弹窗 + 持续健康探针
+- 新增 `/pi-healthz` 代理端点，前端可验证 PI Adapter 可达性
+- WS upgrade 支持前端传递 `piWssUrl`/`piToken` 参数覆盖服务端配置
+- `setConfig` 检测 PI 配置变化时自动重建 PiClient
+- PiSessionConn 新增 20s 间隔健康探针，40s 无消息自动断开
+- 新增 ConnectionConfigModal 组件，含客户端 WS 路径验证
+- WsProvider 改为三步验证流程：Token 鉴权 → PI 配置 → 主界面
+- PiStatusBadge 可点击打开配置弹窗，支持重连时切换配置
+
+### BUG-040 (AIT-119): 中间产物预览报错
+- PI adapter 生成的产物 `r2_key` 为空时禁用预览按钮，避免点击后报错
+- 完整修复需 PI adapter 侧配合上传到 R2 [external]
+
+### BUG-041 (AIT-120): 连续发消息容易触发自动重试
+- RPC 发送后同步更新 `lastMessageAt`，防止健康探针误杀活跃 session
+
 ## 2026-05-16 [v1.4.11] — topic.select 竞态修复
 
 ### BUG-038: topic.select 无条件 ready:true 导致消息 needs_retry
