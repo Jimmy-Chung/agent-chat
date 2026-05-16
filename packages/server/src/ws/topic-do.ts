@@ -361,19 +361,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         }
 
         // Session gateway for topic.select:
-        // Optimistically mark ready — the delivery logic handles session restoration
-        // when the user actually sends a message. Don't block the UI.
+        // Only report ready when pi_session_id exists. If createSession is still
+        // in-flight (topic.create → auto-select race), pi_session_id is NULL and
+        // we must report ready:false so the frontend stays disabled.
         const isSystemTopic = d.topicId.startsWith('system_')
         if (!isSystemTopic) {
-          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: true })
-
-          // Ensure session is live in background (non-blocking)
           const pi = await this.ensurePiClient()
-          if (pi) {
-            const topic = await topicRepo.getTopic(d.topicId)
-            if (topic?.pi_session_id && !pi.hasSession(topic.pi_session_id)) {
-              void this.restoreSessionInBackground(d.topicId, pi)
-            }
+          const topic = await topicRepo.getTopic(d.topicId)
+          const hasSession = !!topic?.pi_session_id
+          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: hasSession })
+
+          if (hasSession && pi && !pi.hasSession(topic!.pi_session_id!)) {
+            void this.restoreSessionInBackground(d.topicId, pi)
           }
         }
 
