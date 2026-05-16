@@ -46,6 +46,8 @@ class PiSessionConn extends EventEmitter {
   private ready = false
   public lastSeq = 0
   private readyResolve: (() => void) | null = null
+  private healthTimer: ReturnType<typeof setInterval> | null = null
+  private lastMessageAt = 0
 
   constructor(sessionId: string, config: AppConfig) {
     super()
@@ -74,10 +76,12 @@ class PiSessionConn extends EventEmitter {
       ws.addEventListener('open', async () => {
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
         await this.waitForReady()
+        this.startHealthProbe()
         resolve()
       })
 
       ws.addEventListener('message', (event) => {
+        this.lastMessageAt = Date.now()
         let frame: WSFrame | null = null
         try {
           frame = decodeFrame(
@@ -97,6 +101,7 @@ class PiSessionConn extends EventEmitter {
 
       ws.addEventListener('close', (event) => {
         logger.info({ code: event.code, reason: event.reason, sessionId: this.sessionId }, 'PI session WS closed')
+        this.stopHealthProbe()
         this.emit('event', {
           seq: 0,
           sessionId: this.sessionId,
@@ -243,7 +248,26 @@ class PiSessionConn extends EventEmitter {
     })
   }
 
+  private startHealthProbe(): void {
+    this.lastMessageAt = Date.now()
+    this.healthTimer = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+      if (Date.now() - this.lastMessageAt > 40_000) {
+        logger.warn({ sessionId: this.sessionId }, 'PI health probe timeout, closing')
+        this.ws.close()
+      }
+    }, 20_000)
+  }
+
+  private stopHealthProbe(): void {
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer)
+      this.healthTimer = null
+    }
+  }
+
   close(): void {
+    this.stopHealthProbe()
     if (this.ws) {
       this.ws.close()
       this.ws = null

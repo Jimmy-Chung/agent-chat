@@ -1,53 +1,97 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { getWsClient } from '@/lib/ws-client'
+import { getWsClient, type PiConfig } from '@/lib/ws-client'
 import { useWsStore } from '@/stores/ws-store'
+import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
 
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
 
+type Step = 'auth' | 'pi-config' | 'main'
+
 export function WsProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null)
+  const [step, setStep] = useState<Step>('auth')
   const [mounted, setMounted] = useState(false)
+  const [piConfig, setPiConfig] = useState<PiConfig | null>(null)
   const status = useWsStore((s) => s.status)
   const unauthorized = useWsStore((s) => s.unauthorized)
 
+  // On mount, check localStorage for existing config
   useEffect(() => {
-    const stored = localStorage.getItem(TOKEN_KEY)
-    setToken(stored)
+    const token = localStorage.getItem(TOKEN_KEY)
+    const wssUrl = localStorage.getItem(PI_WSS_URL_KEY)
+    const piToken = localStorage.getItem(PI_TOKEN_KEY)
+
+    if (token && wssUrl != null && piToken != null) {
+      setPiConfig({ wssUrl, piToken })
+      setStep('main')
+    } else if (token) {
+      setStep('pi-config')
+    } else {
+      setStep('auth')
+    }
     setMounted(true)
   }, [])
 
+  // Connect WS when both token and PI config are ready
   useEffect(() => {
-    if (!token) return
+    if (step !== 'main' || !piConfig) return
     const client = getWsClient()
-    client.connect()
+    client.connect(piConfig)
     return () => {
       client.disconnect()
     }
-  }, [token])
+  }, [step, piConfig])
 
-  const handleTokenSubmit = useCallback((newToken: string) => {
-    localStorage.setItem(TOKEN_KEY, newToken)
-    setToken(newToken)
-  }, [])
-
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY)
-    const client = getWsClient()
-    client.disconnect()
-    setToken(null)
+  // Listen for PI config changes from Sidebar modal
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PiConfig>).detail
+      localStorage.setItem(PI_WSS_URL_KEY, detail.wssUrl)
+      localStorage.setItem(PI_TOKEN_KEY, detail.piToken)
+      setPiConfig(detail)
+      const client = getWsClient()
+      client.disconnect()
+      client.connect(detail)
+    }
+    window.addEventListener('agent-chat:pi-config-changed', handler)
+    return () => window.removeEventListener('agent-chat:pi-config-changed', handler)
   }, [])
 
   // Auto-logout when server rejects the token (close code 4401)
   useEffect(() => {
-    if (unauthorized) handleLogout()
-  }, [unauthorized, handleLogout])
+    if (unauthorized) {
+      localStorage.removeItem(TOKEN_KEY)
+      getWsClient().disconnect()
+      setPiConfig(null)
+      setStep('auth')
+    }
+  }, [unauthorized])
+
+  const handleAuthSuccess = useCallback(() => {
+    setStep('pi-config')
+  }, [])
+
+  const handlePiConfigConfirm = useCallback((config: PiConfig) => {
+    setPiConfig(config)
+    setStep('main')
+  }, [])
 
   if (!mounted) return null
 
-  if (!token) {
-    return <AuthForm onSubmit={handleTokenSubmit} />
+  if (step === 'auth') {
+    return <AuthForm onSuccess={handleAuthSuccess} />
+  }
+
+  if (step === 'pi-config') {
+    return (
+      <ConnectionConfigModal
+        initialWssUrl={piConfig?.wssUrl ?? ''}
+        initialToken={piConfig?.piToken ?? ''}
+        onConfirm={handlePiConfigConfirm}
+        onClose={() => { /* cannot close without config */ }}
+      />
+    )
   }
 
   return (
@@ -57,9 +101,14 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
           className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 text-sm"
           style={{ backgroundColor: 'var(--role-system)', color: '#fff' }}
         >
-          <span>连接已断开 — Token 错误？</span>
+          <span>连接已断开</span>
           <button
-            onClick={handleLogout}
+            onClick={() => {
+              localStorage.removeItem(TOKEN_KEY)
+              getWsClient().disconnect()
+              setPiConfig(null)
+              setStep('auth')
+            }}
             className="rounded px-2 py-0.5 text-xs font-medium"
             style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
           >
@@ -72,18 +121,35 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
+function AuthForm({ onSuccess }: { onSuccess: () => void }) {
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = value.trim()
     if (!trimmed) {
       setError('请输入 Token')
       return
     }
-    onSubmit(trimmed)
+
+    setVerifying(true)
+    setError('')
+
+    try {
+      const valid = await verifyToken(trimmed)
+      if (valid) {
+        localStorage.setItem(TOKEN_KEY, trimmed)
+        onSuccess()
+      } else {
+        setError('Token 验证失败，请检查后重试')
+      }
+    } catch (err) {
+      setError('无法连接服务器，请检查网络')
+    } finally {
+      setVerifying(false)
+    }
   }
 
   return (
@@ -117,6 +183,7 @@ function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
           }}
           placeholder="Token"
           autoFocus
+          disabled={verifying}
           className="w-full rounded-lg px-3 py-2 text-sm outline-none"
           style={{
             backgroundColor: 'var(--glass-1)',
@@ -131,12 +198,52 @@ function AuthForm({ onSubmit }: { onSubmit: (token: string) => void }) {
         )}
         <button
           type="submit"
-          className="w-full rounded-lg px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90"
+          disabled={verifying}
+          className="w-full rounded-lg px-3 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-60"
           style={{ backgroundColor: 'var(--role-user)', color: '#fff' }}
         >
-          连接
+          {verifying ? '验证中...' : '连接'}
         </button>
       </form>
     </div>
   )
+}
+
+function verifyToken(token: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const wsUrl = getWsUrl()
+    const url = `${wsUrl}?token=${encodeURIComponent(token)}`
+    let opened = false
+    const ws = new WebSocket(url)
+
+    const timeout = setTimeout(() => {
+      ws.close()
+      resolve(false)
+    }, 8_000)
+
+    ws.addEventListener('open', () => {
+      opened = true
+      clearTimeout(timeout)
+      ws.close()
+      resolve(true)
+    })
+
+    ws.addEventListener('close', () => {
+      clearTimeout(timeout)
+      if (!opened) resolve(false)
+    })
+
+    ws.addEventListener('error', () => {
+      clearTimeout(timeout)
+    })
+  })
+}
+
+function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}/ws`
+  }
+  return 'ws://127.0.0.1:8080/ws'
 }

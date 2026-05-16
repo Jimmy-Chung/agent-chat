@@ -54,9 +54,15 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
   // ─── Config: persist to storage so it survives hibernation ───────────────
   async setConfig(config: AppConfig, topicId: string) {
+    const piConfigChanged = this.config?.piAdapterUrl !== config.piAdapterUrl
+      || this.config?.piAdapterToken !== config.piAdapterToken
     this.config = config
     await this.ctx.storage.put('config_json', JSON.stringify(config))
     await this.ctx.storage.put('topicId', topicId)
+    if (piConfigChanged && this.piClient) {
+      this.piClient.disconnect()
+      this.piClient = null
+    }
     await this.ensurePiClient()
   }
 

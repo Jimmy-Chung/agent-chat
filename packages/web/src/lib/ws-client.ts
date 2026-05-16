@@ -32,20 +32,35 @@ const BASE_RECONNECT_DELAY = 1_000
 
 const PING_INTERVAL_MS = 20_000
 
+export interface PiConfig {
+  wssUrl: string
+  piToken: string
+}
+
 class WsClient {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private attempt = 0
   private disposed = false
+  private piConfig: PiConfig | null = null
 
-  connect(): void {
+  setPiConfig(config: PiConfig | null): void {
+    this.piConfig = config
+  }
+
+  connect(piConfig?: PiConfig): void {
     if (this.ws?.readyState === WebSocket.OPEN) return
     this.disposed = false
+    if (piConfig) this.piConfig = piConfig
 
     const token = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
     const wsUrl = getWsUrl()
-    const url = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl
+    const params = new URLSearchParams()
+    if (token) params.set('token', token)
+    if (this.piConfig?.wssUrl) params.set('piWssUrl', this.piConfig.wssUrl)
+    if (this.piConfig?.piToken) params.set('piToken', this.piConfig.piToken)
+    const url = params.toString() ? `${wsUrl}?${params}` : wsUrl
 
     useWsStore.getState().setStatus('connecting')
     this.ws = new WebSocket(url)

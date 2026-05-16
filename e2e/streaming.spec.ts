@@ -1,13 +1,17 @@
 import { test, expect, type Page } from '@playwright/test'
 
 const TOKEN = process.env.AGENT_CHAT_TOKEN || 'test-token'
+const PI_WSS_URL = 'ws://127.0.0.1:7331/api/agent-chat/v1/socket'
+const PI_TOKEN = 'test-token'
 
 async function authenticate(page: Page) {
   await page.goto('/')
-  await page.evaluate((token) => {
+  await page.evaluate(({ token, piWssUrl, piToken }) => {
     localStorage.clear()
     localStorage.setItem('AGENT_CHAT_TOKEN', token)
-  }, TOKEN)
+    localStorage.setItem('PI_ADAPTER_WSS_URL', piWssUrl)
+    localStorage.setItem('PI_ADAPTER_TOKEN', piToken)
+  }, { token: TOKEN, piWssUrl: PI_WSS_URL, piToken: PI_TOKEN })
   await page.reload()
   await page.getByRole('button', { name: '新建话题' }).waitFor({ state: 'visible', timeout: 10_000 })
 }

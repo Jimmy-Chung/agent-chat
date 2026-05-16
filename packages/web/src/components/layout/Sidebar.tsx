@@ -11,6 +11,7 @@ import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
+import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
 
 type PermissionTier = 'yolo' | 'normal'
 
@@ -33,6 +34,7 @@ export function Sidebar() {
   const [permissionTier, setPermissionTier] = useState<PermissionTier>('normal')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
+  const [showConnConfig, setShowConnConfig] = useState(false)
   const templates = useSopTemplateStore((s) => s.templates)
   const wsStatus = useWsStore((s) => s.status)
   const sessionHealthByTopic = useWsStore((s) => s.sessionHealthByTopic)
@@ -227,6 +229,7 @@ export function Sidebar() {
           <PiStatusBadge
             piState={activeTopicId ? sessionHealthByTopic[activeTopicId]?.state : undefined}
             wsStatus={wsStatus}
+            onClick={() => setShowConnConfig(true)}
           />
           <NotificationBell />
           <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.4.0</span>
@@ -251,6 +254,21 @@ export function Sidebar() {
               onPermissionTierChange={setPermissionTier}
               onSelectedTemplateIdChange={setSelectedTemplateId}
               onCwdChange={setCwd}
+            />,
+            document.body,
+          )
+        : null}
+
+      {showConnConfig && typeof document !== 'undefined'
+        ? createPortal(
+            <ConnectionConfigModal
+              initialWssUrl={typeof window !== 'undefined' ? localStorage.getItem(PI_WSS_URL_KEY) ?? '' : ''}
+              initialToken={typeof window !== 'undefined' ? localStorage.getItem(PI_TOKEN_KEY) ?? '' : ''}
+              onConfirm={(config) => {
+                setShowConnConfig(false)
+                window.dispatchEvent(new CustomEvent('agent-chat:pi-config-changed', { detail: config }))
+              }}
+              onClose={() => setShowConnConfig(false)}
             />,
             document.body,
           )
@@ -674,51 +692,59 @@ function NotificationBell() {
   )
 }
 
-function PiStatusBadge({ piState, wsStatus }: {
+function PiStatusBadge({ piState, wsStatus, onClick }: {
   piState: string | undefined
   wsStatus: string
+  onClick?: () => void
 }) {
+  const Tag = onClick ? 'button' : 'span'
+  const interactive = onClick ? 'cursor-pointer transition-opacity hover:opacity-80' : ''
+
   // PI adapter connected
   if (piState === 'connected') {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      <Tag
+        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
         style={{ height: 22, background: 'rgba(48,209,88,0.10)', color: '#6FE39A', border: '1px solid rgba(48,209,88,0.22)' }}
       >
         <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-ok)', boxShadow: '0 0 8px var(--state-ok)' }} />
         PI 已连接
-      </span>
+      </Tag>
     )
   }
   // PI adapter reconnecting
   if (piState === 'reconnecting') {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      <Tag
+        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
         style={{ height: 22, background: 'rgba(255,159,10,0.12)', color: '#FFB340', border: '1px solid rgba(255,159,10,0.28)' }}
       >
         <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#FFB340' }} />
         重连中...
-      </span>
+      </Tag>
     )
   }
   // PI adapter explicitly disconnected
   if (piState === 'disconnected') {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      <Tag
+        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
         style={{ height: 22, background: 'rgba(255,69,58,0.10)', color: '#FF6B6B', border: '1px solid rgba(255,69,58,0.22)' }}
       >
         <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-danger)' }} />
         PI 已断开
-      </span>
+      </Tag>
     )
   }
   // No PI session yet — fall back to server WS status
   const ok = wsStatus === 'connected'
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+    <Tag
+      {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
       style={{
         height: 22,
         background: ok ? 'rgba(48,209,88,0.10)' : 'rgba(255,69,58,0.10)',
@@ -731,6 +757,6 @@ function PiStatusBadge({ piState, wsStatus }: {
         style={{ backgroundColor: ok ? 'var(--state-ok)' : 'var(--state-danger)', boxShadow: ok ? '0 0 8px var(--state-ok)' : 'none' }}
       />
       {ok ? '已连接' : wsStatus === 'connecting' ? '连接中...' : '已断开'}
-    </span>
+    </Tag>
   )
 }

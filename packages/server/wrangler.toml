@@ -3,6 +3,9 @@ main = "src/worker.ts"
 compatibility_date = "2024-04-05"
 compatibility_flags = ["nodejs_compat"]
 
+[vars]
+PI_ADAPTER_URL = "wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket"
+
 [dev]
 port = 8787
 

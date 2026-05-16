@@ -47,6 +47,41 @@ app.use('/push/*', async (c) => {
   return createPushRoutes(appConfig).fetch(new Request(url.toString(), c.req.raw))
 })
 
+app.get('/pi-healthz', async (c) => {
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ ok: false, error: 'wssUrl query param required' }, 400)
+
+  try {
+    new URL(wssUrl)
+  } catch {
+    return c.json({ ok: false, error: 'Invalid wssUrl' }, 400)
+  }
+
+  const parsed = new URL(wssUrl)
+  const healthzUrl = `${parsed.protocol === 'wss:' ? 'https' : 'http'}://${parsed.host}/healthz`
+
+  try {
+    const headers: Record<string, string> = {}
+    if (piToken) headers['Authorization'] = `Bearer ${piToken}`
+    const res = await fetch(healthzUrl, {
+      headers,
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      try {
+        return c.json({ ok: false, ...JSON.parse(text) }, res.status as 200)
+      } catch {
+        return c.json({ ok: false, status: res.status }, res.status as 200)
+      }
+    }
+    return c.json({ ok: true })
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502)
+  }
+})
+
 app.get('/debug', (c) => {
   return c.json({
     token: '***',
@@ -92,7 +127,14 @@ export default {
         const topicId = url.searchParams.get('topicId') || 'global'
         const doId = env.TOPIC_DO.idFromName(topicId)
         const stub = env.TOPIC_DO.get(doId) as DurableObjectStub<TopicDurableObject>
-        await stub.setConfig(appConfig, topicId)
+
+        // Allow frontend to override PI adapter config per connection
+        const config = { ...appConfig }
+        const piWssUrl = url.searchParams.get('piWssUrl')
+        const piTokenParam = url.searchParams.get('piToken')
+        if (piWssUrl) config.piAdapterUrl = piWssUrl
+        if (piTokenParam) config.piAdapterToken = piTokenParam
+        await stub.setConfig(config, topicId)
         return stub.fetch(request)
       } catch (e) {
         return new Response(`ws error: ${String(e)}`, { status: 500 })
