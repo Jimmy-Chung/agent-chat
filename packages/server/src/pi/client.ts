@@ -236,6 +236,7 @@ class PiSessionConn extends EventEmitter {
 
       try {
         this.ws.send(encoded)
+        this.lastMessageAt = Date.now()
       } catch (err) {
         // ws.send threw — connection is dead. Clean up pending entry and close.
         const entry = this.pending.get(id)

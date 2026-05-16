@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import worker from '../worker'
 import { setupTestDb } from './db-helper'
