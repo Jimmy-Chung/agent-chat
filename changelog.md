@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-16 [v1.4.11] — topic.select 竞态修复
+
+### BUG-038: topic.select 无条件 ready:true 导致消息 needs_retry
+- DO async handler 在 `await createSession()` 期间让出控制权，前端 auto-select 的 `topic.select` 先执行
+- 旧代码不检查 `pi_session_id` 就发 `session.status { ready: true }`，前端允许发送消息但 session 不存在
+- 修复：`topic.select` 先查 DB 确认 `pi_session_id` 存在才发 `ready:true`，否则发 `ready:false`
+- 真实 PI adapter 验证：create → auto-select → send 流程无 needs_retry
+
 ## 2026-05-16 [v1.4.8] — Session Gateway 架构 + Streaming 安全网
 
 ### AIT-113: 通信稳定性加固 — Session Gateway
