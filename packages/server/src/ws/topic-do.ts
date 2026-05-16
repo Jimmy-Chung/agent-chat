@@ -361,9 +361,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         }
 
         // Session gateway for topic.select:
-        // Only report ready when pi_session_id exists. If createSession is still
-        // in-flight (topic.create → auto-select race), pi_session_id is NULL and
-        // we must report ready:false so the frontend stays disabled.
+        // - Existing topics (pi_session_id exists): ready:true immediately, restore in background.
+        //   Delivery logic handles reconnection if session not in memory.
+        // - New topics (pi_session_id is NULL): ready:false — createSession still in-flight,
+        //   topic.create handler will send ready:true when it completes.
         const isSystemTopic = d.topicId.startsWith('system_')
         if (!isSystemTopic) {
           const pi = await this.ensurePiClient()
