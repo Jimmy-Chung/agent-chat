@@ -609,7 +609,7 @@ function ArtifactPoolView() {
 }
 
 function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
-  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded'
+  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded' || !artifact.r2_key
   const requestAccess = () => {
     if (disabled) return
     const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
