@@ -235,22 +235,36 @@ async function ensureDeliverableSession(
   const sessionId = topic.pi_session_id
   if (pi.hasSession(sessionId)) return sessionId
 
+  // Try reconnect first (new WS connection + attachSession)
   try {
     await pi.reconnectSession(sessionId)
     logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected for delivery')
     return sessionId
   } catch (err) {
-    if (err instanceof PiRpcError && err.code === 'session_not_found') {
-      logger.info({ topicId: topic.id, sessionId }, 'session not found, attempting recreate')
+    const code = err instanceof PiRpcError ? err.code : undefined
+    logger.warn({ err, code, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
+  }
+
+  // Reconnect failed — try recreate (creates new session if old one is gone)
+  try {
+    logger.info({ topicId: topic.id, sessionId }, 'attempting recreateSession after reconnect failure')
+    const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
+    return (result as { sessionId: string }).sessionId
+  } catch (recreateErr) {
+    const recreateCode = recreateErr instanceof PiRpcError ? recreateErr.code : undefined
+    // session_exists means adapter still has the session — retry reconnect (WS was temporarily down)
+    if (recreateCode === 'session_exists') {
+      logger.info({ topicId: topic.id, sessionId }, 'session still exists in adapter, retrying reconnect')
       try {
-        const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
-        return (result as { sessionId: string }).sessionId
-      } catch (recreateErr) {
-        logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
+        await pi.reconnectSession(sessionId)
+        logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected after session_exists fallback')
+        return sessionId
+      } catch (retryErr) {
+        logger.warn({ err: retryErr, topicId: topic.id, sessionId }, 'retry reconnectSession also failed')
         return null
       }
     }
-    logger.warn({ err, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
+    logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
     return null
   }
 }
@@ -317,7 +331,11 @@ export function buildSessionParams(topic: Topic): Parameters<PiClient['createSes
   return {
     kind: topic.agent_type,
     topicId: topic.id,
-    programming: topic.programming_spec_json ? JSON.parse(topic.programming_spec_json) : undefined,
+    programming: topic.programming_spec_json
+      ? JSON.parse(topic.programming_spec_json)
+      : topic.agent_type === 'programming'
+        ? { extension: 'claude-code' }
+        : undefined,
     general: topic.general_spec_json ? JSON.parse(topic.general_spec_json) : undefined,
     initialModel: topic.current_model ?? undefined,
   } as Parameters<PiClient['createSession']>[0]

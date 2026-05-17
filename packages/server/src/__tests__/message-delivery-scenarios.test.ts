@@ -306,7 +306,7 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({ sessionId: 'sess-existing' }), expect.anything())
   })
 
-  it('auto delivery shows needs_retry when reconnect fails (no auto recreate)', async () => {
+  it('auto delivery recreates session when reconnect fails, then delivers', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-existing' })
     const msg = makeMessage()
 
@@ -316,6 +316,8 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     const pi = makePi({
       hasSession: vi.fn().mockReturnValue(false),
       reconnectSession: vi.fn().mockRejectedValue(new Error('session_gone')),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
+      rpc: vi.fn().mockResolvedValue({}),
     })
     const broadcaster = makeBroadcaster()
 
@@ -330,14 +332,13 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
       manual: false,
     })
 
-    expect(result).toBe('retryable')
-    // Auto delivery does NOT recreate — user must manually retry
-    expect(pi.recreateSession).not.toHaveBeenCalled()
-    const deliveryEvent = broadcaster.events.find((e) => e.type === 'message.delivery')
-    expect((deliveryEvent?.data as Record<string, unknown>)?.status).toBe('needs_retry')
+    expect(result).toBe('delivered')
+    expect(pi.recreateSession).toHaveBeenCalled()
+    const deliveryEvent = broadcaster.events.find((e) => e.type === 'message.delivery' && (e.data as Record<string, unknown>)?.status === 'done')
+    expect(deliveryEvent).toBeDefined()
   })
 
-  it('manual retry returns retryable when reconnect fails (recreate is gateway responsibility)', async () => {
+  it('manual retry recreates session when reconnect fails, then delivers', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-existing' })
     const msg = makeMessage({ retry_count: 0 })
 
@@ -347,7 +348,7 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     const pi = makePi({
       hasSession: vi.fn().mockReturnValue(false),
       reconnectSession: vi.fn().mockRejectedValue(new Error('session_gone')),
-      recreateSession: vi.fn().mockResolvedValue(undefined),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'sess-new' }),
       rpc: vi.fn().mockResolvedValue({}),
     })
     const broadcaster = makeBroadcaster()
@@ -363,10 +364,9 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
       manual: true,
     })
 
-    // Session recreation is the gateway's job. Delivery only does reconnect + retry.
-    expect(result).toBe('retryable')
+    expect(result).toBe('delivered')
     expect(pi.reconnectSession).toHaveBeenCalled()
-    expect(pi.recreateSession).not.toHaveBeenCalled()
+    expect(pi.recreateSession).toHaveBeenCalled()
   })
 })
 
@@ -410,7 +410,7 @@ describe('Error code handling — session_not_found', () => {
     expect(pi.recreateSession).toHaveBeenCalled()
   })
 
-  it('ensureDeliverableSession returns null on unknown error code', async () => {
+  it('ensureDeliverableSession tries recreate on unknown error code', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-stale' })
     const msg = makeMessage()
 
@@ -437,9 +437,9 @@ describe('Error code handling — session_not_found', () => {
       manual: false,
     })
 
-    // internal error → don't recreate, just retryable
-    expect(result).toBe('retryable')
-    expect(pi.recreateSession).not.toHaveBeenCalled()
+    // internal error → still tries recreate → succeeds → delivered
+    expect(result).toBe('delivered')
+    expect(pi.recreateSession).toHaveBeenCalled()
   })
 })
 

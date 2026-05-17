@@ -58,6 +58,7 @@ async function runTest() {
   send('topic.create', {
     name: `CLI Test ${new Date().toISOString().slice(11, 19)}`,
     agentType: 'programming',
+    programming: { extension: 'claude-code', yolo: true, permissionMode: 'bypassPermissions' },
   })
   const created = await waitForEvent('topic.created')
   const topicId = created.d?.id

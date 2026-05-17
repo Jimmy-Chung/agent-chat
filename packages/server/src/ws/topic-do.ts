@@ -391,7 +391,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: hasSession })
 
           if (hasSession && pi && !pi.hasSession(topic!.pi_session_id!)) {
-            void this.restoreSessionInBackground(d.topicId, pi)
+            this.ctx.waitUntil(this.restoreSessionInBackground(d.topicId, pi))
           }
         }
 
@@ -719,7 +719,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           // No session and not forthcoming — delivery will handle needs_retry
         }
 
-        void startAutoDelivery({
+        this.ctx.waitUntil(startAutoDelivery({
           topicId: data.topicId,
           messageId: msg.id,
           content: data.content,
@@ -731,7 +731,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             tokenSecret: this.config?.artifactTokenSecret ?? '',
           },
           manual: false,
-        })
+        }))
         break
       }
 
