@@ -91,6 +91,16 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     return this.piClient
   }
 
+  private async waitForSessionId(topicId: string, timeoutMs: number): Promise<string | null> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const topic = await topicRepo.getTopic(topicId)
+      if (topic?.pi_session_id) return topic.pi_session_id
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return null
+  }
+
   // After DO hibernation the piClient is recreated with no sessions — reconnect on demand
   private async ensureSession(pi: PiClient, sessionId: string): Promise<boolean> {
     if (pi.hasSession(sessionId)) return true
@@ -200,8 +210,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
   }
 
   broadcastAll(type: string, data: Record<string, unknown>): void {
+    const sockets = this.ctx.getWebSockets()
+    logger.debug({ type, sockets: sockets.length, states: sockets.map((ws) => ws.readyState) }, 'broadcastAll')
     const raw = encodeFrame(createFrame(type as never, data))
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of sockets) {
       if (ws.readyState === WebSocket.READY_STATE_OPEN) ws.send(raw)
     }
   }
@@ -700,6 +712,12 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
         const pi = await this.ensurePiClient()
         if (!pi) break
+
+        // Wait for PI session to be ready if topic was just created (race with concurrent topic.create)
+        const sessionReady = topic.pi_session_id || await this.waitForSessionId(data.topicId, 3000)
+        if (!sessionReady) {
+          // No session and not forthcoming — delivery will handle needs_retry
+        }
 
         void startAutoDelivery({
           topicId: data.topicId,

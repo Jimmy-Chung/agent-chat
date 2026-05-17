@@ -201,11 +201,6 @@ async function attemptDelivery(
           stop_reason: 'end_turn',
           retry_count: options.retryCount,
         })
-        input.broadcaster.broadcast('message.end', {
-          topicId: input.topicId,
-          messageId: msg.id,
-          stopReason: 'end_turn',
-        })
         broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'done', options.retryCount, msg.max_retries)
         return true
       } catch (rpcErr) {

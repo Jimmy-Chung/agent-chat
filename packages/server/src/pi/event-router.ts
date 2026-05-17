@@ -71,6 +71,8 @@ async function sendPushToAll(payload: PushPayload, config: AppConfig): Promise<v
 const lastSeqBySession = new Map<string, number>()
 // Track current assistant messageId per session so error events can inject error text
 const currentAssistantBySession = new Map<string, string>()
+// Serialize events per session to prevent out-of-order broadcasts
+const sessionQueues = new Map<string, Promise<void>>()
 
 export function routePiEvents(
   pi: PiClient,
@@ -87,11 +89,10 @@ export function routePiEvents(
     lastSeqBySession.set(event.sessionId, event.seq)
 
     logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
-    try {
-      routeEvent(event, broadcaster, config)
-    } catch (err) {
+    const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
+    sessionQueues.set(event.sessionId, prev.then(() => routeEvent(event, broadcaster, config)).catch((err) => {
       logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
-    }
+    }))
   })
 }
 
@@ -138,7 +139,6 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
             : 'tool_use',
         JSON.stringify(payload.part),
       )
-      if (kind === 'thinking') break
       hub.broadcast('message.delta', {
         topicId,
         messageId: payload.messageId,

@@ -76,11 +76,12 @@ class WsClient {
     }
 
     this.ws.onmessage = (ev) => {
+      let frame: ReturnType<typeof decodeFrame> | undefined
       try {
-        const frame = decodeFrame(ev.data as string)
+        frame = decodeFrame(ev.data as string)
         this.handleFrame(frame)
-      } catch {
-        // Ignore malformed frames
+      } catch (err) {
+        console.error('[ws] frame parse error', frame?.t, err)
       }
     }
 

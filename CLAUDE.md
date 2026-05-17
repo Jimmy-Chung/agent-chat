@@ -22,7 +22,8 @@ agent-chat/
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 ├── biome.json
-└── .omc/plans/           ← 设计文档 (只读参考)
+├── .omc/plans/           ← 设计文档 (只读参考)
+└── discussion.md         ← 需求讨论模式流程定义
 ```
 
 ## 外部系统标记
@@ -142,3 +143,7 @@ pnpm test:e2e      # E2E 测试必须全绿
 ```
 
 当前回归覆盖：鉴权 (R-001)、消息链路 (R-002)、话题独立 WS (R-003)、删话题清理 (R-004)、断线重连 (R-005)。详见 `.omc/plans/test-plan.md`。
+
+## 需求讨论模式
+
+详见 `discussion.md`。当用户说"进入讨论模式"或指定身份讨论某个需求时，按该流程执行。

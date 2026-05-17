@@ -253,7 +253,7 @@ class PiSessionConn extends EventEmitter {
     this.lastMessageAt = Date.now()
     this.healthTimer = setInterval(() => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-      if (Date.now() - this.lastMessageAt > 40_000) {
+      if (Date.now() - this.lastMessageAt > 300_000) {
         logger.warn({ sessionId: this.sessionId }, 'PI health probe timeout, closing')
         this.ws.close()
       }
