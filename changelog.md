@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-17 [v1.4.14] — PI WS 断连导致多轮 --resume 失败
+
+### AIT-123: PI WS 连接生命周期修复
+- `topic-do.ts`：`void startAutoDelivery()` → `ctx.waitUntil()` 确保 DO 追踪异步操作，防止 isolate 驱逐时关闭 PI WS
+- `client.ts`：`PiSessionConn` 新增 `isConnected` getter，`reconnectSession` 检查旧连接状态并清理死连接后创建新连接
+- `message-delivery.ts`：`buildSessionParams` programming 类型默认 `extension: 'claude-code'`，`ensureDeliverableSession` 新增 3 步 fallback（reconnect → recreate → session_exists 后重试 reconnect）
+
 ## 2026-05-16 [v1.4.12] — PI Adapter 连接配置 + Bug 修复
 
 ### FEAT-036 (AIT-116): PI Adapter 连接配置弹窗 + 持续健康探针

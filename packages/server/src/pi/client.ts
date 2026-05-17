@@ -55,6 +55,10 @@ class PiSessionConn extends EventEmitter {
     this.config = config
   }
 
+  get isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
+  }
+
   private waitForReady(): Promise<void> {
     if (this.ready) return Promise.resolve()
     return new Promise<void>((resolve) => {
@@ -386,10 +390,16 @@ export class PiClient extends EventEmitter {
 
   async reconnectSession(sessionId: string): Promise<void> {
     const existing = this.sessions.get(sessionId)
-    if (existing) {
+    if (existing?.isConnected) {
       const lastSeq = existing.lastSeq
       await this.rpc('attachSession', { sessionId, lastSeq })
       return
+    }
+
+    // Remove stale session that exists but has a closed WS
+    if (existing) {
+      existing.close()
+      this.sessions.delete(sessionId)
     }
 
     const conn = new PiSessionConn(sessionId, this.config)
