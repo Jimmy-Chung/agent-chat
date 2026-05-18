@@ -130,7 +130,10 @@ pnpm dev                   # 三服务同时启动
 - 合并：--no-ff merge 到 master
 - Tag：annotated tag 打在 merge commit 上
 - 新版本由用户主动声明开启，Claude 不自行开新版本
-- **版本号显示**：每次发版必须同步更新 `packages/web/src/components/layout/Sidebar.tsx` 中的版本号字符串
+- **版本号同步**：每次发版必须同步更新以下位置：
+  - `packages/web/src/components/layout/Sidebar.tsx` — 界面显示的版本号
+  - `changelog.md` — 新增版本条目
+  - `project_feature_list.md` — 当前版本号 + 需求状态
 
 ## 回归测试（强制）
 
