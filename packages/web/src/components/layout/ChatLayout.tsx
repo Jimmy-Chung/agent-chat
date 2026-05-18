@@ -7,6 +7,7 @@ import { useIsMobile } from '@/hooks/use-is-mobile'
 import { Sidebar } from './Sidebar'
 import { TopicPanel } from './TopicPanel'
 import { InspectorPanel } from './InspectorPanel'
+import { SleepReminder } from '../SleepReminder'
 
 export function ChatLayout() {
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
@@ -48,6 +49,8 @@ export function ChatLayout() {
             onClose={() => setMobileInspectorOpen(false)}
           />
         )}
+
+        <SleepReminder />
       </div>
     )
   }
@@ -93,6 +96,8 @@ export function ChatLayout() {
           {activeTopicId && <InspectorPanel />}
         </aside>
       </div>
+
+      <SleepReminder />
     </div>
   )
 }
