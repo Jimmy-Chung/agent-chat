@@ -567,7 +567,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const pi = await this.ensurePiClient()
           if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
             try {
-              await pi.rpc('setPlanMode', { sessionId: topic.pi_session_id, planMode: data.planMode })
+              await pi.rpcWithRetry('setPlanMode', { sessionId: topic.pi_session_id, planMode: data.planMode })
             } catch (err) {
               logger.error({ err, topicId: data.id }, 'Failed to set plan mode on PI')
               this.broadcastAll('error', { code: 'PI_PLAN_MODE_FAILED', message: 'Failed to set plan mode' })

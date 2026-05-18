@@ -172,6 +172,14 @@ class PiSessionConn extends EventEmitter {
         } satisfies AdapterRpcRequest)
         break
       }
+      case 'keepalive': {
+        // Adapter heartbeat — send ack back so adapter knows we're alive
+        this.lastMessageAt = Date.now()
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(encodeFrame(createFrame('keepalive_ack', { kind: 'keepalive_ack' })))
+        }
+        break
+      }
       default:
         logger.warn({ type: frame.t, sessionId: this.sessionId }, 'Unknown PI frame type')
     }
@@ -257,7 +265,7 @@ class PiSessionConn extends EventEmitter {
     this.lastMessageAt = Date.now()
     this.healthTimer = setInterval(() => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-      if (Date.now() - this.lastMessageAt > 300_000) {
+      if (Date.now() - this.lastMessageAt > 60_000) {
         logger.warn({ sessionId: this.sessionId }, 'PI health probe timeout, closing')
         this.ws.close()
       }
@@ -431,6 +439,28 @@ export class PiClient extends EventEmitter {
     }
 
     return conn.rpc(method, params, options)
+  }
+
+  async rpcWithRetry<K extends keyof PiRpcMethod>(
+    method: K,
+    params: PiRpcMethod[K]['params'],
+    options?: { signal?: AbortSignal },
+  ): Promise<PiRpcMethod[K]['result']> {
+    try {
+      return await this.rpc(method, params, options)
+    } catch (err) {
+      const p = params as Record<string, unknown>
+      const sessionId = p.sessionId as string | undefined
+      if (!sessionId) throw err
+      logger.warn({ err, method, sessionId }, 'RPC failed, reconnecting and retrying')
+      try {
+        await this.reconnectSession(sessionId)
+      } catch (reconnectErr) {
+        logger.error({ err: reconnectErr, sessionId }, 'Reconnect failed after RPC error')
+        throw err
+      }
+      return await this.rpc(method, params, options)
+    }
   }
 
   async rpcGlobal<K extends keyof PiRpcMethod>(
