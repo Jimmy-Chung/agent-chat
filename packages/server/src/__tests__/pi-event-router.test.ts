@@ -257,3 +257,76 @@ describe('Event router — cron.run.completed', () => {
     expect((broadcast.data as Record<string, unknown>).status).toBe('timeout')
   })
 })
+
+describe('Event router — message.end derives agent.status idle (AIT-137)', () => {
+  let mockHub: ReturnType<typeof createMockHub>
+  let mockPi: ReturnType<typeof createMockPiClient>
+
+  beforeEach(async () => {
+    await setupTestDb()
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    routePiEvents(mockPi as any, mockHub as any)
+  })
+
+  afterEach(() => {
+    teardownTestDb()
+  })
+
+  async function setupTopicAndStartMessage(sessionId: string, messageId: string): Promise<string> {
+    const topic = await topicRepo.createTopic({ name: 'Idle Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: sessionId })
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId, role: 'assistant' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+    return topic.id
+  }
+
+  for (const stopReason of ['end_turn', 'max_tokens', 'aborted', 'error'] as const) {
+    it(`broadcasts agent.status idle after message.end (stopReason=${stopReason})`, async () => {
+      const sessionId = `sess-end-${stopReason}`
+      const messageId = `msg-${stopReason}`
+      await setupTopicAndStartMessage(sessionId, messageId)
+      mockHub.broadcast.mockClear()
+
+      mockPi.emit('event', {
+        seq: 2,
+        sessionId,
+        ts: Date.now(),
+        payload: { kind: 'message.end', messageId, stopReason },
+      } satisfies PIEvent)
+      await new Promise((r) => setTimeout(r, 50))
+
+      const events = mockHub.getBroadcastEvents()
+      const types = events.map((e) => e.type)
+      expect(types).toContain('message.end')
+      expect(types).toContain('agent.status')
+      const idle = events.find((e) => e.type === 'agent.status')!
+      expect((idle.data as Record<string, unknown>).state).toBe('idle')
+    })
+  }
+
+  it('does NOT broadcast agent.status idle when stopReason is tool_use', async () => {
+    const sessionId = 'sess-end-tool-use'
+    const messageId = 'msg-tool-use'
+    await setupTopicAndStartMessage(sessionId, messageId)
+    mockHub.broadcast.mockClear()
+
+    mockPi.emit('event', {
+      seq: 2,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId, stopReason: 'tool_use' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    const events = mockHub.getBroadcastEvents()
+    const types = events.map((e) => e.type)
+    expect(types).toContain('message.end')
+    expect(types).not.toContain('agent.status')
+  })
+})

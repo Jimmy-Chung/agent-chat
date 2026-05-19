@@ -50,8 +50,11 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0 }: 
           {topic.name}
         </div>
         {topic.agent_type && topic.kind === 'normal' && (
-          <div className="truncate text-[11.5px]" style={{ color: 'var(--fg-dim)', letterSpacing: '-0.005em' }}>
-            {topic.agent_type === 'programming' ? '💻 编程' : '💬 普通'}
+          <div className="flex items-center gap-2 truncate text-[11.5px]" style={{ color: 'var(--fg-dim)', letterSpacing: '-0.005em' }}>
+            <span>{topic.agent_type === 'programming' ? '编程' : '普通'}</span>
+            {topic.agent_type === 'programming' && topic.plan_mode && (
+              <span style={{ color: '#6cb1ff' }}>Plan</span>
+            )}
           </div>
         )}
       </div>

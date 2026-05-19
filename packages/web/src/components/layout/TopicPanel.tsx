@@ -13,6 +13,7 @@ import { EmptyState } from './EmptyState'
 import { MessageList } from '@/components/chat/MessageList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
+import { McpSettingsModal } from '@/components/McpSettingsModal'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
@@ -93,6 +94,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   const [menuOpen, setMenuOpen] = useState(false)
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
   const [renamingTopic, setRenamingTopic] = useState<{ id: string; name: string } | null>(null)
+  const [showMcpSettings, setShowMcpSettings] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -119,12 +121,18 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
     return map
   }, [partsByMessage])
 
+  const projectDir = useMemo(() => {
+    if (!activeTopic.programming_spec_json) return undefined
+    try { return JSON.parse(activeTopic.programming_spec_json).cwd } catch { return undefined }
+  }, [activeTopic.programming_spec_json])
+
   const approvalsByMessage = useMemo(() => {
-    const map: Record<string, { interactionId: string; prompt: string; options?: string[]; status: 'pending' | 'resolved' | 'timeout'; response?: string }> = {}
+    const map: Record<string, { interactionId: string; interactionKind: string; prompt: string; options?: string[]; status: 'pending' | 'resolved' | 'timeout'; response?: string }> = {}
     for (const inter of Object.values(interactions)) {
       if (inter.messageId) {
         map[inter.messageId] = {
           interactionId: inter.interactionId,
+          interactionKind: inter.interactionKind,
           prompt: inter.prompt,
           options: inter.options,
           status: 'pending',
@@ -172,6 +180,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           </Chip>
         )}
         {activeTopic.agent_type === 'programming' && (
+          <>
           <button
             onClick={togglePlanMode}
             className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
@@ -186,6 +195,20 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11h6M9 7h6M9 15h4" /><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
             Plan
           </button>
+          <button
+            onClick={() => setShowMcpSettings(true)}
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
+            style={{
+              height: 22,
+              background: 'var(--glass-1)',
+              border: '1px solid var(--hairline)',
+              color: 'var(--fg-dim)',
+              letterSpacing: '-0.005em',
+            }}
+          >
+            MCP
+          </button>
+          </>
         )}
         {activeTopic.agent_type === 'general' && (
           <Chip>
@@ -285,6 +308,15 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         />,
         document.body,
       )}
+
+      {showMcpSettings && typeof document !== 'undefined' && createPortal(
+        <McpSettingsModal
+          onClose={() => setShowMcpSettings(false)}
+          projectDir={projectDir}
+          topicName={activeTopic.name}
+        />,
+        document.body,
+      )}
     </div>
   )
 }
@@ -312,6 +344,7 @@ const EMPTY_MESSAGES: Message[] = []
 
 function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicId: string; state: string; sessionState?: string; sessionError?: string }) {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
+  const progress = useMessageStore((s) => s.progressByTopic[topicId])
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
   const hasPendingUser = lastMsg?.role === 'user' && lastMsg?.status === 'pending'
   const isActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(state) || hasPendingUser
@@ -360,6 +393,7 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
   }
 
   const statusLabel = hasPendingUser && state === 'idle' ? 'Sending' : (labelMap[state] ?? 'Idle')
+  const showProgress = isActive && !!progress
   const showBar = isActive || !!sessionState || !!sessionError
 
   if (!showBar) return null
@@ -389,6 +423,24 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
       {isActive && (
         <span className="text-[12px]" style={{ color: 'var(--fg-dim)', fontFeatureSettings: '"tnum"' }}>
           {formatElapsed(elapsedMs)}
+        </span>
+      )}
+
+      {showProgress && (
+        <span
+          className="inline-flex items-center gap-1.5 truncate text-[11.5px]"
+          style={{
+            color: 'var(--fg-dim)',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid var(--hairline)',
+            borderRadius: 999,
+            padding: '2px 8px',
+            maxWidth: 360,
+          }}
+          title={`${progress.phase} — ${progress.message}`}
+        >
+          <span style={{ color: 'var(--fg-regular)', fontWeight: 500 }}>{progress.phase}</span>
+          <span className="truncate">{progress.message}</span>
         </span>
       )}
 

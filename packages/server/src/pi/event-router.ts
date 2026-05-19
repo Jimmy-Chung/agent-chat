@@ -4,6 +4,7 @@ import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
+import { artifactToPayload } from '../ws/artifact-control'
 import * as usageRepo from '../db/repos/usage.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as pushRepo from '../db/repos/push-subscription.repo'
@@ -176,6 +177,12 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         messageId: payload.messageId,
         stopReason: payload.stopReason,
       })
+      // Derive agent.status idle as a defensive fallback when adapter forgets to push it
+      // (e.g. CLI crash / forceEnd / keepalive timeout paths — see AIT-137).
+      // Skip 'tool_use' because the agent is still working: a tool.result will follow.
+      if (payload.stopReason !== 'tool_use') {
+        hub.broadcast('agent.status', { topicId, state: 'idle' })
+      }
       if (config) {
         const topic = await topicRepo.getTopic(topicId)
         sendPushToAll(
@@ -298,6 +305,17 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       break
     }
 
+    case 'agent.progress': {
+      if (!topicId) return
+      hub.broadcast('agent.progress', {
+        topicId,
+        phase: payload.phase,
+        message: payload.message,
+        metadata: payload.metadata,
+      })
+      break
+    }
+
     case 'cron.created': {
       const originTopicId = await findTopicIdBySession(payload.originSessionId)
       if (!originTopicId) {
@@ -392,23 +410,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         name: payload.name,
         mime: payload.mime,
         sizeBytes: payload.sizeBytes,
-        r2Key: '',
+        r2Key: payload.r2Key ?? '',
         source: 'generated',
         metadataJson: payload.metadata
           ? JSON.stringify(payload.metadata)
           : undefined,
       })
-      hub.broadcast('artifact.added', {
-        id: artifact.id,
-        topic_id: artifact.topic_id,
-        origin_topic_id: artifact.origin_topic_id,
-        name: artifact.name,
-        mime: artifact.mime,
-        size_bytes: artifact.size_bytes,
-        source: artifact.source,
-        created_at: artifact.created_at,
-        metadata_json: artifact.metadata_json,
-      })
+      hub.broadcast('artifact.added', artifactToPayload(artifact))
       break
     }
 

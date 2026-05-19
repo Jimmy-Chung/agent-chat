@@ -340,6 +340,22 @@ code, pre {
 }
 .attention-pulse { animation: attention-pulse 1.6s ease-in-out infinite; }
 
+/* ───── InteractionCard choice mode ───── */
+
+@keyframes interaction-choice-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 1px rgba(142,140,255,.18), 0 18px 50px rgba(0,0,0,.45), 0 0 22px rgba(142,140,255,.10); }
+  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 1px rgba(142,140,255,.32), 0 18px 50px rgba(0,0,0,.45), 0 0 40px rgba(142,140,255,.22); }
+}
+.interaction-choice-pulse { animation: interaction-choice-pulse 2.8s ease-in-out infinite; }
+
+@keyframes interaction-pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(142,140,255,.55), 0 0 10px rgba(142,140,255,1); transform: scale(1); }
+  60%      { box-shadow: 0 0 0 8px rgba(142,140,255,0), 0 0 10px rgba(142,140,255,1); transform: scale(.85); }
+}
+.interaction-pulse-dot { animation: interaction-pulse-dot 1.6s ease-in-out infinite; }
+
+@keyframes interaction-spin { to { transform: rotate(360deg); } }
+
 /* =============================================================
    Focus ring (system blue)
    ============================================================= */

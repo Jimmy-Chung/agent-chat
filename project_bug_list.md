@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.4.8 |
-| 更新时间 | 2026-05-16 |
+| 当前版本 | v1.5.2 |
+| 更新时间 | 2026-05-19 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -49,6 +49,7 @@
 | BUG-035 | AIT-110 |
 | BUG-036 | AIT-112 |
 | BUG-037 | AIT-114 |
+| BUG-038 | AIT-124 |
 
 ---
 
@@ -67,6 +68,21 @@
 | 描述 | assistant 消息永远卡在 `streaming` 状态，前端显示"正在回复…"但无内容。PI adapter 在 abort/error/断连时不发送 `message.end`，导致数据库中消息无 `finished_at`。 |
 | 根因 | 消息从 `streaming` → `done` 的唯一路径是 PI adapter 发送 `message.end` 事件。adapter 在中断、错误、断连场景漏发。server 端无防护机制。 |
 | 修复方案 | 1) Server 安全网：`session.health { disconnected }` 时 finalize 所有 streaming 消息为 done + error；2) PI adapter 侧补发 `message.end`（adapter 团队已确认修复）。 |
+
+### BUG-038: keepalive_ack 双向心跳 + health probe 60s + RPC 重试机制
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-038 |
+| 标题 | keepalive_ack 双向心跳 + health probe 60s + RPC 重试机制 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-19 |
+| 修复时间 | 2026-05-19 |
+| 修复版本 | v1.5.2 |
+| 影响模块 | packages/server/src/pi/client.ts, packages/protocol/src/pi-rpc.ts |
+| 描述 | PI WebSocket 连接在长时间无活动后断开，且 PI RPC 调用无重试机制，遇到瞬时故障直接失败。 |
+| 根因 | 缺少双向 keepalive_ack 心跳和 health probe 机制，RPC 调用无重试保护。 |
+| 修复方案 | 新增双向 keepalive_ack 心跳帧、60s 间隔 health probe、PI RPC 调用重试机制。 |
 
 ### BUG-036: Thinking 阶段 Stop 按钮失效 + 计时器无法停止
 

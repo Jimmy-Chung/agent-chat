@@ -2,9 +2,20 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.5.1 |
-| 状态 | v1.5.0 开发中 |
-| 更新时间 | 2026-05-18 |
+| 当前版本 | v1.5.2 |
+| 状态 | v1.5.2 开发中 |
+| 更新时间 | 2026-05-19 |
+
+---
+
+## v1.5.2 — 需求范围
+
+| 类别 | 需求 | 状态 | 说明 |
+|---|---|---|---|
+| MCP 管理 | FEAT-038 Agent MCP 管理面板 | 已发布 | TopicPanel 内 MCP 管理弹窗：支持 list/add/remove MCP server，WS 优先 + HTTP 回退双链路，add/remove 后自动通知 PI Adapter 重载配置 |
+| 交互 | FEAT-039 AskUserQuestion 选择交互卡片 | 已发布 | InteractionCard 组件支持 choice 类型交互，含选项渲染与 user.action choice 回复链路 |
+
+> 关联 issue：AIT-124 (keepalive_ack 双向心跳 + RPC 重试机制)、AIT-125 (AskUserQuestion)、AIT-139 (MCP 管理)
 
 ---
 
@@ -93,6 +104,9 @@
 | FEAT-034 | AIT-38 |
 | FEAT-035 | — |
 | FEAT-036 | AIT-116 |
+| FEAT-037 | AIT-135 |
+| FEAT-038 | AIT-139 |
+| FEAT-039 | AIT-125 |
 | FEAT-037 | AIT-135 |
 
 ---

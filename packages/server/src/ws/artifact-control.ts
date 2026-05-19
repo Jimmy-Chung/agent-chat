@@ -80,6 +80,7 @@ export function artifactToPayload(artifact: Artifact): Record<string, unknown> {
     name: artifact.name,
     mime: artifact.mime,
     size_bytes: artifact.size_bytes,
+    r2_key: artifact.r2_key ?? '',
     download_url: undefined,
     preview_url: undefined,
     source: artifact.source,

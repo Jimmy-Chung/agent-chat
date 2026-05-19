@@ -53,6 +53,7 @@ describe('Artifact handler — upload.init', () => {
       config: {
         token: 'test-token',
         piAdapterUrl: '',
+        originalPiAdapterUrl: '',
         piAdapterToken: '',
         artifactTokenSecret: 'secret',
         logLevel: 'info',

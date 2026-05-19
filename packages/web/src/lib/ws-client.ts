@@ -459,7 +459,9 @@ class WsClient {
         const agentState = d.state as string
         messageStore.setAgentStatus(agentTopicId, agentState)
         // When agent becomes idle, clear any streaming state that never got a message.end
+        // and clear any lingering agent.progress display
         if (agentState === 'idle') {
+          messageStore.clearProgress(agentTopicId)
           const { streamingTopicId, streamingMessageId } = useMessageStore.getState()
           if (streamingTopicId === agentTopicId && streamingMessageId) {
             messageStore.endStreaming(streamingMessageId)
@@ -473,7 +475,17 @@ class WsClient {
         break
       }
 
-      case 'usage.snapshot': {
+      case 'agent.progress': {
+        const d = event.data as Record<string, unknown>
+        messageStore.setProgress(d.topicId as string, {
+          phase: d.phase as string,
+          message: d.message as string,
+          metadata: d.metadata as Record<string, unknown> | undefined,
+        })
+        break
+      }
+
+case 'usage.snapshot': {
         const d = event.data as Record<string, unknown>
         messageStore.setUsage(d.messageId as string, {
           model: d.model as string,
@@ -539,6 +551,14 @@ class WsClient {
         }
         break
       }
+
+      case 'mcp.command.result':
+        handleMcpResult(event.data as McpListResult & { requestId: string })
+        break
+
+      case 'mcp.command.error':
+        handleMcpError(event.data as { requestId: string; code: string; message: string })
+        break
     }
   }
 
@@ -562,6 +582,89 @@ export function getWsClient(): WsClient {
     instance = new WsClient()
   }
   return instance
+}
+
+// ─── MCP command via WS (server proxies to adapter + notifies adapter) ──
+
+export interface McpListResult {
+  stdout: string
+  stderr: string
+  exitCode: number
+  servers?: Array<{ name: string; scope: string }>
+}
+
+const pendingMcpRequests = new Map<string, { resolve: (v: McpListResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+
+export async function sendMcpCommand(params: {
+  action: 'add' | 'remove' | 'list' | 'get'
+  name?: string
+  command?: string
+  scope?: 'user' | 'project' | 'local'
+  projectDir?: string
+}): Promise<McpListResult> {
+  const { status } = useWsStore.getState()
+
+  // Prefer WS (server notifies adapter after add/remove), fall back to HTTP
+  if (status === 'connected') {
+    const client = getWsClient()
+    const requestId = crypto.randomUUID()
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingMcpRequests.delete(requestId)
+        reject(new Error('MCP command timeout'))
+      }, 15_000)
+
+      pendingMcpRequests.set(requestId, { resolve, reject, timer })
+
+      const sent = client.send({
+        type: 'mcp.command',
+        data: {
+          requestId,
+          action: params.action,
+          name: params.name,
+          command: params.command,
+          scope: params.scope,
+          projectDir: params.projectDir,
+        },
+      })
+
+      if (!sent) {
+        clearTimeout(timer)
+        pendingMcpRequests.delete(requestId)
+        reject(new Error('Failed to send MCP command via WS'))
+      }
+    })
+  }
+
+  // HTTP fallback
+  const res = await fetch('/api/mcp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`MCP proxy failed: HTTP ${res.status} ${detail.slice(0, 200)}`)
+  }
+  return res.json()
+}
+
+export function handleMcpResult(data: McpListResult & { requestId: string }): void {
+  const entry = pendingMcpRequests.get(data.requestId)
+  if (!entry) return
+  pendingMcpRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.resolve({ stdout: data.stdout, stderr: data.stderr, exitCode: data.exitCode, servers: data.servers })
+}
+
+export function handleMcpError(data: { requestId: string; code: string; message: string }): void {
+  const entry = pendingMcpRequests.get(data.requestId)
+  if (!entry) return
+  pendingMcpRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.reject(new Error(`${data.code}: ${data.message}`))
 }
 
 export type { WsClient }

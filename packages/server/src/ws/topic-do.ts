@@ -7,6 +7,7 @@ import {
   userMessageRetrySchema, userMessageSchema,
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
   searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema,
+  mcpCommandSchema,
 } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
@@ -580,6 +581,67 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         break
       }
 
+      case 'mcp.command': {
+        const data = mcpCommandSchema.parse(frame.d)
+        if (!this.config) {
+          this.sendTo(ws, 'mcp.command.error', { requestId: data.requestId, code: 'PI_UNAVAILABLE', message: 'Config not initialized' })
+          break
+        }
+        try {
+          const wssUrl = new URL(this.config.originalPiAdapterUrl || this.config.piAdapterUrl)
+          const mcpUrl = `${wssUrl.protocol === 'wss:' ? 'https:' : 'http:'}//${wssUrl.host}/api/agent-chat/v1/mcp`
+          logger.info({ mcpUrl, action: data.action, scope: data.scope }, 'MCP HTTP request')
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (this.config.piAdapterToken) headers['Authorization'] = `Bearer ${this.config.piAdapterToken}`
+
+          const adapterBody: Record<string, unknown> = {
+            action: data.action,
+            name: data.name,
+            scope: data.scope,
+            projectDir: data.projectDir,
+          }
+          if (data.action === 'add' && typeof data.command === 'string' && data.command.trim()) {
+            const parts = data.command.trim().split(/\s+/)
+            adapterBody.spec = { transport: 'stdio', command: parts[0], args: parts.slice(1) }
+          }
+
+          const res = await fetch(mcpUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(adapterBody),
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (!res.ok) {
+            const body = await res.text()
+            logger.error({ status: res.status, body }, 'MCP HTTP error response')
+            throw new Error(`adapter returned HTTP ${res.status}: ${body.slice(0, 200)}`)
+          }
+          const result = await res.json() as { stdout: string; stderr: string; exitCode: number; servers?: Array<{ name: string; scope: string }> }
+          this.sendTo(ws, 'mcp.command.result', { requestId: data.requestId, ...result })
+
+          // After add/remove, notify adapter via PI WS to reload MCP config
+          if (data.action === 'add' || data.action === 'remove') {
+            try {
+              const pi = await this.ensurePiClient()
+              if (pi && pi.isConnected) {
+                await pi.rpcGlobal('runMcpCommand', { action: 'list', name: undefined, spec: undefined })
+                logger.info({ action: data.action, name: data.name, scope: data.scope }, 'MCP config change notified to adapter')
+              }
+            } catch (notifyErr) {
+              logger.warn({ err: notifyErr, action: data.action }, 'Failed to notify adapter of MCP config change')
+            }
+          }
+        } catch (err) {
+          logger.error({ err, action: data.action }, 'MCP HTTP request failed')
+          this.sendTo(ws, 'mcp.command.error', {
+            requestId: data.requestId,
+            code: 'PI_MCP_COMMAND_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+        break
+      }
+
       case 'topic.resume': {
         const data = topicResumeSchema.parse(frame.d)
         const topic = await topicRepo.getTopic(data.topicId)
@@ -777,15 +839,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           break
         }
 
-        // approve / reject interaction
+        // approve / reject / choose interaction
         if (data.interactionId) {
           const interaction = await interactionRepo.getInteraction(data.interactionId)
           if (!interaction || interaction.status !== 'pending') break
 
-          const decision = data.action === 'approve' ? 'approve' : 'reject'
+          const decision = data.action === 'choose' ? 'choose' : data.action === 'approve' ? 'approve' : 'reject'
+          const responsePayload = data.action === 'choose' && data.choice
+            ? { decision, choice: data.choice }
+            : { decision }
           await interactionRepo.updateInteraction(data.interactionId, {
             status: 'resolved',
-            response_json: JSON.stringify({ decision }),
+            response_json: JSON.stringify(responsePayload),
             resolved_at: Date.now(),
           })
 
@@ -798,6 +863,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
                   sessionId: topic.pi_session_id,
                   interactionId: data.interactionId,
                   decision,
+                  ...(data.action === 'choose' && data.choice ? { choice: data.choice } : {}),
                 })
               } catch (err) {
                 logger.warn({ err }, 'Failed to resolve interaction on PI')

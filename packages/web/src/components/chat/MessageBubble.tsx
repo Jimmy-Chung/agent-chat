@@ -5,7 +5,7 @@ import type { Message, MessagePart } from '@agent-chat/protocol'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCard, type ToolCallInfo, type ToolResultInfo } from './ToolCard'
 import { DiffCard } from './DiffCard'
-import { ApprovalCard } from './ApprovalCard'
+import { InteractionCard } from './InteractionCard'
 import { UsageBadge } from './UsageBadge'
 import { CronIndicator } from './CronIndicator'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -20,6 +20,7 @@ interface MessageBubbleProps {
   usage?: { inputTokens: number; outputTokens: number; model?: string } | null
   approval?: {
     interactionId: string
+    interactionKind: string
     prompt: string
     options?: string[]
     status: 'pending' | 'resolved' | 'timeout'
@@ -55,7 +56,9 @@ export function MessageBubble({
   })
   const visiblePartCount = parts.filter((part) => hasVisibleContent(part, isUser)).length
   const hasStreamingContent = message.status === 'streaming' && isLast && !isUser && !hasPersistedTextPart && streamingText.trim().length > 0
-  const shouldShowBubble = !isUser ? visiblePartCount > 0 || hasStreamingContent || !!approval || !!cronTriggered : true
+  const shouldShowBubble = !isUser
+    ? visiblePartCount > 0 || hasStreamingContent || !!approval || !!cronTriggered
+    : visiblePartCount > 0
   const time = formatMessageTime(message.started_at)
 
   if (!isSystem && !shouldShowBubble) {
@@ -135,11 +138,12 @@ export function MessageBubble({
           />
         )}
 
-        {/* Approval card */}
+        {/* Interaction card */}
         {approval && !isUser && (
-          <ApprovalCard
+          <InteractionCard
             interactionId={approval.interactionId}
             topicId={message.topic_id}
+            interactionKind={(approval.interactionKind as 'approval' | 'choice') ?? 'approval'}
             prompt={approval.prompt}
             options={approval.options}
             status={approval.status}

@@ -18,6 +18,7 @@ interface MessageListProps {
     string,
     {
       interactionId: string
+      interactionKind: string
       prompt: string
       options?: string[]
       status: 'pending' | 'resolved' | 'timeout'

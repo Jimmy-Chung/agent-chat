@@ -16,6 +16,7 @@ const topicSchema = z.object({
   pi_session_id: z.string().nullable(),
   current_model: z.string().nullable(),
   history_frozen_at: z.number().nullable(),
+  plan_mode: z.boolean().optional().default(false),
   created_at: z.number(),
   updated_at: z.number(),
   archived: z.boolean(),
@@ -28,6 +29,7 @@ const artifactSchema = z.object({
   name: z.string(),
   mime: z.string().nullable(),
   size_bytes: z.number().nullable(),
+  r2_key: z.string().optional().default(''),
   download_url: z.string().optional(),
   preview_url: z.string().optional(),
   source: z.enum(['generated', 'uploaded']),
@@ -135,6 +137,13 @@ export const interactionRequestSchema = z.object({
 export const agentStatusSchema = z.object({
   topicId: z.string(),
   state: z.enum(['idle', 'thinking', 'tool', 'streaming', 'aborting']),
+})
+
+export const agentProgressSchema = z.object({
+  topicId: z.string(),
+  phase: z.string(),
+  message: z.string(),
+  metadata: z.record(z.unknown()).optional(),
 })
 
 export const cronListSchema = z.object({
@@ -288,6 +297,20 @@ export const errorSchema = z.object({
   message: z.string(),
 })
 
+export const mcpCommandResultSchema = z.object({
+  requestId: z.string(),
+  stdout: z.string(),
+  stderr: z.string(),
+  exitCode: z.number(),
+  servers: z.array(z.object({ name: z.string(), scope: z.string() })).optional(),
+})
+
+export const mcpCommandErrorSchema = z.object({
+  requestId: z.string(),
+  code: z.string(),
+  message: z.string(),
+})
+
 // ─── Server event type + schema ───────────────────────────────────
 
 export type ServerEvent =
@@ -309,6 +332,7 @@ export type ServerEvent =
       data: z.infer<typeof interactionRequestSchema>
     }
   | { type: 'agent.status'; data: z.infer<typeof agentStatusSchema> }
+  | { type: 'agent.progress'; data: z.infer<typeof agentProgressSchema> }
   | { type: 'cron.list'; data: z.infer<typeof cronListSchema> }
   | { type: 'cron.upserted'; data: z.infer<typeof cronUpsertedSchema> }
   | { type: 'cron.triggered'; data: z.infer<typeof cronTriggeredSchema> }
@@ -324,6 +348,8 @@ export type ServerEvent =
   | { type: 'session.status'; data: z.infer<typeof sessionStatusSchema> }
   | { type: 'cron.run.completed'; data: z.infer<typeof cronRunCompletedSchema> }
   | { type: 'error'; data: z.infer<typeof errorSchema> }
+  | { type: 'mcp.command.result'; data: z.infer<typeof mcpCommandResultSchema> }
+  | { type: 'mcp.command.error'; data: z.infer<typeof mcpCommandErrorSchema> }
   | {
       type: 'messages.history'
       data: z.infer<typeof messagesHistorySchema>
@@ -345,6 +371,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'plan.update': planUpdateSchema,
   'interaction.request': interactionRequestSchema,
   'agent.status': agentStatusSchema,
+  'agent.progress': agentProgressSchema,
   'cron.list': cronListSchema,
   'cron.upserted': cronUpsertedSchema,
   'cron.triggered': cronTriggeredSchema,
@@ -360,6 +387,8 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'session.status': sessionStatusSchema,
   'cron.run.completed': cronRunCompletedSchema,
   error: errorSchema,
+  'mcp.command.result': mcpCommandResultSchema,
+  'mcp.command.error': mcpCommandErrorSchema,
   'messages.history': messagesHistorySchema,
 }
 
@@ -423,8 +452,9 @@ export const userMessageRetrySchema = z.object({
 
 export const userActionSchema = z.object({
   topicId: z.string(),
-  action: z.enum(['approve', 'reject', 'abort']),
+  action: z.enum(['approve', 'reject', 'abort', 'choose']),
   interactionId: z.string().optional(),
+  choice: z.string().optional(),
 })
 
 export const cronPauseSchema = z.object({
@@ -485,6 +515,15 @@ export const cronResumeSchema = z.object({
   cronId: z.string(),
 })
 
+export const mcpCommandSchema = z.object({
+  requestId: z.string(),
+  action: z.enum(['add', 'remove', 'list', 'get']),
+  name: z.string().optional(),
+  command: z.string().optional(),
+  scope: z.enum(['user', 'project', 'local']).optional(),
+  projectDir: z.string().optional(),
+})
+
 // ─── Client event type + schema ───────────────────────────────────
 
 export type ClientEvent =
@@ -524,6 +563,7 @@ export type ClientEvent =
     }
   | { type: 'topic.select'; data: z.infer<typeof topicSelectSchema> }
   | { type: 'cron.resume'; data: z.infer<typeof cronResumeSchema> }
+  | { type: 'mcp.command'; data: z.infer<typeof mcpCommandSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -547,4 +587,5 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.setPlanMode': topicSetPlanModeSchema,
   'topic.select': topicSelectSchema,
   'cron.resume': cronResumeSchema,
+  'mcp.command': mcpCommandSchema,
 }

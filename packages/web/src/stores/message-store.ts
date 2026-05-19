@@ -16,6 +16,7 @@ interface MessageState {
   todosByTopic: Record<string, Array<{ id: string; content: string; status: string; activeForm?: string }>>
   planByTopic: Record<string, string>
   agentStatusByTopic: Record<string, string>
+  progressByTopic: Record<string, { phase: string; message: string; metadata?: Record<string, unknown> }>
   usageByMessage: Record<string, { model: string; inputTokens: number; outputTokens: number }>
   interactions: Record<string, { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }>
 }
@@ -38,6 +39,8 @@ interface MessageActions {
   setTodos: (topicId: string, items: Array<{ id: string; content: string; status: string; activeForm?: string }>) => void
   setPlan: (topicId: string, plan: string) => void
   setAgentStatus: (topicId: string, state: string) => void
+  setProgress: (topicId: string, progress: { phase: string; message: string; metadata?: Record<string, unknown> }) => void
+  clearProgress: (topicId: string) => void
   setUsage: (messageId: string, data: { model: string; inputTokens: number; outputTokens: number }) => void
   setInteraction: (id: string, data: { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }) => void
 }
@@ -55,6 +58,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     todosByTopic: {},
     planByTopic: {},
     agentStatusByTopic: {},
+    progressByTopic: {},
     usageByMessage: {},
     interactions: {},
 
@@ -235,6 +239,18 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     setAgentStatus: (topicId, state) => {
       set((s) => {
         s.agentStatusByTopic[topicId] = state
+      })
+    },
+
+    setProgress: (topicId, progress) => {
+      set((s) => {
+        s.progressByTopic[topicId] = progress
+      })
+    },
+
+    clearProgress: (topicId) => {
+      set((s) => {
+        delete s.progressByTopic[topicId]
       })
     },
 

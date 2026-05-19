@@ -73,9 +73,10 @@ class PiSessionConn extends EventEmitter {
     })
   }
 
-  connect(): Promise<void> {
+  private attemptConnect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = buildPiAdapterUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
+      logger.info({ url: url.replace(/token=[^&]+/, 'token=***'), sessionId: this.sessionId }, 'PI session WS connecting')
       const ws = new WebSocket(url)
       ws.addEventListener('open', async () => {
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
@@ -122,6 +123,23 @@ class PiSessionConn extends EventEmitter {
 
       this.ws = ws
     })
+  }
+
+  async connect(maxRetries = 3): Promise<void> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await this.attemptConnect()
+        return
+      } catch (err) {
+        if (attempt < maxRetries - 1) {
+          const delay = 500 * (attempt + 1)
+          logger.warn({ err, sessionId: this.sessionId, attempt, delay }, 'PI session WS connect failed, retrying')
+          await new Promise(r => setTimeout(r, delay))
+        } else {
+          throw err
+        }
+      }
+    }
   }
 
   private handleFrame(frame: WSFrame): void {
@@ -468,10 +486,19 @@ export class PiClient extends EventEmitter {
     params: PiRpcMethod[K]['params'],
   ): Promise<PiRpcMethod[K]['result']> {
     const conn = this.sessions.values().next().value as PiSessionConn | undefined
-    if (!conn) {
-      throw new Error(`No PI session available for ${method}`)
+    if (conn) {
+      return conn.rpc(method, params)
     }
-    return conn.rpc(method, params)
+    // No active session: create a transient conn for this one global RPC.
+    // Needed for session-agnostic methods (listCrons, runMcpCommand, …) that
+    // must work before any topic session exists.
+    const transient = new PiSessionConn(`global-${Date.now()}`, this.config)
+    try {
+      await transient.connect()
+      return await transient.rpc(method, params)
+    } finally {
+      transient.close()
+    }
   }
 
   disconnectSession(sessionId: string): void {

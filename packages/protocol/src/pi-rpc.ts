@@ -290,6 +290,34 @@ export const rpcErrorSchema = z.object({
 
 export type RpcError = z.infer<typeof rpcErrorSchema>
 
+// ─── MCP management ───────────────────────────────────────────────
+
+export const mcpServerSpecSchema = z.object({
+  transport: z.enum(['stdio', 'http', 'sse']).optional(),
+  // stdio fields
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  // http / sse fields
+  url: z.string().optional(),
+})
+
+export type McpServerSpec = z.infer<typeof mcpServerSpecSchema>
+
+export const runMcpCommandParamsSchema = z.object({
+  action: z.enum(['add', 'remove', 'list', 'get']),
+  name: z.string().optional(),
+  spec: mcpServerSpecSchema.optional(),
+})
+
+export const runMcpCommandResultSchema = z.object({
+  stdout: z.string(),
+  stderr: z.string(),
+  exitCode: z.number(),
+})
+
+export type RunMcpCommandParams = z.infer<typeof runMcpCommandParamsSchema>
+export type RunMcpCommandResult = z.infer<typeof runMcpCommandResultSchema>
+
 // ─── Method name mapping ──────────────────────────────────────────
 
 export type PiRpcMethod = {
@@ -356,5 +384,9 @@ export type PiRpcMethod = {
   getUsage: {
     params: GetUsageParams
     result: GetUsageResult
+  }
+  runMcpCommand: {
+    params: RunMcpCommandParams
+    result: RunMcpCommandResult
   }
 }

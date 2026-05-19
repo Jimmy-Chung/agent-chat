@@ -33,15 +33,18 @@ export function registerInteractionHandlers(
       if (!interaction || interaction.status !== 'pending') return
 
       const decision =
-        data.action === 'approve'
-          ? 'approve'
-          : data.action === 'reject'
-            ? 'reject'
+        data.action === 'choose'
+          ? 'choose'
+          : data.action === 'approve'
+            ? 'approve'
             : 'reject'
 
+      const responsePayload = data.action === 'choose' && data.choice
+        ? { decision, choice: data.choice }
+        : { decision }
       await interactionRepo.updateInteraction(data.interactionId, {
         status: 'resolved',
-        response_json: JSON.stringify({ decision }),
+        response_json: JSON.stringify(responsePayload),
         resolved_at: Date.now(),
       })
 
@@ -52,6 +55,7 @@ export function registerInteractionHandlers(
             sessionId: topic.pi_session_id,
             interactionId: data.interactionId,
             decision,
+            ...(data.action === 'choose' && data.choice ? { choice: data.choice } : {}),
           })
         } catch (err) {
           logger.warn({ err }, 'Failed to resolve interaction on PI')

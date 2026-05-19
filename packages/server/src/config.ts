@@ -19,6 +19,7 @@ export interface Env {
 export interface AppConfig {
   token: string
   piAdapterUrl: string
+  originalPiAdapterUrl: string
   piAdapterToken: string
   artifactTokenSecret: string
   logLevel: string
@@ -38,6 +39,9 @@ export function createConfig(env: Env): AppConfig {
   return {
     token: env.AGENT_CHAT_TOKEN || '',
     piAdapterUrl:
+      env.PI_ADAPTER_URL ||
+      'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
+    originalPiAdapterUrl:
       env.PI_ADAPTER_URL ||
       'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
     piAdapterToken: env.PI_ADAPTER_TOKEN || '',

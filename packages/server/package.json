@@ -22,10 +22,13 @@
     "@cloudflare/workers-types": "^4.20250109.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.13.4",
+    "@types/ws": "^8.18.0",
     "better-sqlite3": "^12.9.0",
     "drizzle-kit": "^0.30.5",
+    "socks-proxy-agent": "^10.0.0",
     "typescript": "^5.7.3",
     "vitest": "^3.1.1",
-    "wrangler": "^3.101.0"
+    "wrangler": "^3.101.0",
+    "ws": "^8.18.0"
   }
 }

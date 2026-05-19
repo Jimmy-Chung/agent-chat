@@ -232,7 +232,7 @@ export function Sidebar() {
             onClick={() => setShowConnConfig(true)}
           />
           <NotificationBell />
-          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.5.1</span>
+          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.5.2</span>
         </div>
       </div>
 

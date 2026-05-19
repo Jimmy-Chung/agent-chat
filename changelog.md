@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-05-19 [v1.5.2] — MCP 管理面板 + InteractionCard + RPC 重试
+
+### FEAT-038 (AIT-139): Agent MCP 管理面板
+- TopicPanel 新增 MCP 管理入口按钮，MCP 配置弹窗支持 list/add/remove
+- User 级 MCP（全局，只读）+ Project 级 MCP（话题 cwd，可编辑）双层 scope
+- WS 优先 + HTTP 回退双链路，add/remove 后自动通知 PI Adapter 重载配置
+- 协议层新增 `mcp.command` / `mcp.command.result` / `mcp.command.error` 事件
+
+### FEAT-039 (AIT-125): AskUserQuestion 选择交互卡片
+- 新增 InteractionCard 组件，支持 choice 类型交互（选项渲染 + 选择回复）
+- user.action choice 回复链路完整接通
+
+### AIT-124: keepalive_ack 双向心跳 + health probe 60s + RPC 重试机制
+- 双向 keepalive_ack 心跳，health probe 间隔 60s
+- PI RPC 调用新增重试机制，提升连接稳定性
+
 ## 2026-05-19 [v1.5.1] — 版本号显示更新
 
 ### chore: 发版流程补充版本号同步

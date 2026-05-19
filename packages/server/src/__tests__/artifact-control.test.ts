@@ -13,6 +13,7 @@ import {
 const config = {
   token: 'test-token',
   piAdapterUrl: '',
+  originalPiAdapterUrl: '',
   piAdapterToken: '',
   artifactTokenSecret: 'secret',
   logLevel: 'info',
