@@ -295,6 +295,7 @@ export const messagesHistorySchema = z.object({
 export const errorSchema = z.object({
   code: z.string(),
   message: z.string(),
+  details: z.record(z.unknown()).optional(),
 })
 
 export const mcpCommandResultSchema = z.object({
@@ -306,6 +307,18 @@ export const mcpCommandResultSchema = z.object({
 })
 
 export const mcpCommandErrorSchema = z.object({
+  requestId: z.string(),
+  code: z.string(),
+  message: z.string(),
+})
+
+// Provider RPC relay (AIT-152) — server→client response
+export const providerRpcResultSchema = z.object({
+  requestId: z.string(),
+  result: z.unknown(),
+})
+
+export const providerRpcErrorSchema = z.object({
   requestId: z.string(),
   code: z.string(),
   message: z.string(),
@@ -350,6 +363,8 @@ export type ServerEvent =
   | { type: 'error'; data: z.infer<typeof errorSchema> }
   | { type: 'mcp.command.result'; data: z.infer<typeof mcpCommandResultSchema> }
   | { type: 'mcp.command.error'; data: z.infer<typeof mcpCommandErrorSchema> }
+  | { type: 'provider.rpc.result'; data: z.infer<typeof providerRpcResultSchema> }
+  | { type: 'provider.rpc.error'; data: z.infer<typeof providerRpcErrorSchema> }
   | {
       type: 'messages.history'
       data: z.infer<typeof messagesHistorySchema>
@@ -389,6 +404,8 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   error: errorSchema,
   'mcp.command.result': mcpCommandResultSchema,
   'mcp.command.error': mcpCommandErrorSchema,
+  'provider.rpc.result': providerRpcResultSchema,
+  'provider.rpc.error': providerRpcErrorSchema,
   'messages.history': messagesHistorySchema,
 }
 
@@ -411,6 +428,7 @@ export const topicCreateSchema = z.object({
     })
     .optional(),
   sopTemplateId: z.string().optional(),
+  providerId: z.string().optional(),
 })
 
 export const topicDeleteSchema = z.object({
@@ -524,6 +542,20 @@ export const mcpCommandSchema = z.object({
   projectDir: z.string().optional(),
 })
 
+// Provider RPC relay (AIT-152) — client→server request
+export const providerRpcSchema = z.object({
+  requestId: z.string(),
+  method: z.enum([
+    'listProviderConfigs',
+    'addProviderConfig',
+    'updateProviderConfig',
+    'removeProviderConfig',
+    'switchSessionProvider',
+    'getUsage',
+  ]),
+  params: z.record(z.unknown()),
+})
+
 // ─── Client event type + schema ───────────────────────────────────
 
 export type ClientEvent =
@@ -564,6 +596,7 @@ export type ClientEvent =
   | { type: 'topic.select'; data: z.infer<typeof topicSelectSchema> }
   | { type: 'cron.resume'; data: z.infer<typeof cronResumeSchema> }
   | { type: 'mcp.command'; data: z.infer<typeof mcpCommandSchema> }
+  | { type: 'provider.rpc'; data: z.infer<typeof providerRpcSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -588,4 +621,5 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.select': topicSelectSchema,
   'cron.resume': cronResumeSchema,
   'mcp.command': mcpCommandSchema,
+  'provider.rpc': providerRpcSchema,
 }

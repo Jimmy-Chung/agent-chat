@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.5.2 |
-| 更新时间 | 2026-05-19 |
+| 当前版本 | v1.6.0 |
+| 更新时间 | 2026-05-20 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -50,10 +50,46 @@
 | BUG-036 | AIT-112 |
 | BUG-037 | AIT-114 |
 | BUG-038 | AIT-124 |
+| BUG-039 | — |
+| BUG-040 | AIT-145 |
+
+> 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-040: AIT-143 衍生 — sendUserMessage 发送侧兜底 + agent.status idle 收口
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-040 |
+| 标题 | AIT-143 衍生：sendUserMessage 后无 PI 事件兜底 + agent.status idle 收口 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-20 |
+| 修复时间 | 2026-05-20 |
+| 修复版本 | v1.6.0 |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/server/src/ws/message-delivery.ts, packages/web/src/lib/ws-client.ts |
+| 描述 | Adapter 在 setPlanMode + bypassPermissions 冲突场景下出现 CLI 静默 exit 0，server 已向前端广播 message.start 但 adapter 不再产生任何 PI 事件，UI 永远 loading（详见 AIT-143）。 |
+| 根因 | 1) server 发送 sendUserMessage 后没有 turn 级别的超时保护；2) 前端 agent.status idle 收口只看全局单例 streamingMessageId，不能清理同一 topic 的其他 streaming 残留。 |
+| 修复方案 | 1) server 在 attemptDelivery RPC ack 之后启动 turn watchdog（默认 30s，TURN_WATCHDOG_TIMEOUT_MS 可配置），收到任意 PI 事件即取消；超时则广播 error{code:TURN_NO_RESPONSE} + agent.status idle；2) 前端收到 agent.status idle 时扫描该 topic 全部 status=streaming 消息并 finalize 为 aborted，同步清 streamingText/Thinking/ToolInputs。 |
+| 外部依赖 | AIT-143 — Adapter 侧 ①②③ 修复合入后联调 |
+
+### BUG-039: 长 Thinking / 切 Topic 中断输出
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-039 |
+| 标题 | 长 thinking 或切换 Topic 返回后前端流式输出中断 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-20 |
+| 修复时间 | 2026-05-20 |
+| 修复版本 | v1.6.0 |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/server/src/ws/handlers/message.handler.ts, packages/web/src/lib/ws-client.ts, packages/web/src/stores/message-store.ts |
+| 描述 | 1) Adapter 长时间 thinking 或停顿后前端一直显示 thinking，没有继续输出；2) 会话输出中切到别的 topic 再切回，已输出文本被覆盖、后续 delta 不再续写。 |
+| 根因 | 1) server 转发 PI 事件时不会在 message.start/delta 主动推 agent.status=streaming，UI 只信 PI 自发的 agent.status，长 thinking 后状态推进不及时；2) messages.load 直接读 DB 快照，未先 flush pendingParts；3) 前端 setMessages 会清掉对应消息的 streamingText 缓存，下一段 delta 失去续写基准。 |
+| 修复方案 | 1) server event-router 在 message.start 及 text/thinking delta 时兜底广播 agent.status=streaming；2) message.handler `messages.load` 入口先 flushParts；3) 前端 message-store 新增 getPartContent / setStreamingThinking，setMessages 不清掉仍在 history 中的消息 live buffer；ws-client 收到 delta 时若 live buffer 缺失则从已有 snapshot part 续写。 |
+| 备注 | 与 BUG-040 同步在 v1.6.0 发布；待补建 Linear 单后回填映射。 |
 
 ### BUG-037: PI Adapter 未发送 message.end 导致消息永远卡在 streaming
 

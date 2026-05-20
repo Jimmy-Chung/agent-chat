@@ -8,6 +8,7 @@ import {
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
   searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema,
   mcpCommandSchema,
+  providerRpcSchema,
 } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
@@ -421,6 +422,22 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
           break
         }
+        const requestedCwd = data.agentType === 'programming' ? data.programming?.cwd?.trim() : undefined
+        if (requestedCwd) {
+          const occupiedTopic = await topicRepo.getTopicByCwd(requestedCwd)
+          if (occupiedTopic) {
+            this.broadcastAll('error', {
+              code: 'DUPLICATE_CWD',
+              message: '已有同目录话题',
+              details: {
+                topicId: occupiedTopic.id,
+                topicName: occupiedTopic.name,
+                cwd: requestedCwd,
+              },
+            })
+            break
+          }
+        }
         const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
         const generalSpecJson = sopTemplate
           ? JSON.stringify({
@@ -460,6 +477,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             break
           }
           const params = buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0]
+          // AIT-152 — forward optional providerId from frontend to createSession
+          if (data.providerId) {
+            (params as Record<string, unknown>).providerId = data.providerId
+          }
           logger.info({ topicId: topic.id, params }, 'topic.create: calling createSession')
           const result = await piForCreate.createSession(params)
           logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'topic.create: createSession succeeded')
@@ -636,6 +657,60 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.sendTo(ws, 'mcp.command.error', {
             requestId: data.requestId,
             code: 'PI_MCP_COMMAND_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          })
+        }
+        break
+      }
+
+      case 'provider.rpc': {
+        const data = providerRpcSchema.parse(frame.d)
+        const pi = await this.ensurePiClient()
+        if (!pi) {
+          this.sendTo(ws, 'provider.rpc.error', {
+            requestId: data.requestId,
+            code: 'PI_UNAVAILABLE',
+            message: 'Config not initialized',
+          })
+          break
+        }
+        try {
+          let result: unknown
+          if (data.method === 'switchSessionProvider') {
+            const topicId = (data.params as Record<string, unknown>).topicId as string
+            if (!topicId) {
+              this.sendTo(ws, 'provider.rpc.error', {
+                requestId: data.requestId,
+                code: 'INVALID_PARAMS',
+                message: 'topicId is required for switchSessionProvider',
+              })
+              break
+            }
+            const topic = await topicRepo.getTopic(topicId)
+            if (!topic?.pi_session_id) {
+              this.sendTo(ws, 'provider.rpc.error', {
+                requestId: data.requestId,
+                code: 'NO_SESSION',
+                message: 'No PI session for this topic',
+              })
+              break
+            }
+            result = await pi.rpc('switchSessionProvider', {
+              sessionId: topic.pi_session_id,
+              providerId: (data.params as Record<string, unknown>).providerId as string,
+            })
+            // adapter will emit session.health during switch — no extra handling needed
+          } else {
+            // listProviderConfigs / addProviderConfig / updateProviderConfig / removeProviderConfig / getUsage
+            // are session-agnostic — use rpcGlobal (transient session to adapter)
+            result = await pi.rpcGlobal(data.method, data.params)
+          }
+          this.sendTo(ws, 'provider.rpc.result', { requestId: data.requestId, result })
+        } catch (err) {
+          logger.warn({ err, method: data.method }, 'Provider RPC relay failed')
+          this.sendTo(ws, 'provider.rpc.error', {
+            requestId: data.requestId,
+            code: 'PI_RPC_FAILED',
             message: err instanceof Error ? err.message : String(err),
           })
         }

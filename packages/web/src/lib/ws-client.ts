@@ -205,6 +205,10 @@ class WsClient {
       case 'message.delta': {
         const part = event.data.part
         if (part.kind === 'text') {
+          if (useMessageStore.getState().streamingText[event.data.messageId] === undefined) {
+            const existingText = messageStore.getPartContent(event.data.messageId, 'text')
+            messageStore.setStreamingText(event.data.messageId, existingText)
+          }
           messageStore.appendDelta(event.data.messageId, part.content)
           const nextText = `${useMessageStore.getState().streamingText[event.data.messageId] ?? ''}`
           messageStore.upsertSnapshotPart(
@@ -215,6 +219,10 @@ class WsClient {
           )
         }
         if (part.kind === 'thinking') {
+          if (useMessageStore.getState().streamingThinking[event.data.messageId] === undefined) {
+            const existingThinking = messageStore.getPartContent(event.data.messageId, 'thinking')
+            messageStore.setStreamingThinking(event.data.messageId, existingThinking)
+          }
           messageStore.appendThinkingDelta(event.data.messageId, part.content)
           const nextThinking = `${useMessageStore.getState().streamingThinking[event.data.messageId] ?? ''}`
           messageStore.upsertSnapshotPart(
@@ -237,6 +245,7 @@ class WsClient {
           finished_at: Date.now(),
           stop_reason: event.data.stopReason,
         })
+        messageStore.setAgentStatus(event.data.topicId, event.data.stopReason === 'tool_use' ? 'tool' : 'idle')
         break
 
       case 'message.delivery': {
@@ -458,18 +467,28 @@ class WsClient {
         const agentTopicId = d.topicId as string
         const agentState = d.state as string
         messageStore.setAgentStatus(agentTopicId, agentState)
-        // When agent becomes idle, clear any streaming state that never got a message.end
-        // and clear any lingering agent.progress display
+        // BUG-040 ⑤ — On agent.status: idle, force-finalize any streaming residue
+        // for this topic. Adapter may have stopped emitting events without a
+        // message.end (e.g. CLI silent exit). Scan every streaming message on this
+        // topic, not just the global singleton, and clear its live buffer.
         if (agentState === 'idle') {
           messageStore.clearProgress(agentTopicId)
-          const { streamingTopicId, streamingMessageId } = useMessageStore.getState()
-          if (streamingTopicId === agentTopicId && streamingMessageId) {
-            messageStore.endStreaming(streamingMessageId)
-            messageStore.updateMessage(streamingMessageId, {
+          const state = useMessageStore.getState()
+          const streamingMessages = (state.byTopic[agentTopicId] ?? []).filter(
+            (m) => m.status === 'streaming',
+          )
+          for (const m of streamingMessages) {
+            messageStore.endStreaming(m.id)
+            messageStore.updateMessage(m.id, {
               status: 'aborted',
               finished_at: Date.now(),
               stop_reason: 'aborted',
             })
+          }
+          // Also handle the legacy global pointer in case the streaming message
+          // was added under a different topic during a race.
+          if (state.streamingTopicId === agentTopicId && state.streamingMessageId) {
+            messageStore.endStreaming(state.streamingMessageId)
           }
         }
         break
@@ -558,6 +577,14 @@ case 'usage.snapshot': {
 
       case 'mcp.command.error':
         handleMcpError(event.data as { requestId: string; code: string; message: string })
+        break
+
+      case 'provider.rpc.result':
+        handleProviderRpcResult(event.data as ProviderRpcResult)
+        break
+
+      case 'provider.rpc.error':
+        handleProviderRpcError(event.data as { requestId: string; code: string; message: string })
         break
     }
   }
@@ -663,6 +690,63 @@ export function handleMcpError(data: { requestId: string; code: string; message:
   const entry = pendingMcpRequests.get(data.requestId)
   if (!entry) return
   pendingMcpRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.reject(new Error(`${data.code}: ${data.message}`))
+}
+
+// ─── Provider RPC via WS (server relays to adapter) ──
+
+export interface ProviderRpcResult {
+  requestId: string
+  result: unknown
+}
+
+const pendingProviderRpcRequests = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+
+export async function sendProviderRpc(
+  method: 'listProviderConfigs' | 'addProviderConfig' | 'updateProviderConfig' | 'removeProviderConfig' | 'switchSessionProvider' | 'getUsage',
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const { status } = useWsStore.getState()
+  if (status !== 'connected') {
+    throw new Error('WebSocket not connected')
+  }
+  const client = getWsClient()
+  const requestId = crypto.randomUUID()
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingProviderRpcRequests.delete(requestId)
+      reject(new Error(`Provider RPC timeout: ${method}`))
+    }, 15_000)
+
+    pendingProviderRpcRequests.set(requestId, { resolve, reject, timer })
+
+    const sent = client.send({
+      type: 'provider.rpc',
+      data: { requestId, method, params },
+    })
+
+    if (!sent) {
+      clearTimeout(timer)
+      pendingProviderRpcRequests.delete(requestId)
+      reject(new Error('Failed to send provider RPC'))
+    }
+  })
+}
+
+export function handleProviderRpcResult(data: ProviderRpcResult): void {
+  const entry = pendingProviderRpcRequests.get(data.requestId)
+  if (!entry) return
+  pendingProviderRpcRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.resolve(data.result)
+}
+
+export function handleProviderRpcError(data: { requestId: string; code: string; message: string }): void {
+  const entry = pendingProviderRpcRequests.get(data.requestId)
+  if (!entry) return
+  pendingProviderRpcRequests.delete(data.requestId)
   clearTimeout(entry.timer)
   entry.reject(new Error(`${data.code}: ${data.message}`))
 }

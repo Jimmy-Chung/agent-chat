@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
-import { getWsClient } from '@/lib/ws-client'
+import { getWsClient, sendProviderRpc } from '@/lib/ws-client'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore } from '@/stores/message-store'
-import { useWsStore } from '@/stores/ws-store'
+import { useTopicStore } from '@/stores/topic-store'
+import { useWsStore, type ProviderConfig } from '@/stores/ws-store'
 import type { Artifact } from '@agent-chat/protocol'
 
 const EMPTY_ARTIFACTS: Artifact[] = []
@@ -93,6 +94,47 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const showStopButton = isStreaming || isAgentActive || hasPendingUserMessage
   const sessionReady = useWsStore((s) => s.sessionReadyByTopic[topicId])
   const sessionLoading = sessionReady !== true
+
+  const activeTopic = useTopicStore((s) => s.topics.find((t) => t.id === topicId))
+  const isProgramming = activeTopic?.agent_type === 'programming'
+  const currentModel = activeTopic?.current_model
+
+  const providerConfigs = useWsStore((s) => s.providerConfigs)
+  const setProviderConfigs = useWsStore((s) => s.setProviderConfigs)
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
+  const [selectedModel, setSelectedModel] = useState<string>(currentModel ?? '')
+  const [providerConfigsLoaded, setProviderConfigsLoaded] = useState(false)
+
+  // Sync current model from topic
+  useEffect(() => {
+    if (currentModel) setSelectedModel(currentModel)
+  }, [currentModel])
+
+  // Load provider configs on mount for programming topics
+  useEffect(() => {
+    if (!isProgramming || providerConfigsLoaded) return
+    let cancelled = false
+    sendProviderRpc('listProviderConfigs', {}).then((result) => {
+      if (cancelled) return
+      const configs = (result as { configs: ProviderConfig[] }).configs ?? []
+      setProviderConfigs(configs)
+      setProviderConfigsLoaded(true)
+      // Default to first active or first available provider
+      if (!selectedProviderId && configs.length > 0) {
+        const active = configs.find((c) => c.isActive) ?? configs[0]
+        setSelectedProviderId(active.id)
+        if (!selectedModel && active.models?.length) {
+          setSelectedModel(active.models[0])
+        }
+      }
+    }).catch(() => {
+      if (!cancelled) setProviderConfigsLoaded(true)
+    })
+    return () => { cancelled = true }
+  }, [isProgramming, providerConfigsLoaded])
+
+  const selectedProvider = providerConfigs.find((c) => c.id === selectedProviderId)
+  const availableModels = selectedProvider?.models ?? []
 
   const topicArtifacts = useArtifactStore((s) => s.byTopic[topicId] ?? EMPTY_ARTIFACTS)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
@@ -563,6 +605,28 @@ export function MessageInput({ topicId }: MessageInputProps) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}
         >
+          {isProgramming && (
+            <div className="flex items-center gap-2">
+              <ProviderModelSelect
+                label="Provider"
+                value={selectedProviderId}
+                options={providerConfigs.map((c) => ({ value: c.id, label: c.name, group: c.group }))}
+                loading={!providerConfigsLoaded}
+                onChange={(id) => {
+                  setSelectedProviderId(id)
+                  const cfg = providerConfigs.find((c) => c.id === id)
+                  if (cfg?.models?.length) setSelectedModel(cfg.models[0])
+                }}
+              />
+              <ProviderModelSelect
+                label="Model"
+                value={selectedModel}
+                options={availableModels.map((m) => ({ value: m, label: m }))}
+                loading={false}
+                onChange={(m) => setSelectedModel(m)}
+              />
+            </div>
+          )}
           <TextareaAutosize
             ref={textareaRef}
             value={value}
@@ -720,5 +784,106 @@ function StopIcon() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
       <rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor" />
     </svg>
+  )
+}
+
+function ProviderModelSelect({
+  label,
+  value,
+  options,
+  loading,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: Array<{ value: string; label: string; group?: string }>
+  loading: boolean
+  onChange: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const selected = options.find((o) => o.value === value)
+  // Group options
+  const groups = new Map<string, Array<typeof options[0]>>()
+  for (const o of options) {
+    const g = o.group ?? ''
+    if (!groups.has(g)) groups.set(g, [])
+    groups.get(g)!.push(o)
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-medium uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.04em' }}>
+          {label}
+        </span>
+        <button
+          onClick={() => setOpen(!open)}
+          disabled={loading || options.length === 0}
+          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] transition-colors hover:opacity-80 disabled:opacity-50"
+          style={{ background: 'var(--bg-raised)', border: '1px solid var(--hairline)', color: 'var(--fg)' }}
+        >
+          <span>{loading ? '加载中...' : selected?.label ?? '选择...'}</span>
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2">
+            <path d="M2 3l2 2 2-2" />
+          </svg>
+        </button>
+      </div>
+      {open && options.length > 0 && (
+        <div
+          className="absolute bottom-full left-0 mb-1.5 rounded-lg shadow-lg z-50 py-1 min-w-[160px] max-h-[200px] overflow-y-auto"
+          style={{ background: 'var(--bg-surface)', border: '1px solid var(--hairline)' }}
+        >
+          {groups.size > 1 ? (
+            Array.from(groups.entries()).map(([group, groupOptions]) => (
+              <div key={group}>
+                {group && (
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.04em' }}>
+                    {group}
+                  </div>
+                )}
+                {groupOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    onClick={() => { onChange(o.value); setOpen(false) }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:opacity-80"
+                    style={{ color: o.value === value ? 'var(--fg)' : 'var(--fg-dim)' }}
+                  >
+                    {o.value === value && (
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5l2 2 4-4" /></svg>
+                    )}
+                    <span className={o.value === value ? '' : 'ml-[14px]'}>{o.label}</span>
+                  </button>
+                ))}
+              </div>
+            ))
+          ) : (
+            options.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => { onChange(o.value); setOpen(false) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:opacity-80"
+                style={{ color: o.value === value ? 'var(--fg)' : 'var(--fg-dim)' }}
+              >
+                {o.value === value && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5l2 2 4-4" /></svg>
+                )}
+                <span className={o.value === value ? '' : 'ml-[14px]'}>{o.label}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   )
 }

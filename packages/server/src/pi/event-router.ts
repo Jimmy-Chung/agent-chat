@@ -75,6 +75,52 @@ const currentAssistantBySession = new Map<string, string>()
 // Serialize events per session to prevent out-of-order broadcasts
 const sessionQueues = new Map<string, Promise<void>>()
 
+// BUG-040 ④ — Turn watchdog: after sendUserMessage RPC is ack'd, give the adapter
+// a budget to start producing the next assistant turn. If no PI event arrives for
+// this topic within the budget, broadcast an error and force agent.status: idle so
+// the UI exits loading and lets the user retry. The watchdog is cleared as soon as
+// any PI event for that topic reaches the router (means adapter is alive).
+interface PendingTurn {
+  timer: ReturnType<typeof setTimeout>
+  userMessageId: string
+  startedAt: number
+}
+const pendingTurnsByTopic = new Map<string, PendingTurn>()
+
+export function startPendingTurnWatchdog(
+  topicId: string,
+  userMessageId: string,
+  broadcaster: EventBroadcaster,
+  timeoutMs: number,
+): void {
+  clearPendingTurnWatchdog(topicId)
+  const timer = setTimeout(() => {
+    pendingTurnsByTopic.delete(topicId)
+    logger.warn(
+      { topicId, userMessageId, timeoutMs },
+      'Turn watchdog timed out — adapter produced no PI event after sendUserMessage',
+    )
+    broadcaster.broadcast('error', {
+      code: 'TURN_NO_RESPONSE',
+      message: 'Agent 在指定时间内没有响应，请重试。',
+      details: { topicId, userMessageId, timeoutMs },
+    })
+    broadcaster.broadcast('agent.status', { topicId, state: 'idle' })
+  }, timeoutMs)
+  pendingTurnsByTopic.set(topicId, {
+    timer,
+    userMessageId,
+    startedAt: Date.now(),
+  })
+}
+
+export function clearPendingTurnWatchdog(topicId: string): void {
+  const pending = pendingTurnsByTopic.get(topicId)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  pendingTurnsByTopic.delete(topicId)
+}
+
 export function routePiEvents(
   pi: PiClient,
   broadcaster: EventBroadcaster,
@@ -86,8 +132,13 @@ export function routePiEvents(
 
   pi.on('event', (event: PIEvent) => {
     const lastSeq = lastSeqBySession.get(event.sessionId) ?? 0
-    if (event.seq <= lastSeq) return
-    lastSeqBySession.set(event.sessionId, event.seq)
+    // AIT-150 ② — session.health events carry seq=0 and must not be filtered by
+    // seq dedup; they are control-plane signals emitted on connect/disconnect.
+    const isHealth = event.payload.kind === 'session.health'
+    if (!isHealth && event.seq <= lastSeq) return
+    if (!isHealth) {
+      lastSeqBySession.set(event.sessionId, event.seq)
+    }
 
     logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
     const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
@@ -108,6 +159,10 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
   const sessionId = event.sessionId
   const topicId = await findTopicIdBySession(sessionId)
 
+  // BUG-040 ④ — Any real PI event proves the adapter is alive for this turn.
+  // Clear the watchdog before further routing.
+  if (topicId) clearPendingTurnWatchdog(topicId)
+
   switch (payload.kind) {
     case 'message.start': {
       if (!topicId) return
@@ -125,6 +180,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         messageId: msg.id,
         role: 'assistant',
       })
+      hub.broadcast('agent.status', { topicId, state: 'streaming' })
       break
     }
 
@@ -145,6 +201,9 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         messageId: payload.messageId,
         part: payload.part,
       })
+      if (kind === 'text' || kind === 'thinking') {
+        hub.broadcast('agent.status', { topicId, state: 'streaming' })
+      }
       break
     }
 

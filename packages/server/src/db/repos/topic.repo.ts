@@ -1,8 +1,21 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
 import type { Topic } from '@agent-chat/protocol'
 import { topics } from '../schema'
 import { getDb } from '../migrate'
 import { ulid } from '../../lib/ulid'
+
+function normalizeCwd(cwd: string): string {
+  return cwd.trim().replace(/\/+$/, '') || '/'
+}
+
+function parseProgrammingSpec(topic: Topic): { cwd?: string } | null {
+  if (!topic.programming_spec_json) return null
+  try {
+    return JSON.parse(topic.programming_spec_json) as { cwd?: string }
+  } catch {
+    return null
+  }
+}
 
 export async function createTopic(input: {
   name: string
@@ -55,6 +68,27 @@ export async function listTopics(): Promise<Topic[]> {
     .where(eq(topics.archived, false))
     .all()
   return rows.map(toDomain)
+}
+
+export async function getTopicByCwd(cwd: string, excludeTopicId?: string): Promise<Topic | undefined> {
+  const normalized = normalizeCwd(cwd)
+  const rows = await getDb()
+    .select()
+    .from(topics)
+    .where(
+      excludeTopicId
+        ? and(eq(topics.archived, false), eq(topics.agentType, 'programming'), ne(topics.id, excludeTopicId))
+        : and(eq(topics.archived, false), eq(topics.agentType, 'programming')),
+    )
+    .all()
+
+  return rows
+    .map(toDomain)
+    .find((topic) => {
+      const spec = parseProgrammingSpec(topic)
+      if (!spec?.cwd) return false
+      return normalizeCwd(spec.cwd) === normalized
+    })
 }
 
 const topicKeyMap: Record<string, string> = {

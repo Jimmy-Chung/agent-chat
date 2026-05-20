@@ -3,7 +3,119 @@
 import { useEffect, useState, useCallback } from 'react'
 import { getWsClient, type PiConfig } from '@/lib/ws-client'
 import { useWsStore } from '@/stores/ws-store'
+import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
+
+interface AgentChatErrorDetail {
+  code?: string
+  message?: string
+  details?: Record<string, unknown>
+}
+
+function describeError(detail: AgentChatErrorDetail): { tone: 'error' | 'warning'; title: string; description?: string } | null {
+  if (detail.code === 'DUPLICATE_NAME') {
+    return {
+      tone: 'warning',
+      title: '同名话题已存在',
+      description: '请更换话题名称后再创建。',
+    }
+  }
+
+  if (detail.code === 'DUPLICATE_CWD') {
+    const topicName = typeof detail.details?.topicName === 'string' ? detail.details.topicName : null
+    const topicId = typeof detail.details?.topicId === 'string' ? detail.details.topicId : null
+    return {
+      tone: 'warning',
+      title: '已有同目录话题',
+      description: topicName && topicId
+        ? `${topicName} · ${topicId}`
+        : topicId
+          ? `Topic ID: ${topicId}`
+          : '请选择其他工作目录后再创建。',
+    }
+  }
+
+  if (detail.code === 'PI_SESSION_FAILED') {
+    return {
+      tone: 'error',
+      title: '创建 Agent 会话失败',
+      description: '请稍后重试，或检查 PI Adapter 连接状态。',
+    }
+  }
+
+  return null
+}
+
+function ErrorToastListener() {
+  const pushToast = useToastStore((s) => s.pushToast)
+
+  useEffect(() => {
+    const onError = (event: Event) => {
+      const detail = (event as CustomEvent<AgentChatErrorDetail>).detail ?? {}
+      const toast = describeError(detail)
+      if (!toast) return
+      pushToast(toast)
+    }
+
+    window.addEventListener('agent-chat:error', onError)
+    return () => window.removeEventListener('agent-chat:error', onError)
+  }, [pushToast])
+
+  return null
+}
+
+function DisconnectBanner({
+  onReset,
+}: {
+  onReset: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 text-sm"
+      style={{ backgroundColor: 'var(--role-system)', color: '#fff' }}
+    >
+      <span>连接已断开</span>
+      <button
+        onClick={onReset}
+        className="rounded px-2 py-0.5 text-xs font-medium"
+        style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
+      >
+        重新输入
+      </button>
+    </div>
+  )
+}
+
+function resetConnection(setPiConfig: (config: PiConfig | null) => void, setStep: (step: Step) => void) {
+  localStorage.removeItem(TOKEN_KEY)
+  getWsClient().disconnect()
+  setPiConfig(null)
+  setStep('auth')
+}
+
+function MainContent({
+  status,
+  setPiConfig,
+  setStep,
+  children,
+}: {
+  status: string
+  setPiConfig: (config: PiConfig | null) => void
+  setStep: (step: Step) => void
+  children: React.ReactNode
+}) {
+  const handleReset = useCallback(() => {
+    resetConnection(setPiConfig, setStep)
+  }, [setPiConfig, setStep])
+
+  return (
+    <>
+      <ErrorToastListener />
+      {status === 'disconnected' && <DisconnectBanner onReset={handleReset} />}
+      {children}
+    </>
+  )
+}
 
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
 
@@ -16,7 +128,6 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const status = useWsStore((s) => s.status)
   const unauthorized = useWsStore((s) => s.unauthorized)
 
-  // On mount, check localStorage for existing config
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY)
     const wssUrl = localStorage.getItem(PI_WSS_URL_KEY)
@@ -33,7 +144,6 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     setMounted(true)
   }, [])
 
-  // Connect WS when both token and PI config are ready
   useEffect(() => {
     if (step !== 'main' || !piConfig) return
     const client = getWsClient()
@@ -43,7 +153,6 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [step, piConfig])
 
-  // Listen for PI config changes from Sidebar modal
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PiConfig>).detail
@@ -58,13 +167,9 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('agent-chat:pi-config-changed', handler)
   }, [])
 
-  // Auto-logout when server rejects the token (close code 4401)
   useEffect(() => {
     if (unauthorized) {
-      localStorage.removeItem(TOKEN_KEY)
-      getWsClient().disconnect()
-      setPiConfig(null)
-      setStep('auth')
+      resetConnection(setPiConfig, setStep)
     }
   }, [unauthorized])
 
@@ -89,35 +194,15 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
         initialWssUrl={piConfig?.wssUrl ?? ''}
         initialToken={piConfig?.piToken ?? ''}
         onConfirm={handlePiConfigConfirm}
-        onClose={() => { /* cannot close without config */ }}
+        onClose={() => {}}
       />
     )
   }
 
   return (
-    <>
-      {status === 'disconnected' && (
-        <div
-          className="fixed inset-x-0 top-0 z-50 flex items-center justify-between px-4 py-2 text-sm"
-          style={{ backgroundColor: 'var(--role-system)', color: '#fff' }}
-        >
-          <span>连接已断开</span>
-          <button
-            onClick={() => {
-              localStorage.removeItem(TOKEN_KEY)
-              getWsClient().disconnect()
-              setPiConfig(null)
-              setStep('auth')
-            }}
-            className="rounded px-2 py-0.5 text-xs font-medium"
-            style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
-          >
-            重新输入
-          </button>
-        </div>
-      )}
+    <MainContent status={status} setPiConfig={setPiConfig} setStep={setStep}>
       {children}
-    </>
+    </MainContent>
   )
 }
 

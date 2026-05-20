@@ -13,6 +13,9 @@ function createMockHub() {
       broadcastEvents.push({ type, data } as ServerEvent)
     }),
     getBroadcastEvents: () => broadcastEvents,
+    clearBroadcastEvents: () => {
+      broadcastEvents.length = 0
+    },
   }
 }
 
@@ -98,7 +101,7 @@ describe('Event router — session.health', () => {
     expect(mockHub.broadcast).not.toHaveBeenCalled()
   })
 
-  it('deduplicates session.health by seq', async () => {
+  it('does not deduplicate session.health by seq (bypasses seq filter)', async () => {
     const topic = await topicRepo.createTopic({ name: 'Dedup Health', kind: 'normal', agentType: 'general' })
     await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-dedup-h' })
 
@@ -113,7 +116,8 @@ describe('Event router — session.health', () => {
     mockPi.emit('event', event)
     await new Promise((r) => setTimeout(r, 50))
 
-    expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
+    // session.health bypasses seq dedup — both events pass through
+    expect(mockHub.broadcast).toHaveBeenCalledTimes(2)
   })
 
   it('accepts low seq events again after session recreate reset', async () => {
@@ -292,6 +296,7 @@ describe('Event router — message.end derives agent.status idle (AIT-137)', () 
       const messageId = `msg-${stopReason}`
       await setupTopicAndStartMessage(sessionId, messageId)
       mockHub.broadcast.mockClear()
+      mockHub.clearBroadcastEvents()
 
       mockPi.emit('event', {
         seq: 2,
@@ -315,6 +320,7 @@ describe('Event router — message.end derives agent.status idle (AIT-137)', () 
     const messageId = 'msg-tool-use'
     await setupTopicAndStartMessage(sessionId, messageId)
     mockHub.broadcast.mockClear()
+    mockHub.clearBroadcastEvents()
 
     mockPi.emit('event', {
       seq: 2,
