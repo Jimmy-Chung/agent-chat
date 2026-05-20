@@ -101,12 +101,38 @@ class PiSessionConn extends EventEmitter {
             payloadKind: typeof d?.payload?.kind === 'string' ? d.payload.kind : undefined,
             sessionId: this.sessionId,
           }, 'Failed to parse PI message')
+          // AIT-150 ③ — protocol errors indicate a broken connection; close and signal
+          this.stopHealthProbe()
+          this.emit('event', {
+            seq: 0,
+            sessionId: this.sessionId,
+            ts: Date.now(),
+            payload: { kind: 'session.health' as const, state: 'reconnecting' as const, piSessionId: this.sessionId },
+          })
+          this.emit('event', {
+            seq: 0,
+            sessionId: this.sessionId,
+            ts: Date.now(),
+            payload: { kind: 'session.health' as const, state: 'disconnected' as const, piSessionId: this.sessionId },
+          })
+          this.emit('close')
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close()
+          }
         }
       })
 
       ws.addEventListener('close', (event) => {
         logger.info({ code: event.code, reason: event.reason, sessionId: this.sessionId }, 'PI session WS closed')
         this.stopHealthProbe()
+        // AIT-150 ④ — emit reconnecting first so UI shows transient state,
+        // then disconnected. Full reconnect loop deferred to future version.
+        this.emit('event', {
+          seq: 0,
+          sessionId: this.sessionId,
+          ts: Date.now(),
+          payload: { kind: 'session.health' as const, state: 'reconnecting' as const, piSessionId: this.sessionId },
+        })
         this.emit('event', {
           seq: 0,
           sessionId: this.sessionId,
@@ -283,11 +309,11 @@ class PiSessionConn extends EventEmitter {
     this.lastMessageAt = Date.now()
     this.healthTimer = setInterval(() => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-      if (Date.now() - this.lastMessageAt > 60_000) {
+      if (Date.now() - this.lastMessageAt > 45_000) {
         logger.warn({ sessionId: this.sessionId }, 'PI health probe timeout, closing')
         this.ws.close()
       }
-    }, 20_000)
+    }, 15_000)
   }
 
   private stopHealthProbe(): void {

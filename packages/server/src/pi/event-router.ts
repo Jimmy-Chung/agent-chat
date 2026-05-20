@@ -132,8 +132,13 @@ export function routePiEvents(
 
   pi.on('event', (event: PIEvent) => {
     const lastSeq = lastSeqBySession.get(event.sessionId) ?? 0
-    if (event.seq <= lastSeq) return
-    lastSeqBySession.set(event.sessionId, event.seq)
+    // AIT-150 ② — session.health events carry seq=0 and must not be filtered by
+    // seq dedup; they are control-plane signals emitted on connect/disconnect.
+    const isHealth = event.payload.kind === 'session.health'
+    if (!isHealth && event.seq <= lastSeq) return
+    if (!isHealth) {
+      lastSeqBySession.set(event.sessionId, event.seq)
+    }
 
     logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
     const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
