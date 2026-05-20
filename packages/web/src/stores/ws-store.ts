@@ -6,12 +6,26 @@ import type { ClientEvent } from '@agent-chat/protocol'
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
+export interface ProviderConfig {
+  id: string
+  name: string
+  provider: string
+  apiKey?: string
+  baseUrl?: string
+  models?: string[]
+  isActive?: boolean
+  isDefault?: boolean
+  group?: string
+}
+
 interface WsState {
   status: ConnectionStatus
   lastSeq: number | null
   sessionHealthByTopic: Record<string, { state: string; lastError?: string }>
   sessionReadyByTopic: Record<string, boolean>
   unauthorized: boolean
+  providerConfigs: ProviderConfig[]
+  providerConfigsLoading: boolean
 }
 
 interface WsActions {
@@ -23,6 +37,8 @@ interface WsActions {
   setSessionHealth: (topicId: string, state: string, lastError?: string) => void
   setSessionReady: (topicId: string, ready: boolean) => void
   setUnauthorized: () => void
+  setProviderConfigs: (configs: ProviderConfig[]) => void
+  setProviderConfigsLoading: (loading: boolean) => void
 }
 
 export const useWsStore = create<WsState & WsActions>()(
@@ -32,9 +48,10 @@ export const useWsStore = create<WsState & WsActions>()(
     sessionHealthByTopic: {},
     sessionReadyByTopic: {},
     unauthorized: false,
+    providerConfigs: [],
+    providerConfigsLoading: false,
 
     connect: () => {
-      // Actual connection is managed by ws-client; this updates state
       set((s) => {
         s.status = 'connecting'
       })
@@ -78,6 +95,18 @@ export const useWsStore = create<WsState & WsActions>()(
       set((s) => {
         s.unauthorized = true
         s.status = 'disconnected'
+      })
+    },
+
+    setProviderConfigs: (configs) => {
+      set((s) => {
+        s.providerConfigs = configs
+      })
+    },
+
+    setProviderConfigsLoading: (loading) => {
+      set((s) => {
+        s.providerConfigsLoading = loading
       })
     },
   })),

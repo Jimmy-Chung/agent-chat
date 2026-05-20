@@ -48,6 +48,7 @@ export const createSessionParamsSchema = z.object({
   general: generalSpecSchema.optional(),
   initialModel: z.string().optional(),
   workflowMode: z.enum(['lazy', 'eager', 'off']).optional(),
+  providerId: z.string().optional(),
 })
 
 export const createSessionResultSchema = z.object({
@@ -268,6 +269,72 @@ export const getUsageResultSchema = z.object({
 export type GetUsageParams = z.infer<typeof getUsageParamsSchema>
 export type GetUsageResult = z.infer<typeof getUsageResultSchema>
 
+// ─── Provider management (AIT-152) ────────────────────────────────
+
+export const providerConfigSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  provider: z.string(),
+  apiKey: z.string().optional(),
+  models: z.array(z.string()).optional(),
+  isActive: z.boolean().optional(),
+  group: z.string().optional(),
+})
+
+export type ProviderConfigRpc = z.infer<typeof providerConfigSchema>
+
+// listProviderConfigs
+export const listProviderConfigsParamsSchema = z.object({
+  group: z.string().optional(),
+})
+export const listProviderConfigsResultSchema = z.object({
+  configs: z.array(providerConfigSchema),
+})
+export type ListProviderConfigsParams = z.infer<typeof listProviderConfigsParamsSchema>
+export type ListProviderConfigsResult = z.infer<typeof listProviderConfigsResultSchema>
+
+// addProviderConfig
+export const addProviderConfigParamsSchema = z.object({
+  name: z.string(),
+  provider: z.string(),
+  apiKey: z.string(),
+  models: z.array(z.string()).optional(),
+  group: z.string().optional(),
+})
+export const addProviderConfigResultSchema = z.object({ id: z.string() })
+export type AddProviderConfigParams = z.infer<typeof addProviderConfigParamsSchema>
+export type AddProviderConfigResult = z.infer<typeof addProviderConfigResultSchema>
+
+// updateProviderConfig
+export const updateProviderConfigParamsSchema = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  provider: z.string().optional(),
+  apiKey: z.string().optional(),
+  models: z.array(z.string()).optional(),
+  group: z.string().optional(),
+})
+export const updateProviderConfigResultSchema = okResultSchema
+export type UpdateProviderConfigParams = z.infer<typeof updateProviderConfigParamsSchema>
+export type UpdateProviderConfigResult = z.infer<typeof updateProviderConfigResultSchema>
+
+// removeProviderConfig
+export const removeProviderConfigParamsSchema = z.object({
+  id: z.string(),
+})
+export const removeProviderConfigResultSchema = okResultSchema
+export type RemoveProviderConfigParams = z.infer<typeof removeProviderConfigParamsSchema>
+export type RemoveProviderConfigResult = z.infer<typeof removeProviderConfigResultSchema>
+
+// switchSessionProvider
+export const switchSessionProviderParamsSchema = z.object({
+  sessionId: z.string(),
+  providerId: z.string(),
+})
+export const switchSessionProviderResultSchema = okResultSchema
+export type SwitchSessionProviderParams = z.infer<typeof switchSessionProviderParamsSchema>
+export type SwitchSessionProviderResult = z.infer<typeof switchSessionProviderResultSchema>
+
 // ─── RPC envelope ─────────────────────────────────────────────────
 
 export const rpcRequestSchema = z.object({
@@ -388,5 +455,25 @@ export type PiRpcMethod = {
   runMcpCommand: {
     params: RunMcpCommandParams
     result: RunMcpCommandResult
+  }
+  listProviderConfigs: {
+    params: ListProviderConfigsParams
+    result: ListProviderConfigsResult
+  }
+  addProviderConfig: {
+    params: AddProviderConfigParams
+    result: AddProviderConfigResult
+  }
+  updateProviderConfig: {
+    params: UpdateProviderConfigParams
+    result: UpdateProviderConfigResult
+  }
+  removeProviderConfig: {
+    params: RemoveProviderConfigParams
+    result: RemoveProviderConfigResult
+  }
+  switchSessionProvider: {
+    params: SwitchSessionProviderParams
+    result: SwitchSessionProviderResult
   }
 }

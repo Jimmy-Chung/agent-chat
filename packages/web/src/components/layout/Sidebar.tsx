@@ -13,6 +13,9 @@ import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
+import { ProviderConfigModal, GROUP_ICONS, GROUP_LABELS } from '@/components/ProviderConfigModal'
+import { sendProviderRpc } from '@/lib/ws-client'
+import type { ProviderConfig } from '@/stores/ws-store'
 
 function normalizeCwd(cwd: string): string {
   return cwd.trim().replace(/\/+$/, '') || '/'
@@ -107,11 +110,61 @@ export function Sidebar() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
   const [showConnConfig, setShowConnConfig] = useState(false)
+  const [showProviderConfig, setShowProviderConfig] = useState(false)
+  const [switchingId, setSwitchingId] = useState<string | null>(null)
   const templates = useSopTemplateStore((s) => s.templates)
   const wsStatus = useWsStore((s) => s.status)
   const sessionHealthByTopic = useWsStore((s) => s.sessionHealthByTopic)
   const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
+  const providerConfigs = useWsStore((s) => s.providerConfigs)
+  const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
+
+  useEffect(() => {
+    if (wsStatus !== 'connected') return
+    if (providerConfigs.length > 0) return
+    if (providerConfigsLoading) return
+    useWsStore.getState().setProviderConfigsLoading(true)
+    sendProviderRpc('listProviderConfigs', {})
+      .then((result) => {
+        useWsStore.getState().setProviderConfigs((result as ProviderConfig[]) ?? [])
+      })
+      .catch(() => {})
+      .finally(() => {
+        useWsStore.getState().setProviderConfigsLoading(false)
+      })
+  }, [wsStatus, providerConfigs.length, providerConfigsLoading])
+
+  const handleSwitchProvider = async (providerId: string) => {
+    const target = providerConfigs.find((c) => c.id === providerId)
+    const targetName = target?.name ?? providerId
+    setSwitchingId(providerId)
+    const prev = useWsStore.getState().providerConfigs
+    useWsStore.getState().setProviderConfigs(
+      prev.map((c) => ({ ...c, isActive: c.id === providerId }))
+    )
+    try {
+      await sendProviderRpc('updateProviderConfig', { id: providerId, isActive: true })
+      const result = await sendProviderRpc('listProviderConfigs', {}) as ProviderConfig[]
+      useWsStore.getState().setProviderConfigs(result ?? [])
+      useToastStore.getState().pushToast({
+        tone: 'success',
+        title: `已切换至 ${targetName}`,
+        description: '新创建的会话将默认使用该 Provider。已打开的会话不受影响。',
+        durationMs: 5000,
+      })
+    } catch {
+      useWsStore.getState().setProviderConfigs(prev)
+      useToastStore.getState().pushToast({
+        tone: 'error',
+        title: '切换失败',
+        description: '请稍后重试',
+        durationMs: 3000,
+      })
+    } finally {
+      setSwitchingId(null)
+    }
+  }
 
   const programmingTemplates = useMemo(
     () => templates.filter((t) => t.agent_type === 'any' || t.agent_type === newTopicAgent),
@@ -265,6 +318,136 @@ export function Sidebar() {
           />,
           document.body,
         )}
+
+        {/* Provider section */}
+        <div className="shrink-0 px-4 pb-1.5 pt-1 flex items-center justify-between">
+          <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>
+            Provider
+          </span>
+          {providerConfigs.length > 0 && (
+            <span className="text-[10px] tabular-nums" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+              {providerConfigs.length}
+            </span>
+          )}
+        </div>
+
+        {providerConfigs.length > 0 && (
+          <div className="shrink-0 px-1.5 flex flex-col gap-1">
+            {(['claude-code', 'codex', 'pi-agent'] as const).map((group) => {
+              const configs = providerConfigs.filter((c) => (c.group ?? 'pi-agent') === group)
+              return (
+                <div
+                  key={group}
+                  className="rounded-lg overflow-hidden"
+                  style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--hairline)',
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-2 px-2.5 py-1"
+                    style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      borderBottom: configs.length > 0 ? '1px solid var(--hairline)' : 'none',
+                    }}
+                  >
+                    <span className="inline-flex" style={{ color: 'var(--fg-dim)', opacity: 0.7 }}>
+                      {GROUP_ICONS[group]}
+                    </span>
+                    <span className="text-[10.5px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.06em' }}>
+                      {GROUP_LABELS[group]}
+                    </span>
+                    <span className="ml-auto text-[10px] tabular-nums" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+                      {configs.length > 0 ? `${configs.length}` : '—'}
+                    </span>
+                  </div>
+
+                  {configs.length > 0 ? (
+                    <div className="flex flex-col gap-px p-px">
+                      {configs.map((p) => {
+                        const isSwitching = switchingId === p.id
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={isSwitching}
+                            onClick={() => {
+                              if (p.isActive) {
+                                setShowProviderConfig(true)
+                              } else {
+                                handleSwitchProvider(p.id)
+                              }
+                            }}
+                            className="flex items-center gap-2.5 px-2 py-1 rounded-md text-[12px] font-medium transition-colors w-full text-left"
+                            style={{
+                              color: p.isActive ? 'var(--fg-strong)' : 'var(--fg-dim)',
+                              background: p.isActive ? 'rgba(10,132,255,.08)' : 'transparent',
+                              opacity: isSwitching ? 0.6 : 1,
+                            }}
+                          >
+                            <span className="truncate">{p.name}</span>
+                            {isSwitching && (
+                              <span className="ml-auto shrink-0 inline-flex">
+                                <svg className="animate-spin" width="10" height="10" viewBox="0 0 16 16" fill="none">
+                                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeOpacity="0.2" />
+                                  <path d="M8 2a6 6 0 0 1 5.3 3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                </svg>
+                              </span>
+                            )}
+                            {!isSwitching && p.isActive && (
+                              <span
+                                className="ml-auto shrink-0 rounded-full"
+                                style={{ width: 5, height: 5, background: '#0A84FF', boxShadow: '0 0 5px rgba(10,132,255,.4)' }}
+                              />
+                            )}
+                            {!isSwitching && p.isDefault && !p.isActive && (
+                              <span className="ml-auto text-[9px] shrink-0" style={{ color: 'var(--fg-dim)' }}>默认</span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div className="px-2.5 py-1.5">
+                      <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>未配置</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {providerConfigs.length === 0 && !providerConfigsLoading && (
+          <div className="shrink-0 px-4 pb-0.5">
+            <p className="text-[11px] leading-relaxed" style={{ color: 'var(--fg-dim)' }}>
+              尚未配置 Provider
+            </p>
+          </div>
+        )}
+
+        <div className="shrink-0 px-1.5 flex flex-col gap-px">
+          <button
+            onClick={() => setShowProviderConfig(true)}
+            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors w-full text-left"
+            style={{ color: 'var(--fg-dim)' }}
+          >
+            <span className="text-[15px] leading-none" style={{ filter: 'grayscale(1)' }}>&#9881;</span>
+            管理 Provider...
+          </button>
+        </div>
+
+        {/* ProviderConfigModal portal */}
+        {showProviderConfig && typeof document !== 'undefined'
+          ? createPortal(
+              <ProviderConfigModal
+                onClose={() => setShowProviderConfig(false)}
+              />,
+              document.body,
+            )
+          : null}
+
+        <div className="mx-4 my-2 shrink-0" style={{ height: 1, background: 'var(--hairline)' }} />
 
         <div className="shrink-0 px-4 pb-1.5 pt-1">
           <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>

@@ -578,6 +578,14 @@ case 'usage.snapshot': {
       case 'mcp.command.error':
         handleMcpError(event.data as { requestId: string; code: string; message: string })
         break
+
+      case 'provider.rpc.result':
+        handleProviderRpcResult(event.data as ProviderRpcResult)
+        break
+
+      case 'provider.rpc.error':
+        handleProviderRpcError(event.data as { requestId: string; code: string; message: string })
+        break
     }
   }
 
@@ -682,6 +690,63 @@ export function handleMcpError(data: { requestId: string; code: string; message:
   const entry = pendingMcpRequests.get(data.requestId)
   if (!entry) return
   pendingMcpRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.reject(new Error(`${data.code}: ${data.message}`))
+}
+
+// ─── Provider RPC via WS (server relays to adapter) ──
+
+export interface ProviderRpcResult {
+  requestId: string
+  result: unknown
+}
+
+const pendingProviderRpcRequests = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+
+export async function sendProviderRpc(
+  method: 'listProviderConfigs' | 'addProviderConfig' | 'updateProviderConfig' | 'removeProviderConfig' | 'switchSessionProvider' | 'getUsage',
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  const { status } = useWsStore.getState()
+  if (status !== 'connected') {
+    throw new Error('WebSocket not connected')
+  }
+  const client = getWsClient()
+  const requestId = crypto.randomUUID()
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingProviderRpcRequests.delete(requestId)
+      reject(new Error(`Provider RPC timeout: ${method}`))
+    }, 15_000)
+
+    pendingProviderRpcRequests.set(requestId, { resolve, reject, timer })
+
+    const sent = client.send({
+      type: 'provider.rpc',
+      data: { requestId, method, params },
+    })
+
+    if (!sent) {
+      clearTimeout(timer)
+      pendingProviderRpcRequests.delete(requestId)
+      reject(new Error('Failed to send provider RPC'))
+    }
+  })
+}
+
+export function handleProviderRpcResult(data: ProviderRpcResult): void {
+  const entry = pendingProviderRpcRequests.get(data.requestId)
+  if (!entry) return
+  pendingProviderRpcRequests.delete(data.requestId)
+  clearTimeout(entry.timer)
+  entry.resolve(data.result)
+}
+
+export function handleProviderRpcError(data: { requestId: string; code: string; message: string }): void {
+  const entry = pendingProviderRpcRequests.get(data.requestId)
+  if (!entry) return
+  pendingProviderRpcRequests.delete(data.requestId)
   clearTimeout(entry.timer)
   entry.reject(new Error(`${data.code}: ${data.message}`))
 }
