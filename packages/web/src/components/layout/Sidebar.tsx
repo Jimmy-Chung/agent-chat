@@ -199,12 +199,15 @@ export function Sidebar() {
     const permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' =
       permissionTier === 'yolo' ? 'bypassPermissions' : 'default'
 
+    const activeProviderId = providerConfigs.find((c) => c.isActive)?.id
+
     getWsClient().send({
       type: 'topic.create',
       data: {
         name,
         agentType: newTopicAgent,
         sopTemplateId: selectedTemplateId || undefined,
+        ...(activeProviderId ? { providerId: activeProviderId } : {}),
         ...(newTopicAgent === 'programming'
           ? {
               programming: {
