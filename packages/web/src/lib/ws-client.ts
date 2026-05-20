@@ -205,6 +205,10 @@ class WsClient {
       case 'message.delta': {
         const part = event.data.part
         if (part.kind === 'text') {
+          if (useMessageStore.getState().streamingText[event.data.messageId] === undefined) {
+            const existingText = messageStore.getPartContent(event.data.messageId, 'text')
+            messageStore.setStreamingText(event.data.messageId, existingText)
+          }
           messageStore.appendDelta(event.data.messageId, part.content)
           const nextText = `${useMessageStore.getState().streamingText[event.data.messageId] ?? ''}`
           messageStore.upsertSnapshotPart(
@@ -215,6 +219,10 @@ class WsClient {
           )
         }
         if (part.kind === 'thinking') {
+          if (useMessageStore.getState().streamingThinking[event.data.messageId] === undefined) {
+            const existingThinking = messageStore.getPartContent(event.data.messageId, 'thinking')
+            messageStore.setStreamingThinking(event.data.messageId, existingThinking)
+          }
           messageStore.appendThinkingDelta(event.data.messageId, part.content)
           const nextThinking = `${useMessageStore.getState().streamingThinking[event.data.messageId] ?? ''}`
           messageStore.upsertSnapshotPart(
@@ -237,6 +245,7 @@ class WsClient {
           finished_at: Date.now(),
           stop_reason: event.data.stopReason,
         })
+        messageStore.setAgentStatus(event.data.topicId, event.data.stopReason === 'tool_use' ? 'tool' : 'idle')
         break
 
       case 'message.delivery': {
@@ -458,18 +467,28 @@ class WsClient {
         const agentTopicId = d.topicId as string
         const agentState = d.state as string
         messageStore.setAgentStatus(agentTopicId, agentState)
-        // When agent becomes idle, clear any streaming state that never got a message.end
-        // and clear any lingering agent.progress display
+        // BUG-040 ⑤ — On agent.status: idle, force-finalize any streaming residue
+        // for this topic. Adapter may have stopped emitting events without a
+        // message.end (e.g. CLI silent exit). Scan every streaming message on this
+        // topic, not just the global singleton, and clear its live buffer.
         if (agentState === 'idle') {
           messageStore.clearProgress(agentTopicId)
-          const { streamingTopicId, streamingMessageId } = useMessageStore.getState()
-          if (streamingTopicId === agentTopicId && streamingMessageId) {
-            messageStore.endStreaming(streamingMessageId)
-            messageStore.updateMessage(streamingMessageId, {
+          const state = useMessageStore.getState()
+          const streamingMessages = (state.byTopic[agentTopicId] ?? []).filter(
+            (m) => m.status === 'streaming',
+          )
+          for (const m of streamingMessages) {
+            messageStore.endStreaming(m.id)
+            messageStore.updateMessage(m.id, {
               status: 'aborted',
               finished_at: Date.now(),
               stop_reason: 'aborted',
             })
+          }
+          // Also handle the legacy global pointer in case the streaming message
+          // was added under a different topic during a race.
+          if (state.streamingTopicId === agentTopicId && state.streamingMessageId) {
+            messageStore.endStreaming(state.streamingMessageId)
           }
         }
         break

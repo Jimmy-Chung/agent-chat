@@ -13,6 +13,9 @@ function createMockHub() {
       broadcastEvents.push({ type, data } as ServerEvent)
     }),
     getBroadcastEvents: () => broadcastEvents,
+    clearBroadcastEvents: () => {
+      broadcastEvents.length = 0
+    },
   }
 }
 
@@ -292,6 +295,7 @@ describe('Event router — message.end derives agent.status idle (AIT-137)', () 
       const messageId = `msg-${stopReason}`
       await setupTopicAndStartMessage(sessionId, messageId)
       mockHub.broadcast.mockClear()
+      mockHub.clearBroadcastEvents()
 
       mockPi.emit('event', {
         seq: 2,
@@ -315,6 +319,7 @@ describe('Event router — message.end derives agent.status idle (AIT-137)', () 
     const messageId = 'msg-tool-use'
     await setupTopicAndStartMessage(sessionId, messageId)
     mockHub.broadcast.mockClear()
+    mockHub.clearBroadcastEvents()
 
     mockPi.emit('event', {
       seq: 2,

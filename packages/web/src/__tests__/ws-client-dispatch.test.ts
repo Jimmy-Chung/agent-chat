@@ -129,4 +129,167 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
     simulateMessageDelta('msg1', ' Done!')
     expect(useMessageStore.getState().streamingText['msg1']).toBe('Let me check. Done!')
   })
+
+  it('C7: history reload 后从已有快照继续累加 delta', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [{
+      id: 'msg1',
+      topic_id: 'topic1',
+      role: 'assistant',
+      status: 'streaming',
+      started_at: Date.now(),
+      finished_at: null,
+      stop_reason: null,
+      cron_run_id: null,
+      turn_id: null,
+      client_message_id: null,
+      retry_count: 0,
+      max_retries: 2,
+    }])
+    store.upsertSnapshotPart('msg1', 'text', JSON.stringify({ content: 'Hello' }), 'msg1-text')
+    store.appendDelta('msg1', 'Hello')
+
+    store.setMessages('topic1', [{
+      id: 'msg1',
+      topic_id: 'topic1',
+      role: 'assistant',
+      status: 'streaming',
+      started_at: Date.now(),
+      finished_at: null,
+      stop_reason: null,
+      cron_run_id: null,
+      turn_id: null,
+      client_message_id: null,
+      retry_count: 0,
+      max_retries: 2,
+    }])
+
+    if (useMessageStore.getState().streamingText['msg1'] === undefined) {
+      const existingText = store.getPartContent('msg1', 'text')
+      store.setStreamingText('msg1', existingText)
+    }
+    store.appendDelta('msg1', ' world')
+    const nextText = `${useMessageStore.getState().streamingText['msg1'] ?? ''}`
+    store.upsertSnapshotPart('msg1', 'text', JSON.stringify({ content: nextText }), 'msg1-text')
+
+    expect(useMessageStore.getState().streamingText['msg1']).toBe('Hello world')
+    expect(JSON.parse(useMessageStore.getState().partsByMessage['msg1'][0].content_json)).toEqual({ content: 'Hello world' })
+  })
+})
+
+describe('BUG-040 ⑤ — agent.status idle 强制收口 streaming 残留', () => {
+  beforeEach(() => {
+    useMessageStore.setState({
+      byTopic: {},
+      partsByMessage: {},
+      loading: false,
+      streamingText: {},
+      streamingThinking: {},
+      streamingToolInputs: {},
+      streamingTopicId: null,
+      streamingMessageId: null,
+      todosByTopic: {},
+      planByTopic: {},
+      agentStatusByTopic: {},
+      progressByTopic: {},
+      usageByMessage: {},
+      interactions: {},
+    })
+  })
+
+  // Mirrors the ws-client.ts behavior on agent.status: idle.
+  function simulateAgentIdle(topicId: string) {
+    const store = useMessageStore.getState()
+    store.setAgentStatus(topicId, 'idle')
+    const state = useMessageStore.getState()
+    const streamingMessages = (state.byTopic[topicId] ?? []).filter(
+      (m) => m.status === 'streaming',
+    )
+    for (const m of streamingMessages) {
+      store.endStreaming(m.id)
+      store.updateMessage(m.id, {
+        status: 'aborted',
+        finished_at: Date.now(),
+        stop_reason: 'aborted',
+      })
+    }
+    if (state.streamingTopicId === topicId && state.streamingMessageId) {
+      store.endStreaming(state.streamingMessageId)
+    }
+  }
+
+  function addAssistantStreamingMessage(topicId: string, id: string) {
+    useMessageStore.getState().addMessage(topicId, {
+      id,
+      topic_id: topicId,
+      role: 'assistant',
+      status: 'streaming',
+      started_at: Date.now(),
+      finished_at: null,
+      stop_reason: null,
+      cron_run_id: null,
+      turn_id: null,
+      client_message_id: null,
+      retry_count: 0,
+      max_retries: 2,
+    })
+    useMessageStore.getState().startStreaming(topicId, id)
+  }
+
+  it('finalizes all streaming messages on a topic when agent goes idle', () => {
+    addAssistantStreamingMessage('topic-a', 'msg-1')
+    addAssistantStreamingMessage('topic-a', 'msg-2')
+    useMessageStore.getState().appendDelta('msg-1', 'partial-1')
+    useMessageStore.getState().appendDelta('msg-2', 'partial-2')
+
+    simulateAgentIdle('topic-a')
+
+    const state = useMessageStore.getState()
+    expect(state.agentStatusByTopic['topic-a']).toBe('idle')
+    expect(state.byTopic['topic-a'].every((m) => m.status === 'aborted')).toBe(true)
+    expect(state.streamingText['msg-1']).toBeUndefined()
+    expect(state.streamingText['msg-2']).toBeUndefined()
+  })
+
+  it('does not touch streaming messages on other topics', () => {
+    addAssistantStreamingMessage('topic-a', 'msg-a')
+    addAssistantStreamingMessage('topic-b', 'msg-b')
+    useMessageStore.getState().appendDelta('msg-a', 'a')
+    useMessageStore.getState().appendDelta('msg-b', 'b')
+
+    simulateAgentIdle('topic-a')
+
+    const state = useMessageStore.getState()
+    expect(state.byTopic['topic-a'][0].status).toBe('aborted')
+    expect(state.byTopic['topic-b'][0].status).toBe('streaming')
+    expect(state.streamingText['msg-b']).toBe('b')
+  })
+
+  it('keeps already-done messages untouched', () => {
+    const store = useMessageStore.getState()
+    store.addMessage('topic-a', {
+      id: 'done-msg',
+      topic_id: 'topic-a',
+      role: 'assistant',
+      status: 'done',
+      started_at: Date.now() - 1000,
+      finished_at: Date.now() - 500,
+      stop_reason: 'end_turn',
+      cron_run_id: null,
+      turn_id: null,
+      client_message_id: null,
+      retry_count: 0,
+      max_retries: 2,
+    })
+    addAssistantStreamingMessage('topic-a', 'stuck-msg')
+
+    simulateAgentIdle('topic-a')
+
+    const state = useMessageStore.getState()
+    const done = state.byTopic['topic-a'].find((m) => m.id === 'done-msg')
+    const stuck = state.byTopic['topic-a'].find((m) => m.id === 'stuck-msg')
+    expect(done?.status).toBe('done')
+    expect(done?.stop_reason).toBe('end_turn')
+    expect(stuck?.status).toBe('aborted')
+  })
 })

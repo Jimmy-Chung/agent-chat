@@ -4,6 +4,7 @@ import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
 import * as messageRepo from '../../db/repos/message.repo'
 import type { EventBroadcaster } from '../../pi/event-router'
+import { logger } from '../../logger'
 import { createPendingUserMessage, deliverUserMessage, startAutoDelivery } from '../message-delivery'
 
 async function loadMessageHistory(topicId: string) {
@@ -49,6 +50,12 @@ export function registerMessageHandlers(
     const conn = args[0]
     const frame = args[1] as WSFrame
     const data = messagesLoadSchema.parse(frame.d)
+
+    try {
+      await messageRepo.flushParts()
+    } catch (err) {
+      logger.warn({ err, topicId: data.topicId }, 'Failed to flush pending parts before history load')
+    }
 
     if (hub.sendToClient) {
       hub.sendToClient(conn, {

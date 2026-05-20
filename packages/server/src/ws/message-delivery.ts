@@ -5,6 +5,7 @@ import * as messageRepo from '../db/repos/message.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import { logger } from '../logger'
+import { startPendingTurnWatchdog } from '../pi/event-router'
 import {
   ARTIFACT_URL_TTL_MS,
   buildArtifactAccessUrl,
@@ -18,6 +19,19 @@ export interface MessageDeliveryBroadcaster {
 // How long to wait for the sendUserMessage RPC to be acknowledged by the adapter.
 // This is purely network + adapter scheduling latency, not LLM processing time.
 export const RPC_TIMEOUT_MS = 8000
+
+// BUG-040 ④ — After sendUserMessage RPC is ack'd, allow this much time for the
+// adapter to start producing the next assistant turn (any PI event). If nothing
+// arrives within this window, the watchdog broadcasts an error + idle so the UI
+// can exit loading and let the user retry. Configurable via TURN_WATCHDOG_TIMEOUT_MS.
+export const DEFAULT_TURN_WATCHDOG_TIMEOUT_MS = 30_000
+
+function resolveTurnWatchdogTimeout(): number {
+  const raw = typeof process !== 'undefined' ? process.env?.TURN_WATCHDOG_TIMEOUT_MS : undefined
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  return DEFAULT_TURN_WATCHDOG_TIMEOUT_MS
+}
 
 interface DeliverUserMessageInput {
   topicId: string
@@ -202,6 +216,14 @@ async function attemptDelivery(
           retry_count: options.retryCount,
         })
         broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'done', options.retryCount, msg.max_retries)
+        // BUG-040 ④ — adapter ack'd but may still go silent (CLI exit 0 / no event).
+        // Arm the turn watchdog so UI exits loading if no PI event arrives in time.
+        startPendingTurnWatchdog(
+          input.topicId,
+          msg.id,
+          input.broadcaster,
+          resolveTurnWatchdogTimeout(),
+        )
         return true
       } catch (rpcErr) {
         if (rpcErr instanceof PiRpcError && rpcErr.code === 'session_busy' && attempt < 2) {

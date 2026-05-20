@@ -28,6 +28,7 @@ interface MessageActions {
   removeMessage: (messageId: string) => void
   appendPart: (messageId: string, part: MessagePart) => void
   upsertSnapshotPart: (messageId: string, kind: MessagePart['kind'], contentJson: string, stableId: string) => void
+  getPartContent: (messageId: string, kind: MessagePart['kind']) => string
   setMessages: (topicId: string, messages: Message[]) => void
   removeMessagesByTopic: (topicId: string) => void
   startStreaming: (topicId: string, messageId: string) => void
@@ -35,6 +36,7 @@ interface MessageActions {
   appendThinkingDelta: (messageId: string, text: string) => void
   appendToolInputDelta: (messageId: string, toolUseId: string, text: string) => void
   setStreamingText: (messageId: string, text: string) => void
+  setStreamingThinking: (messageId: string, text: string) => void
   endStreaming: (messageId: string) => void
   setTodos: (topicId: string, items: Array<{ id: string; content: string; status: string; activeForm?: string }>) => void
   setPlan: (topicId: string, plan: string) => void
@@ -143,12 +145,26 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       })
     },
 
+    getPartContent: (messageId, kind) => {
+      const state = useMessageStore.getState()
+      const part = state.partsByMessage[messageId]?.find((entry) => entry.kind === kind)
+      if (!part) return ''
+      try {
+        const parsed = JSON.parse(part.content_json) as { content?: string } | string
+        return typeof parsed === 'string' ? parsed : parsed.content ?? ''
+      } catch {
+        return ''
+      }
+    },
+
     setMessages: (topicId, messages) => {
       set((s) => {
         const previousMessageIds = new Set((s.byTopic[topicId] ?? []).map((m) => m.id))
+        const nextMessageIds = new Set(messages.map((m) => m.id))
         s.byTopic[topicId] = messages
 
         for (const messageId of previousMessageIds) {
+          if (nextMessageIds.has(messageId)) continue
           delete s.partsByMessage[messageId]
           delete s.streamingText[messageId]
           delete s.streamingThinking[messageId]
@@ -176,7 +192,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       set((s) => {
         s.streamingTopicId = topicId
         s.streamingMessageId = messageId
-        if (!s.streamingText[messageId]) {
+        if (s.streamingText[messageId] === undefined) {
           s.streamingText[messageId] = ''
         }
       })
@@ -209,6 +225,12 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     setStreamingText: (messageId, text) => {
       set((s) => {
         s.streamingText[messageId] = text
+      })
+    },
+
+    setStreamingThinking: (messageId, text) => {
+      set((s) => {
+        s.streamingThinking[messageId] = text
       })
     },
 

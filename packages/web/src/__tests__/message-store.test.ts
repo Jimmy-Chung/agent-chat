@@ -69,6 +69,19 @@ describe('MessageStore', () => {
     expect(useMessageStore.getState().byTopic['topic1']).toEqual(newMsgs)
   })
 
+  it('setMessages keeps live buffers for messages that still exist after history reload', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [makeMessage({ id: 'm1', role: 'assistant', status: 'streaming' })])
+    store.setStreamingText('m1', 'Hello')
+    store.setStreamingThinking('m1', 'Thinking')
+
+    store.setMessages('topic1', [makeMessage({ id: 'm1', role: 'assistant', status: 'streaming' })])
+
+    const state = useMessageStore.getState()
+    expect(state.streamingText['m1']).toBe('Hello')
+    expect(state.streamingThinking['m1']).toBe('Thinking')
+  })
+
   it('addMessage appends a message to a topic', () => {
     useMessageStore.getState().setMessages('topic1', [makeMessage({ id: 'm1' })])
     const newMsg = makeMessage({ id: 'm2' })
