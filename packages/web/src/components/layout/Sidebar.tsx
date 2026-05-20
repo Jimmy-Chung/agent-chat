@@ -7,11 +7,82 @@ import { useUiStore } from '@/stores/ui-store'
 import { useWsStore } from '@/stores/ws-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
+import { useToastStore } from '@/stores/toast-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
+
+function normalizeCwd(cwd: string): string {
+  return cwd.trim().replace(/\/+$/, '') || '/'
+}
+
+function getTopicCwd(topic: import('@agent-chat/protocol').Topic): string | null {
+  if (!topic.programming_spec_json) return null
+  try {
+    const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+    return parsed.cwd ? normalizeCwd(parsed.cwd) : null
+  } catch {
+    return null
+  }
+}
+
+function findTopicByCwd(topics: import('@agent-chat/protocol').Topic[], cwd: string) {
+  const normalized = normalizeCwd(cwd)
+  return topics.find((topic) => getTopicCwd(topic) === normalized)
+}
+
+function formatOccupiedTopic(topic: import('@agent-chat/protocol').Topic): string {
+  return `${topic.name} · ${topic.id}`
+}
+
+function buildCreateTopicToast(input: {
+  code: 'DUPLICATE_NAME' | 'DUPLICATE_CWD'
+  occupiedTopic?: import('@agent-chat/protocol').Topic
+}) {
+  if (input.code === 'DUPLICATE_NAME') {
+    return {
+      tone: 'warning' as const,
+      title: '同名话题已存在',
+      description: '请更换话题名称后再创建。',
+    }
+  }
+
+  return {
+    tone: 'warning' as const,
+    title: '已有同目录话题',
+    description: input.occupiedTopic
+      ? formatOccupiedTopic(input.occupiedTopic)
+      : '请选择其他工作目录后再创建。',
+  }
+}
+
+function validateCreateTopic(input: {
+  topics: import('@agent-chat/protocol').Topic[]
+  name: string
+  agentType: AgentType
+  cwd: string
+}): ReturnType<typeof buildCreateTopicToast> | null {
+  const name = input.name.trim()
+  if (input.topics.some((topic) => !topic.archived && topic.name === name)) {
+    return buildCreateTopicToast({ code: 'DUPLICATE_NAME' })
+  }
+
+  if (input.agentType === 'programming' && input.cwd.trim()) {
+    const occupiedTopic = findTopicByCwd(input.topics, input.cwd)
+    if (occupiedTopic) {
+      return buildCreateTopicToast({ code: 'DUPLICATE_CWD', occupiedTopic })
+    }
+  }
+
+  return null
+}
+
+function usePushTopicCreateToast() {
+  return useToastStore((s) => s.pushToast)
+}
+
 
 type PermissionTier = 'yolo' | 'normal'
 
@@ -22,6 +93,7 @@ const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
 export function Sidebar() {
   const topics = useTopicStore((s) => s.topics)
+  const pushToast = usePushTopicCreateToast()
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const selectTopic = useTopicStore((s) => s.selectTopic)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -59,6 +131,17 @@ export function Sidebar() {
   const handleCreateTopic = () => {
     const name = newTopicName.trim()
     if (!name) return
+
+    const validationError = validateCreateTopic({
+      topics,
+      name,
+      agentType: newTopicAgent,
+      cwd,
+    })
+    if (validationError) {
+      pushToast(validationError)
+      return
+    }
 
     const permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' =
       permissionTier === 'yolo' ? 'bypassPermissions' : 'default'
@@ -232,7 +315,7 @@ export function Sidebar() {
             onClick={() => setShowConnConfig(true)}
           />
           <NotificationBell />
-          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.5.2</span>
+          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.6.0</span>
         </div>
       </div>
 

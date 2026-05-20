@@ -295,6 +295,7 @@ export const messagesHistorySchema = z.object({
 export const errorSchema = z.object({
   code: z.string(),
   message: z.string(),
+  details: z.record(z.unknown()).optional(),
 })
 
 export const mcpCommandResultSchema = z.object({

@@ -22,6 +22,23 @@ export function registerTopicHandlers(
       return
     }
 
+    const requestedCwd = data.agentType === 'programming' ? data.programming?.cwd?.trim() : undefined
+    if (requestedCwd) {
+      const occupiedTopic = await topicRepo.getTopicByCwd(requestedCwd)
+      if (occupiedTopic) {
+        broadcaster.broadcast('error', {
+          code: 'DUPLICATE_CWD',
+          message: '已有同目录话题',
+          details: {
+            topicId: occupiedTopic.id,
+            topicName: occupiedTopic.name,
+            cwd: requestedCwd,
+          },
+        })
+        return
+      }
+    }
+
     const topic = await topicRepo.createTopic({
       name: data.name,
       kind: 'normal',

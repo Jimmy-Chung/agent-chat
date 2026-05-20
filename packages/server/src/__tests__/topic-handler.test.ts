@@ -126,6 +126,64 @@ describe('Topic handler — topic.create', () => {
     expect(updatedEvent.data.pi_session_id).toBe('pi-sess-1')
   })
 
+  it('rejects duplicate topic names', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await topicRepo.createTopic({
+      name: 'General Chat',
+      kind: 'normal',
+      agentType: 'general',
+    })
+
+    await handler({}, {
+      d: { name: 'General Chat', agentType: 'general' },
+    })
+
+    const errorEvent = mockHub.getBroadcastEvents().find((e: any) => e.type === 'error')
+    expect(errorEvent).toBeDefined()
+    expect(errorEvent.data.code).toBe('DUPLICATE_NAME')
+    expect(mockPi.createSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate working directories for programming topics', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await topicRepo.createTopic({
+      name: 'Existing Topic',
+      kind: 'normal',
+      agentType: 'programming',
+      programmingSpecJson: JSON.stringify({
+        extension: 'claude-code',
+        yolo: false,
+        cwd: '/repo/demo/',
+        permissionMode: 'default',
+      }),
+    })
+
+    await handler({}, {
+      d: {
+        name: 'New Topic',
+        agentType: 'programming',
+        programming: {
+          extension: 'claude-code',
+          yolo: false,
+          cwd: '/repo/demo',
+          permissionMode: 'default',
+        },
+      },
+    })
+
+    const errorEvent = mockHub.getBroadcastEvents().find((e: any) => e.type === 'error')
+    expect(errorEvent).toBeDefined()
+    expect(errorEvent.data.code).toBe('DUPLICATE_CWD')
+    expect(errorEvent.data.details).toEqual({
+      topicId: expect.any(String),
+      topicName: 'Existing Topic',
+      cwd: '/repo/demo',
+    })
+    expect(mockPi.createSession).not.toHaveBeenCalled()
+  })
+
   it('broadcasts error when PI createSession fails', async () => {
     mockPi.createSession.mockRejectedValue(new Error('PI down'))
     const handler = await getHandler('client:topic.create')

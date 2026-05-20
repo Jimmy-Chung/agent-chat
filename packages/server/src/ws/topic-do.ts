@@ -421,6 +421,22 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
           break
         }
+        const requestedCwd = data.agentType === 'programming' ? data.programming?.cwd?.trim() : undefined
+        if (requestedCwd) {
+          const occupiedTopic = await topicRepo.getTopicByCwd(requestedCwd)
+          if (occupiedTopic) {
+            this.broadcastAll('error', {
+              code: 'DUPLICATE_CWD',
+              message: '已有同目录话题',
+              details: {
+                topicId: occupiedTopic.id,
+                topicName: occupiedTopic.name,
+                cwd: requestedCwd,
+              },
+            })
+            break
+          }
+        }
         const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
         const generalSpecJson = sopTemplate
           ? JSON.stringify({

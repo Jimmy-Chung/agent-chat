@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { WsProvider } from '@/components/WsProvider'
 import { PushSetup } from '@/components/PushSetup'
+import { ToastViewport } from '@/components/ToastViewport'
 
 export const metadata: Metadata = {
   title: 'agent-chat',
@@ -26,6 +27,7 @@ export default function RootLayout({
       <body>
         <WsProvider>{children}</WsProvider>
         <PushSetup />
+        <ToastViewport />
       </body>
     </html>
   )
