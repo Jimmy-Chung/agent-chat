@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.6.0 |
-| 更新时间 | 2026-05-20 |
+| 当前版本 | v1.6.1 |
+| 更新时间 | 2026-05-21 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -52,12 +52,28 @@
 | BUG-038 | AIT-124 |
 | BUG-039 | — |
 | BUG-040 | AIT-145 |
+| BUG-041 | AIT-155 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-041: 新建话题未传递全局活跃 providerId 致 createSession 使用错误 Provider
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-041 |
+| 标题 | 新建话题未传递全局活跃 providerId 致 createSession 使用错误 Provider |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-21 |
+| 修复时间 | 2026-05-21 |
+| 修复版本 | v1.6.1 |
+| 影响模块 | packages/web/src/components/layout/Sidebar.tsx |
+| 描述 | 用户全局切换 Provider 后新建话题，新话题的 session 仍使用旧 Provider（如 DeepSeek 而非 GLM）。 |
+| 根因 | Sidebar.tsx 的 handleCreateTopic 发送 topic.create 时缺少 providerId 字段。Server 端 topicCreateSchema 已支持 providerId，topic-do.ts 会转发给 createSession，但前端创建话题时没有从 providerConfigs 取 isActive 的 Provider ID 传入。Adapter 收不到 providerId 参数时回退使用默认 Provider。 |
+| 修复方案 | 在 topic.create data 中加 providerId: activeProviderId（从 providerConfigs 取 isActive 的 Provider ID）。 |
 
 ### BUG-040: AIT-143 衍生 — sendUserMessage 发送侧兜底 + agent.status idle 收口
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-21 [v1.6.1] — 新建话题 Provider 透传修复
+
+### BUG-041 (AIT-155): 新建话题未传递全局活跃 providerId 致 createSession 使用错误 Provider
+- `Sidebar.tsx` 的 `handleCreateTopic` 发送 `topic.create` 时缺少 `providerId` 字段
+- 修复：从 `providerConfigs` 取 `isActive` 的 Provider ID，写入 `topic.create` 的 `providerId` 字段
+
 ## 2026-05-21 [v1.6.0] — 会话链路兜底 + Provider 统一管理
 
 ### FEAT-040 (AIT-128): 同工作目录的活跃话题创建拦截
