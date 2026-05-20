@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-05-20 [v1.6.0] — 创建话题约束 + Toast 体系 + 会话链路兜底
+
+### FEAT-040 (AIT-128): 同工作目录的活跃话题创建拦截
+- 服务端在 `topic.create` 时按规范化目录路径校验，命中已有活跃 programming 话题则拒绝并广播 `error{code:'DUPLICATE_CWD', details:{topicId, topicName, cwd}}`
+- 前端 Sidebar 创建话题前置同名/同目录校验，命中冲突直接弹 warning Toast，提示占用话题名 · 话题 ID
+
+### FEAT-041: 全局 Toast 视口
+- 新增 `ToastViewport` + `toast-store`，遵循 `S8 Toasts.html` 设计稿：右下角 glass 卡片、左侧状态色竖条、状态色 icon tile、底部自动消失进度条
+- warning/info/success 默认 4.6s 自动消失，error 持久展示直至手动关闭
+- 接入 server `error` 事件：`DUPLICATE_NAME` / `DUPLICATE_CWD` / `PI_SESSION_FAILED` 等映射为对应 Toast 文案
+
+### BUG-039: 长 Thinking / 切 Topic 中断输出
+- server `event-router` 在 `message.start` 与 text/thinking `message.delta` 时兜底广播 `agent.status: streaming`，避免长 thinking 期间 UI 永远停在 thinking
+- `messages.load` 入口先 `flushParts()`，确保切换话题返回时拿到的 history 不会丢正在流式的增量
+- 前端 `message-store` 新增 `getPartContent` / `setStreamingThinking`，`setMessages` 不再清掉仍在 history 中的消息 live buffer
+- `ws-client` 收到 `message.delta` 时若 live buffer 缺失，自动从已有 snapshot part 续写，避免文本被覆盖
+
+### BUG-040 (AIT-145): sendUserMessage 兜底 + agent.status idle 收口
+- AIT-143 共识分工 agent-chat 侧 ④⑤
+- 新增 turn-level watchdog：`attemptDelivery` RPC ack 后启动 30s 计时器（`TURN_WATCHDOG_TIMEOUT_MS` 可配置），收到任意 PI 事件即清掉；超时则广播 `error{code:'TURN_NO_RESPONSE'}` + `agent.status: idle`，让 UI 退出 loading 可重试
+- 前端 `agent.status: idle` 时扫描该 topic 全部 `status=streaming` 消息并 finalize 为 `aborted`，清掉 `streamingText/streamingThinking/streamingToolInputs`，不再依赖全局单例
+
+### 关联
+- 父 issue：[AIT-143](https://linear.app/ai-jam-jam/issue/AIT-143) — Adapter 侧 ①②③ 修复待合入后联调 ⑥ e2e
+- Milestone：v1.6.0
+
 ## 2026-05-19 [v1.5.2] — MCP 管理面板 + InteractionCard + RPC 重试
 
 ### FEAT-038 (AIT-139): Agent MCP 管理面板

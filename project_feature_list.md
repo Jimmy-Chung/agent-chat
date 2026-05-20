@@ -2,9 +2,22 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.5.2 |
-| 状态 | v1.5.2 开发中 |
-| 更新时间 | 2026-05-19 |
+| 当前版本 | v1.6.0 |
+| 状态 | v1.6.0 开发中 |
+| 更新时间 | 2026-05-20 |
+
+---
+
+## v1.6.0 — 需求范围
+
+| 类别 | 需求 | 状态 | 说明 |
+|---|---|---|---|
+| 创建话题 | FEAT-040 同工作目录的活跃话题创建拦截 | 待发布 | 创建 programming 话题时若工作目录与已有活跃话题冲突则拦截，Toast 提示占用话题名 + ID；同名校验保持兼容 |
+| Toast 体系 | FEAT-041 全局 Toast 视口 | 待发布 | 按 S8 Toasts.html 实现：右下角 glass 卡片、左侧状态条、状态色 icon tile、底部进度条；warning/error 区分 |
+| 会话链路 | BUG-039 长 Thinking / 切 Topic 中断输出 | 已修复 | server 在 message.start/delta 兜底广播 agent.status=streaming；messages.load 前先 flush；前端 history reload 不再清掉 live 流式缓冲 |
+| 会话链路 | BUG-040 sendUserMessage 兜底 + idle 收口 | 已修复 | 发送侧 turn watchdog 30s 内无 PI 事件则广播 error + idle；前端 agent.status idle 时强制 finalize 该 topic 所有 streaming 残留 |
+
+> 关联 issue：AIT-128（同工作目录拦截）、AIT-143（Adapter silent failure）、AIT-145（agent-chat 侧 ④⑤ 兜底）
 
 ---
 
@@ -107,7 +120,8 @@
 | FEAT-037 | AIT-135 |
 | FEAT-038 | AIT-139 |
 | FEAT-039 | AIT-125 |
-| FEAT-037 | AIT-135 |
+| FEAT-040 | AIT-128 |
+| FEAT-041 | — |
 
 ---
 
