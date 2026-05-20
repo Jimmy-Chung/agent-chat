@@ -4,7 +4,7 @@
 |---|---|
 | 当前版本 | v1.6.0 |
 | 状态 | v1.6.0 开发中 |
-| 更新时间 | 2026-05-20 |
+| 更新时间 | 2026-05-21 |
 
 ---
 
@@ -14,10 +14,12 @@
 |---|---|---|---|
 | 创建话题 | FEAT-040 同工作目录的活跃话题创建拦截 | 待发布 | 创建 programming 话题时若工作目录与已有活跃话题冲突则拦截，Toast 提示占用话题名 + ID；同名校验保持兼容 |
 | Toast 体系 | FEAT-041 全局 Toast 视口 | 待发布 | 按 S8 Toasts.html 实现：右下角 glass 卡片、左侧状态条、状态色 icon tile、底部进度条；warning/error 区分 |
+| 连接健康 | FEAT-042 Agent Chat ↔ PI Adapter 链路状态可观测 | 已发布 | AIT-150 Server keepalive/session.health；AIT-151 Frontend 分层展示/tooltip |
 | 会话链路 | BUG-039 长 Thinking / 切 Topic 中断输出 | 已修复 | server 在 message.start/delta 兜底广播 agent.status=streaming；messages.load 前先 flush；前端 history reload 不再清掉 live 流式缓冲 |
 | 会话链路 | BUG-040 sendUserMessage 兜底 + idle 收口 | 已修复 | 发送侧 turn watchdog 30s 内无 PI 事件则广播 error + idle；前端 agent.status idle 时强制 finalize 该 topic 所有 streaming 残留 |
+| Provider 管理 | FEAT-043 Provider 统一管理 — agent-chat 侧 | 已发布 | AIT-152 Server RPC 中继 + createSession 传参；AIT-153 Frontend Provider 管理 UI（侧边栏配置入口/管理面板/标题区细分标签/输入区 Provider+Model 选择器）；AIT-146 adapter isActive 持久化已修复 |
 
-> 关联 issue：AIT-128（同工作目录拦截）、AIT-143（Adapter silent failure）、AIT-145（agent-chat 侧 ④⑤ 兜底）
+> 关联 issue：AIT-128（同工作目录拦截）、AIT-145（agent-chat 侧 ④⑤ 兜底）、AIT-150/151（链路可观测 Server/Frontend）、AIT-152/153（Provider 管理 Server/Frontend）、AIT-143（Adapter silent failure）
 
 ---
 
@@ -121,7 +123,8 @@
 | FEAT-038 | AIT-139 |
 | FEAT-039 | AIT-125 |
 | FEAT-040 | AIT-128 |
-| FEAT-041 | — |
+| FEAT-042 | AIT-148 / AIT-150 / AIT-151 |
+| FEAT-043 | AIT-152 / AIT-153 |
 
 ---
 

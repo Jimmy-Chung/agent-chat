@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-05-20 [v1.6.0] — 创建话题约束 + Toast 体系 + 会话链路兜底
+## 2026-05-21 [v1.6.0] — 会话链路兜底 + Provider 统一管理
 
 ### FEAT-040 (AIT-128): 同工作目录的活跃话题创建拦截
 - 服务端在 `topic.create` 时按规范化目录路径校验，命中已有活跃 programming 话题则拒绝并广播 `error{code:'DUPLICATE_CWD', details:{topicId, topicName, cwd}}`
@@ -21,6 +21,16 @@
 - AIT-143 共识分工 agent-chat 侧 ④⑤
 - 新增 turn-level watchdog：`attemptDelivery` RPC ack 后启动 30s 计时器（`TURN_WATCHDOG_TIMEOUT_MS` 可配置），收到任意 PI 事件即清掉；超时则广播 `error{code:'TURN_NO_RESPONSE'}` + `agent.status: idle`，让 UI 退出 loading 可重试
 - 前端 `agent.status: idle` 时扫描该 topic 全部 `status=streaming` 消息并 finalize 为 `aborted`，清掉 `streamingText/streamingThinking/streamingToolInputs`，不再依赖全局单例
+
+### FEAT-042 (AIT-150 / AIT-151): Agent Chat ↔ PI Adapter 链路状态可观测
+- AIT-150 Server：health probe 间隔缩短至 15s，超时缩短至 45s；PI WS close/error 时 emit session.health(reconnecting→disconnected)；event-router session.health 事件跳过 seq 去重
+- AIT-151 Frontend：通过 Sidebar sessionHealthByTopic 分层展示每个话题的 PI 连接状态
+
+### FEAT-043 (AIT-152 / AIT-153): Provider 统一管理
+- 协议层新增 6 组 Provider RPC schema（list/add/update/remove/switchSession/getUsage）+ provider.rpc WS 事件类型
+- AIT-152 Server：topic-do 新增 provider.rpc 中继（session-agnostic → rpcGlobal，switchSessionProvider → rpc）；topic.create 支持 providerId 透传至 createSession
+- AIT-153 Frontend：新增 ProviderConfigModal 管理面板（增删改切）；Sidebar 按分组展示活跃 Provider 一键切换 + Toast；TopicPanel 标题区 Extension 下拉选择器；MessageInput 编程话题 Provider/Model 选择器；ws-client sendProviderRpc 请求/响应路由
+- Adapter AIT-146（isActive 持久化）已在 adapter 侧修复，切换后 UI 刷新列表同步真实状态
 
 ### 关联
 - 父 issue：[AIT-143](https://linear.app/ai-jam-jam/issue/AIT-143) — Adapter 侧 ①②③ 修复待合入后联调 ⑥ e2e
