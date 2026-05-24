@@ -1,3 +1,5 @@
+import { DEFAULT_PI_ADAPTER_URL } from '@agent-chat/protocol'
+
 export interface Env {
   DB: D1Database
   TOPIC_DO: DurableObjectNamespace
@@ -40,10 +42,10 @@ export function createConfig(env: Env): AppConfig {
     token: env.AGENT_CHAT_TOKEN || '',
     piAdapterUrl:
       env.PI_ADAPTER_URL ||
-      'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
+      DEFAULT_PI_ADAPTER_URL,
     originalPiAdapterUrl:
       env.PI_ADAPTER_URL ||
-      'ws://127.0.0.1:7331/api/agent-chat/v1/socket',
+      DEFAULT_PI_ADAPTER_URL,
     piAdapterToken: env.PI_ADAPTER_TOKEN || '',
     artifactTokenSecret: env.AGENT_CHAT_TOKEN || env.PI_ADAPTER_TOKEN || 'agent-chat-local-artifacts',
     logLevel: env.LOG_LEVEL || 'info',
