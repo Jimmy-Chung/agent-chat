@@ -53,12 +53,33 @@
 | BUG-039 | — |
 | BUG-040 | AIT-145 |
 | BUG-041 | AIT-155 |
+| BUG-042 | AIT-156 |
+| BUG-043 | AIT-158 |
+| BUG-044 | AIT-160 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-044: PI Adapter message.delta 首个 text 回显用户输入
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-044 |
+| 标题 | PI Adapter message.delta 首个 text part 回显用户输入内容 |
+| 状态 | 新建 |
+| 发现时间 | 2026-05-23 |
+| 影响模块 | PI Adapter (外部) — cli-event-mapper / SDK event mapper |
+| 描述 | 发送用户消息后，adapter 返回的第一个 message.delta text part 是用户输入的原样回显，而非 assistant 的回复。general 和 programming 两种 session 类型都有此问题。programming 类型更严重：回显后直接 message.end，不产生任何后续回复。general 类型在回显之后还有正常的 assistant text 回复。 |
+| 复现步骤 | 1. 创建 programming 话题（agentType: 'programming', extension: 'claude-code'）2. 发送消息"你好，请用一句话介绍你自己" 3. 观察 message.delta 事件 |
+| 实际行为 | 第一个 text delta: `{kind: 'text', content: '你好，请用一句话介绍你自己'}`（用户输入回显），随后直接 message.end |
+| 预期行为 | 第一个 text delta 应包含 assistant 的回复内容，不应回显用户输入 |
+| 根因 | 待 adapter 团队排查。怀疑 cli-event-mapper 在解析 CLI 输出时将 terminal echo 误认为 assistant text 输出 |
+| 修复方案 | 待 adapter 团队修复 |
+| 测试证据 | compare-agent-types.ts 对比测试：general 首条 text 回显后有正常回复，programming 首条 text 回显后即 end_turn |
+| 外部依赖 | AIT-159 — 需 adapter 团队排查并修复 |
 
 ### BUG-041: 新建话题未传递全局活跃 providerId 致 createSession 使用错误 Provider
 

@@ -35,6 +35,7 @@ protocol: BREAKING ...  # 协议层破坏性变更
 - [ ] 所有 FEAT/BUG 在分支上有 commit 且 ID 前缀格式正确
 - [ ] `pnpm -r typecheck` 通过
 - [ ] `pnpm -r test` 通过
+- [ ] `pnpm -F server test:link-stress` 通过（R-006 压测）
 - [ ] `pnpm -r build` 通过
 
 ### 2. 更新文档
