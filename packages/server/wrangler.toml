@@ -5,7 +5,6 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 AGENT_CHAT_TOKEN = "test-token"
-PI_ADAPTER_URL = "wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket"
 
 [dev]
 port = 8787
