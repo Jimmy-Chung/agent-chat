@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { piWsToHttp, DEFAULT_PI_ADAPTER_URL } from '@agent-chat/protocol'
 
 const PI_ADAPTER_URL = process.env.PI_ADAPTER_URL || ''
 const PI_ADAPTER_TOKEN = process.env.PI_ADAPTER_TOKEN || ''
 
 function getMcpEndpoint(): string {
-  const url = new URL(PI_ADAPTER_URL)
-  const proto = url.protocol === 'wss:' ? 'https:' : 'http:'
-  return `${proto}//${url.host}/api/agent-chat/v1/mcp`
+  return piWsToHttp(PI_ADAPTER_URL || DEFAULT_PI_ADAPTER_URL)
 }
 
 function parseCommand(cmd: string): { command: string; args: string[] } {
