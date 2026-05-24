@@ -16,3 +16,5 @@ packages/server/.wrangler/
 packages/web/out/
 test-results/
 *.tar.gz
+packages/server/packages/
+packages/server/scripts/logs/
