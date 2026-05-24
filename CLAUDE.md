@@ -135,18 +135,42 @@ pnpm dev                   # 三服务同时启动
   - `changelog.md` — 新增版本条目
   - `project_feature_list.md` — 当前版本号 + 需求状态
 
-## 回归测试（强制）
+## 链路测试（通讯协议变更强制）
 
-每次提交版本（合并到 master / 打 tag）前，**必须**通过回归测试集（`test-plan.md` 中的 R-001 ~ R-005），全绿才能发版。
+**每次通讯协议相关变更（protocol 层 schema、PI 事件类型、WS 帧格式、RPC 接口）必须跑完以下全部测试，全绿才能合并。**
 
-回归测试必须以单元测试（vitest）或 E2E 测试（Playwright）的形式存在，不允许纯手工验证。
+### R-006 链路压力测试
+
+通过本地 server 中转的端到端测试，覆盖心跳保活、多轮对话、tool use、并发话题等场景。
+
+```bash
+# 先启动 server + adapter
+pnpm -F server dev
+# 再跑压测
+pnpm -F server test:link-stress
+```
+
+脚本位置：`packages/server/scripts/link-stress.ts`
+场景定义：`packages/server/scripts/link-stress/scenarios.ts`
+
+### R-007 链路分层验证
+
+直连 adapter 的分层验证脚本（L0 心跳 → L1 单轮问答 → L2 多轮 → L3 压力）。
+
+```bash
+npx tsx packages/server/scripts/link-stress/link-verify.ts [l0|l1-1|l1-2|l2|l3|all]
+```
+
+脚本位置：`packages/server/scripts/link-stress/link-verify.ts`
+
+### 常规回归
 
 ```bash
 pnpm -r test       # 单元测试必须全绿
 pnpm test:e2e      # E2E 测试必须全绿
 ```
 
-当前回归覆盖：鉴权 (R-001)、消息链路 (R-002)、话题独立 WS (R-003)、删话题清理 (R-004)、断线重连 (R-005)。详见 `.omc/plans/test-plan.md`。
+当前回归覆盖：鉴权 (R-001)、消息链路 (R-002)、话题独立 WS (R-003)、删话题清理 (R-004)、断线重连 (R-005)、链路压测 (R-006)、链路分层验证 (R-007)。详见 `.omc/plans/test-plan.md`。
 
 ## 需求讨论模式
 
