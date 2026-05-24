@@ -9,6 +9,7 @@ import { initR2 } from './r2/client'
 import { getD1 } from './db/migrate'
 import { handleArtifactAccessRequest } from './r2/artifact-access'
 import { createPushRoutes } from './routes/push'
+import { getLogs, clearLogs } from './server-logs'
 
 let initialized = false
 let appConfig: AppConfig | null = null
@@ -89,6 +90,16 @@ app.get('/debug', (c) => {
     piAdapterUrl: 'set',
     initialized,
   })
+})
+
+// Server-side PI event logs for debugging (BUG-044)
+app.get('/server-logs', (c) => {
+  return c.json(getLogs())
+})
+
+app.post('/server-logs/clear', (c) => {
+  clearLogs()
+  return c.json({ ok: true, cleared: true })
 })
 
 export { TopicDurableObject } from './ws/topic-do'

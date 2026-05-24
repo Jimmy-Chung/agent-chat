@@ -141,6 +141,19 @@ export function routePiEvents(
     }
 
     logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
+
+    // BUG-044: Debug — log full event payload for message.delta (echo investigation)
+    if (event.payload.kind === 'message.delta') {
+      logger.info(
+        {
+          messageId: event.payload.messageId,
+          part: event.payload.part,
+          fullEvent: JSON.stringify(event),
+        },
+        'BUG-044: message.delta full payload',
+      )
+    }
+
     const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
     sessionQueues.set(event.sessionId, prev.then(() => routeEvent(event, broadcaster, config)).catch((err) => {
       logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
