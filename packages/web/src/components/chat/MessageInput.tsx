@@ -2,11 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
-import { getWsClient, sendProviderRpc } from '@/lib/ws-client'
+import { getWsClient } from '@/lib/ws-client'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore, type PendingMessage } from '@/stores/message-store'
 import { useTopicStore } from '@/stores/topic-store'
-import { useWsStore, type ProviderConfig } from '@/stores/ws-store'
+import { useWsStore } from '@/stores/ws-store'
 import type { Artifact } from '@agent-chat/protocol'
 
 const EMPTY_ARTIFACTS: Artifact[] = []
@@ -102,41 +102,25 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const currentModel = activeTopic?.current_model
 
   const providerConfigs = useWsStore((s) => s.providerConfigs)
-  const setProviderConfigs = useWsStore((s) => s.setProviderConfigs)
-  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
+  // Derive available models from all providers (active provider's models, or all models union)
+  const activeProvider = providerConfigs.find((c) => c.isActive)
+  const availableModels = activeProvider?.models ?? providerConfigs.flatMap((c) => c.models ?? [])
+
   const [selectedModel, setSelectedModel] = useState<string>(currentModel ?? '')
-  const [providerConfigsLoaded, setProviderConfigsLoaded] = useState(false)
 
   // Sync current model from topic
   useEffect(() => {
     if (currentModel) setSelectedModel(currentModel)
   }, [currentModel])
 
-  // Load provider configs on mount for programming topics
-  useEffect(() => {
-    if (!isProgramming || providerConfigsLoaded) return
-    let cancelled = false
-    sendProviderRpc('listProviderConfigs', {}).then((result) => {
-      if (cancelled) return
-      const configs = (result as { configs: ProviderConfig[] }).configs ?? []
-      setProviderConfigs(configs)
-      setProviderConfigsLoaded(true)
-      // Default to first active or first available provider
-      if (!selectedProviderId && configs.length > 0) {
-        const active = configs.find((c) => c.isActive) ?? configs[0]
-        setSelectedProviderId(active.id)
-        if (!selectedModel && active.models?.length) {
-          setSelectedModel(active.models[0])
-        }
-      }
-    }).catch(() => {
-      if (!cancelled) setProviderConfigsLoaded(true)
+  // When model changes, tell server → adapter
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model)
+    getWsClient().send({
+      type: 'topic.setModel',
+      data: { id: topicId, model },
     })
-    return () => { cancelled = true }
-  }, [isProgramming, providerConfigsLoaded])
-
-  const selectedProvider = providerConfigs.find((c) => c.id === selectedProviderId)
-  const availableModels = selectedProvider?.models ?? []
+  }, [topicId])
 
   const topicArtifacts = useArtifactStore((s) => s.byTopic[topicId] ?? EMPTY_ARTIFACTS)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
@@ -754,27 +738,14 @@ export function MessageInput({ topicId }: MessageInputProps) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}
         >
-          {isProgramming && (
-            <div className="flex items-center gap-2">
-              <ProviderModelSelect
-                label="Provider"
-                value={selectedProviderId}
-                options={providerConfigs.map((c) => ({ value: c.id, label: c.name, group: c.group }))}
-                loading={!providerConfigsLoaded}
-                onChange={(id) => {
-                  setSelectedProviderId(id)
-                  const cfg = providerConfigs.find((c) => c.id === id)
-                  if (cfg?.models?.length) setSelectedModel(cfg.models[0])
-                }}
-              />
-              <ProviderModelSelect
-                label="Model"
-                value={selectedModel}
-                options={availableModels.map((m) => ({ value: m, label: m }))}
-                loading={false}
-                onChange={(m) => setSelectedModel(m)}
-              />
-            </div>
+          {isProgramming && availableModels.length > 0 && (
+            <ProviderModelSelect
+              label="Model"
+              value={selectedModel}
+              options={availableModels.map((m) => ({ value: m, label: m }))}
+              loading={false}
+              onChange={handleModelChange}
+            />
           )}
           <TextareaAutosize
             ref={textareaRef}

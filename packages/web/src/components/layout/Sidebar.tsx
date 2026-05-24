@@ -245,13 +245,20 @@ function ProviderTabContent({
                 <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeOpacity="0.2"/>
                 <path d="M8 2a6 6 0 0 1 5.3 3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
               </svg>
-            ) : isSelected || p.isDefault ? (
+            ) : p.isDefault ? (
               <span style={{
                 fontSize: 9, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
                 letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
                 background: 'rgba(247,194,107,.16)', color: 'var(--cron-gold)',
                 border: '1px solid rgba(247,194,107,.30)', flexShrink: 0,
               }}>Default</span>
+            ) : isSelected ? (
+              <span style={{
+                fontSize: 9, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
+                letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
+                background: 'rgba(10,132,255,.16)', color: '#7CB6FF',
+                border: '1px solid rgba(10,132,255,.30)', flexShrink: 0,
+              }}>Active</span>
             ) : (
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--fg-dim)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 6 15 12 9 18"/>
