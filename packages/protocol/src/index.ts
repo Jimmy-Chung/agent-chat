@@ -39,6 +39,7 @@ export {
   errorPayloadSchema,
   sessionHealthPayloadSchema,
   cronRunCompletedPayloadSchema,
+  keepalivePayloadSchema,
   todoItemSchema,
 } from './pi-events'
 
@@ -67,6 +68,7 @@ export type {
   ErrorPayload,
   SessionHealthPayload,
   CronRunCompletedPayload,
+  KeepalivePayload,
   TodoItemZ,
 } from './pi-events'
 
@@ -246,6 +248,13 @@ export type {
   ServerEvent,
   ClientEvent,
 } from './ws-events'
+
+// PI adapter constants & URL utilities
+export {
+  DEFAULT_PI_ADAPTER_URL,
+  piWsToHttp,
+  buildPiWsUrl,
+} from './pi-adapter'
 
 // Frame
 export {

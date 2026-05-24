@@ -198,6 +198,10 @@ export const cronDeletedPayloadSchema = z.object({
   cronId: z.string(),
 })
 
+export const keepalivePayloadSchema = z.object({
+  kind: z.literal('keepalive'),
+})
+
 export const adapterReadyPayloadSchema = z.object({
   kind: z.literal('adapter.ready'),
   adapterInstanceId: z.string(),
@@ -229,11 +233,13 @@ export type SessionHealthPayload = z.infer<typeof sessionHealthPayloadSchema>
 export type CronRunCompletedPayload = z.infer<typeof cronRunCompletedPayloadSchema>
 export type CronUpdatedPayload = z.infer<typeof cronUpdatedPayloadSchema>
 export type CronDeletedPayload = z.infer<typeof cronDeletedPayloadSchema>
+export type KeepalivePayload = z.infer<typeof keepalivePayloadSchema>
 export type AdapterReadyPayload = z.infer<typeof adapterReadyPayloadSchema>
 
 // ─── PIEvent ──────────────────────────────────────────────────────
 
 export type PIPayload =
+  | KeepalivePayload
   | MessageStartPayload
   | MessageDeltaPayload
   | MessageEndPayload
@@ -257,6 +263,7 @@ export type PIPayload =
   | AdapterReadyPayload
 
 const payloadSchema = z.discriminatedUnion('kind', [
+  keepalivePayloadSchema,
   messageStartPayloadSchema,
   messageDeltaPayloadSchema,
   messageEndPayloadSchema,
