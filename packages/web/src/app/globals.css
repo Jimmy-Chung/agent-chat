@@ -586,3 +586,28 @@ code, pre {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
+
+@keyframes queue-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%       { opacity: 1;    transform: scale(1); }
+}
+
+/* ── Pending message queue ── */
+.queue-item {
+  transition: background 160ms ease;
+}
+.queue-item:hover {
+  background: rgba(255,255,255,0.08) !important;
+}
+.queue-item .edit-q:hover {
+  background: var(--glass-1);
+  color: var(--fg-regular);
+}
+.queue-item .close-q:hover {
+  background: rgba(255,69,58,0.10);
+  color: #FF8B82;
+}
+.queue-clear-all:hover {
+  color: #FF8B82 !important;
+  background: rgba(255,69,58,0.08);
+}

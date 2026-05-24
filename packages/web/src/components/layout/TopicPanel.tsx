@@ -356,9 +356,10 @@ const EMPTY_MESSAGES: Message[] = []
 function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicId: string; state: string; sessionState?: string; sessionError?: string }) {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
   const progress = useMessageStore((s) => s.progressByTopic[topicId])
+  const phase = useMessageStore((s) => s.agentPhaseByTopic[topicId])
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
   const hasPendingUser = lastMsg?.role === 'user' && lastMsg?.status === 'pending'
-  const isActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(state) || hasPendingUser
+  const isActive = state === 'processing' || state === 'aborting' || hasPendingUser
   const latestStreaming = [...messages].reverse().find((m) => m.role === 'assistant' && m.status === 'streaming')
   const activeSinceRef = useRef<number | null>(null)
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -389,12 +390,10 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [topicId])
 
-  const labelMap: Record<string, string> = {
-    idle: 'Idle',
-    thinking: 'Thinking',
-    tool: 'Using tool',
-    streaming: 'Streaming',
-    aborting: 'Aborting',
+  const getProcessingLabel = () => {
+    if (phase === 'thinking') return 'Processing → Thinking'
+    if (phase === 'streaming') return 'Processing → Streaming'
+    return 'Processing → Using tool'
   }
 
   const sessionLabelMap: Record<string, string> = {
@@ -403,7 +402,10 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
     disconnected: '已断开',
   }
 
-  const statusLabel = hasPendingUser && state === 'idle' ? 'Sending' : (labelMap[state] ?? 'Idle')
+  const statusLabel = hasPendingUser && state === 'idle' ? 'Sending'
+    : state === 'processing' ? getProcessingLabel()
+    : state === 'aborting' ? 'Aborting'
+    : 'Idle'
   const showProgress = isActive && !!progress
   const showBar = isActive || !!sessionState || !!sessionError
 

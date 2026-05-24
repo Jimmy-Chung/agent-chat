@@ -4,6 +4,13 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 
+export interface PendingMessage {
+  id: string
+  content: string
+  clientMessageId: string
+  queuedAt: number
+}
+
 interface MessageState {
   byTopic: Record<string, Message[]>
   partsByMessage: Record<string, MessagePart[]>
@@ -16,9 +23,11 @@ interface MessageState {
   todosByTopic: Record<string, Array<{ id: string; content: string; status: string; activeForm?: string }>>
   planByTopic: Record<string, string>
   agentStatusByTopic: Record<string, string>
+  agentPhaseByTopic: Record<string, string | undefined>
   progressByTopic: Record<string, { phase: string; message: string; metadata?: Record<string, unknown> }>
   usageByMessage: Record<string, { model: string; inputTokens: number; outputTokens: number }>
   interactions: Record<string, { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }>
+  pendingMessagesByTopic: Record<string, PendingMessage[]>
 }
 
 interface MessageActions {
@@ -40,15 +49,19 @@ interface MessageActions {
   endStreaming: (messageId: string) => void
   setTodos: (topicId: string, items: Array<{ id: string; content: string; status: string; activeForm?: string }>) => void
   setPlan: (topicId: string, plan: string) => void
-  setAgentStatus: (topicId: string, state: string) => void
+  setAgentStatus: (topicId: string, state: string, phase?: string) => void
   setProgress: (topicId: string, progress: { phase: string; message: string; metadata?: Record<string, unknown> }) => void
   clearProgress: (topicId: string) => void
   setUsage: (messageId: string, data: { model: string; inputTokens: number; outputTokens: number }) => void
   setInteraction: (id: string, data: { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }) => void
+  addPendingMessage: (topicId: string, content: string, clientMessageId: string) => void
+  removePendingMessage: (topicId: string, id: string) => void
+  clearPendingMessages: (topicId: string) => void
+  flushPendingMessages: (topicId: string) => PendingMessage[]
 }
 
 export const useMessageStore = create<MessageState & MessageActions>()(
-  immer((set) => ({
+  immer((set, get) => ({
     byTopic: {},
     partsByMessage: {},
     loading: false,
@@ -60,9 +73,11 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     todosByTopic: {},
     planByTopic: {},
     agentStatusByTopic: {},
+    agentPhaseByTopic: {},
     progressByTopic: {},
     usageByMessage: {},
     interactions: {},
+    pendingMessagesByTopic: {},
 
     fetchMessages: (_topicId) => {
       // Loading is done via WS; placeholder for store-level logic
@@ -146,8 +161,8 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     },
 
     getPartContent: (messageId, kind) => {
-      const state = useMessageStore.getState()
-      const part = state.partsByMessage[messageId]?.find((entry) => entry.kind === kind)
+      const state = get()
+      const part = state.partsByMessage[messageId]?.find((entry: MessagePart) => entry.kind === kind)
       if (!part) return ''
       try {
         const parsed = JSON.parse(part.content_json) as { content?: string } | string
@@ -178,6 +193,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       set((s) => {
         const messageIds = (s.byTopic[topicId] ?? []).map((message) => message.id)
         delete s.byTopic[topicId]
+        delete s.pendingMessagesByTopic[topicId]
         for (const messageId of messageIds) {
           delete s.partsByMessage[messageId]
           delete s.streamingText[messageId]
@@ -258,9 +274,14 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       })
     },
 
-    setAgentStatus: (topicId, state) => {
+    setAgentStatus: (topicId, state, phase) => {
       set((s) => {
         s.agentStatusByTopic[topicId] = state
+        if (state === 'idle') {
+          delete s.agentPhaseByTopic[topicId]
+        } else {
+          s.agentPhaseByTopic[topicId] = phase
+        }
       })
     },
 
@@ -286,6 +307,47 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       set((s) => {
         s.interactions[id] = data
       })
+    },
+
+    addPendingMessage: (topicId, content, clientMessageId) => {
+      set((s) => {
+        if (!s.pendingMessagesByTopic[topicId]) {
+          s.pendingMessagesByTopic[topicId] = []
+        }
+        s.pendingMessagesByTopic[topicId].push({
+          id: `pm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          content,
+          clientMessageId,
+          queuedAt: Date.now(),
+        })
+      })
+    },
+
+    removePendingMessage: (topicId, id) => {
+      set((s) => {
+        if (s.pendingMessagesByTopic[topicId]) {
+          s.pendingMessagesByTopic[topicId] = s.pendingMessagesByTopic[topicId].filter((pm) => pm.id !== id)
+          if (s.pendingMessagesByTopic[topicId].length === 0) {
+            delete s.pendingMessagesByTopic[topicId]
+          }
+        }
+      })
+    },
+
+    clearPendingMessages: (topicId) => {
+      set((s) => {
+        delete s.pendingMessagesByTopic[topicId]
+      })
+    },
+
+    flushPendingMessages: (topicId): PendingMessage[] => {
+      const pending = get().pendingMessagesByTopic[topicId] ?? []
+      if (pending.length > 0) {
+        set((s) => {
+          delete s.pendingMessagesByTopic[topicId]
+        })
+      }
+      return pending
     },
   })),
 )

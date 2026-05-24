@@ -4,12 +4,13 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
 import { getWsClient, sendProviderRpc } from '@/lib/ws-client'
 import { useArtifactStore } from '@/stores/artifact-store'
-import { useMessageStore } from '@/stores/message-store'
+import { useMessageStore, type PendingMessage } from '@/stores/message-store'
 import { useTopicStore } from '@/stores/topic-store'
 import { useWsStore, type ProviderConfig } from '@/stores/ws-store'
 import type { Artifact } from '@agent-chat/protocol'
 
 const EMPTY_ARTIFACTS: Artifact[] = []
+const EMPTY_PENDING: PendingMessage[] = []
 
 const MIME_ICON: Record<string, { bg: string; color: string; border: string; label: string }> = {
   xlsx: { bg: 'rgba(48,209,88,.16)', color: '#6FE39A', border: 'rgba(48,209,88,.30)', label: 'XLSX' },
@@ -84,13 +85,14 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const streamingTopicId = useMessageStore((s) => s.streamingTopicId)
   const isStreaming = streamingTopicId === topicId
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId])
-  const isAgentActive = ['thinking', 'tool', 'streaming', 'aborting'].includes(agentStatus ?? '')
+  const isAgentActive = agentStatus === 'processing' || agentStatus === 'aborting'
   const hasPendingUserMessage = useMessageStore((s) => {
     const msgs = s.byTopic[topicId]
     if (!msgs?.length) return false
     const last = msgs[msgs.length - 1]
     return last?.role === 'user' && last?.status === 'pending'
   })
+  const pendingMessages = useMessageStore((s) => s.pendingMessagesByTopic[topicId] ?? EMPTY_PENDING)
   const showStopButton = isStreaming || isAgentActive || hasPendingUserMessage
   const sessionReady = useWsStore((s) => s.sessionReadyByTopic[topicId])
   const sessionLoading = sessionReady !== true
@@ -153,19 +155,28 @@ export function MessageInput({ topicId }: MessageInputProps) {
     const trimmed = value.trim()
     if (!trimmed) return
 
+    const clientMessageId = `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+    if (agentStatus === 'processing') {
+      useMessageStore.getState().addPendingMessage(topicId, trimmed, clientMessageId)
+      setValue('')
+      setMentions([])
+      return
+    }
+
     const sent = wsClient.send({
       type: 'user.message',
       data: {
         topicId,
         content: trimmed,
-        clientMessageId: `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        clientMessageId,
         mentions: mentions.map((m) => ({ id: m.id, name: m.name })),
       },
     })
     if (!sent) return
     setValue('')
     setMentions([])
-  }, [value, topicId, wsClient, mentions])
+  }, [value, topicId, wsClient, mentions, agentStatus])
 
   const handleAbort = useCallback(() => {
     wsClient.send({
@@ -325,6 +336,14 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const topicCount = topicArtifacts.length
   const poolCount = poolArtifacts.length
 
+  const removePending = useCallback((id: string) => {
+    useMessageStore.getState().removePendingMessage(topicId, id)
+  }, [topicId])
+
+  const clearAllPending = useCallback(() => {
+    useMessageStore.getState().clearPendingMessages(topicId)
+  }, [topicId])
+
   return (
     <div className="px-6 pb-5 pt-2">
       {/* Mention chips */}
@@ -340,6 +359,136 @@ export function MessageInput({ topicId }: MessageInputProps) {
               <button onClick={() => removeMention(m.id)} className="ml-0.5 opacity-60 hover:opacity-100">&times;</button>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Pending message queue — above composer, per design spec */}
+      {pendingMessages.length > 0 && (
+        <div style={{ padding: '0 10px 8px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Header */}
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 10.5, color: 'var(--fg-dim)',
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              padding: '0 4px', fontWeight: 600,
+            }}
+          >
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              background: 'var(--role-user)',
+              boxShadow: '0 0 6px var(--role-user)',
+              animation: 'queue-breathe 1.6s ease-in-out infinite',
+              display: 'inline-block',
+            }} />
+            <span style={{ fontWeight: 700, color: 'var(--fg-regular)', letterSpacing: '0.04em' }}>排队中</span>
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              color: '#6cb1ff',
+              background: 'rgba(10,132,255,0.12)',
+              border: '1px solid rgba(10,132,255,0.30)',
+              padding: '1px 6px', borderRadius: 8,
+              letterSpacing: 0, textTransform: 'none',
+            }}>
+              {pendingMessages.length}
+            </span>
+            <span style={{
+              marginLeft: 'auto',
+              color: 'var(--fg-dim)', fontWeight: 500,
+              letterSpacing: '-0.005em', textTransform: 'none', fontSize: 11,
+            }}
+              className="hidden sm:block"
+            >
+              当前消息完成后依次发送
+            </span>
+            <button
+              onClick={clearAllPending}
+              className="queue-clear-all"
+              style={{
+                color: 'var(--fg-dim)', fontSize: 11, fontWeight: 500,
+                letterSpacing: '-0.005em', textTransform: 'none',
+                padding: '2px 7px', borderRadius: 5,
+              }}
+            >
+              全部清除
+            </button>
+          </div>
+
+          {/* List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {pendingMessages.map((pm, idx) => {
+              const isNext = idx === 0
+              return (
+                <div
+                  key={pm.id}
+                  className="queue-item"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '22px 1fr auto auto',
+                    columnGap: 10,
+                    padding: '8px 8px',
+                    background: isNext ? 'rgba(10,132,255,0.10)' : 'rgba(255,255,255,0.05)',
+                    borderRadius: 12,
+                    alignItems: 'center',
+                    backdropFilter: 'blur(20px) saturate(160%)',
+                    WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  }}
+                >
+                  {/* Sequence badge */}
+                  <span style={{
+                    width: 22, height: 22, borderRadius: 7,
+                    background: isNext ? 'rgba(10,132,255,0.18)' : 'var(--glass-1)',
+                    border: `1px solid ${isNext ? 'rgba(10,132,255,0.35)' : 'var(--hairline)'}`,
+                    display: 'grid', placeItems: 'center',
+                    fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600,
+                    color: isNext ? '#7CB6FF' : 'var(--fg-regular)',
+                    letterSpacing: 0,
+                  }}>
+                    {idx + 1}
+                  </span>
+
+                  {/* Message text */}
+                  <span style={{
+                    fontSize: 13, color: 'var(--fg-strong)',
+                    letterSpacing: '-0.005em',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    lineHeight: 1.4, minWidth: 0,
+                  }}>
+                    {pm.content}
+                  </span>
+
+                  {/* Edit button (desktop) */}
+                  <button
+                    className="edit-q hidden sm:grid"
+                    title="编辑"
+                    style={{
+                      width: 24, height: 24, placeItems: 'center',
+                      borderRadius: 6, color: 'var(--fg-dim)', cursor: 'default',
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
+                    </svg>
+                  </button>
+
+                  {/* Remove button */}
+                  <button
+                    className="close-q"
+                    onClick={() => removePending(pm.id)}
+                    title="移除"
+                    style={{
+                      width: 24, height: 24, display: 'grid', placeItems: 'center',
+                      borderRadius: 6, color: 'var(--fg-dim)', cursor: 'default',
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -631,10 +780,10 @@ export function MessageInput({ topicId }: MessageInputProps) {
             ref={textareaRef}
             value={value}
             onChange={handleChange}
-            onKeyDown={isStreaming || sessionLoading ? undefined : handleKeyDown}
-            placeholder={sessionLoading ? '正在连接 Agent...' : isStreaming ? 'Agent 正在回复...' : '回复 agent…  按 ⌘↩ 发送 · @ 提及文件 · / 触发命令'}
+            onKeyDown={sessionLoading ? undefined : handleKeyDown}
+            placeholder={sessionLoading ? '正在连接 Agent...' : '回复 agent…  按 ⌘↩ 发送 · @ 提及文件 · / 触发命令'}
             maxRows={6}
-            disabled={isStreaming || sessionLoading}
+            disabled={sessionLoading}
             className="min-h-[22px] flex-1 resize-none bg-transparent text-sm outline-none disabled:opacity-50"
             style={{ color: 'var(--fg-strong)', lineHeight: 1.5, letterSpacing: '-0.005em' }}
           />

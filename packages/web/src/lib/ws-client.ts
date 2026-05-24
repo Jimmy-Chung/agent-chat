@@ -96,6 +96,15 @@ class WsClient {
         return
       }
       useWsStore.getState().setStatus('disconnected')
+      // WS 断连 → 当前活跃话题如果处于 processing，标记为 aborting
+      // 其他话题等用户切过去时再处理（那时 WS 已重连或会触发 session.health）
+      const activeTopicId = useTopicStore.getState().activeTopicId
+      if (activeTopicId) {
+        const status = useMessageStore.getState().agentStatusByTopic[activeTopicId]
+        if (status === 'processing') {
+          useMessageStore.getState().setAgentStatus(activeTopicId, 'aborting')
+        }
+      }
       this.scheduleReconnect()
     }
 
@@ -245,7 +254,7 @@ class WsClient {
           finished_at: Date.now(),
           stop_reason: event.data.stopReason,
         })
-        messageStore.setAgentStatus(event.data.topicId, event.data.stopReason === 'tool_use' ? 'tool' : 'idle')
+        messageStore.setAgentStatus(event.data.topicId, event.data.stopReason === 'tool_use' ? 'processing' : 'idle', event.data.stopReason === 'tool_use' ? 'tool_use' : undefined)
         break
 
       case 'message.delivery': {
@@ -466,7 +475,8 @@ class WsClient {
         const d = event.data as Record<string, unknown>
         const agentTopicId = d.topicId as string
         const agentState = d.state as string
-        messageStore.setAgentStatus(agentTopicId, agentState)
+        const agentPhase = d.phase as string | undefined
+        messageStore.setAgentStatus(agentTopicId, agentState, agentPhase)
         // BUG-040 ⑤ — On agent.status: idle, force-finalize any streaming residue
         // for this topic. Adapter may have stopped emitting events without a
         // message.end (e.g. CLI silent exit). Scan every streaming message on this
@@ -489,6 +499,19 @@ class WsClient {
           // was added under a different topic during a race.
           if (state.streamingTopicId === agentTopicId && state.streamingMessageId) {
             messageStore.endStreaming(state.streamingMessageId)
+          }
+          // Flush queued messages now that the turn is truly done.
+          const pending = messageStore.flushPendingMessages(agentTopicId)
+          for (const pm of pending) {
+            this.send({
+              type: 'user.message',
+              data: {
+                topicId: agentTopicId,
+                content: pm.content,
+                clientMessageId: pm.clientMessageId,
+                mentions: [],
+              },
+            })
           }
         }
         break
