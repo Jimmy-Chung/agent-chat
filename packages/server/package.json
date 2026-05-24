@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:link-stress": "tsx scripts/link-stress.ts",
     "build": "tsc",
     "deploy": "wrangler deploy"
   },
@@ -26,6 +27,7 @@
     "better-sqlite3": "^12.9.0",
     "drizzle-kit": "^0.30.5",
     "socks-proxy-agent": "^10.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.3",
     "vitest": "^3.1.1",
     "wrangler": "^3.101.0",
