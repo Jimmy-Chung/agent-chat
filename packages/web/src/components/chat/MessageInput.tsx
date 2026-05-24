@@ -943,65 +943,68 @@ function ProviderModelSelect({
 
   return (
     <div ref={ref} className="relative">
-      <div className="flex items-center gap-1.5">
-        <span className="text-[10px] font-medium uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.04em' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={loading || options.length === 0}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
+        style={{
+          background: 'var(--glass-1)',
+          border: '1px solid var(--hairline)',
+          color: 'var(--fg-regular)',
+          letterSpacing: '-0.005em',
+        }}
+      >
+        <span style={{ color: 'var(--fg-dim)', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginRight: 2 }}>
           {label}
         </span>
-        <button
-          onClick={() => setOpen(!open)}
-          disabled={loading || options.length === 0}
-          className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px] transition-colors hover:opacity-80 disabled:opacity-50"
-          style={{ background: 'var(--bg-raised)', border: '1px solid var(--hairline)', color: 'var(--fg)' }}
-        >
-          <span>{loading ? '加载中...' : selected?.label ?? '选择...'}</span>
-          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2">
-            <path d="M2 3l2 2 2-2" />
-          </svg>
-        </button>
-      </div>
+        <span style={{ color: 'var(--fg-strong)' }}>{loading ? '…' : selected?.label ?? '—'}</span>
+        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: 'var(--fg-dim)', marginLeft: 1 }}>
+          <path d="M1.5 3L4 5.5 6.5 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
       {open && options.length > 0 && (
         <div
-          className="absolute bottom-full left-0 mb-1.5 rounded-lg shadow-lg z-50 py-1 min-w-[160px] max-h-[200px] overflow-y-auto"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--hairline)' }}
+          className="absolute bottom-full left-0 mb-2 z-50 py-1 overflow-y-auto"
+          style={{
+            minWidth: 180,
+            maxHeight: 240,
+            borderRadius: 11,
+            background: 'rgba(21,23,28,0.92)',
+            backdropFilter: 'blur(40px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+            border: '1px solid var(--hairline-strong)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
+          }}
         >
-          {groups.size > 1 ? (
-            Array.from(groups.entries()).map(([group, groupOptions]) => (
-              <div key={group}>
-                {group && (
-                  <div className="px-3 py-1 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.04em' }}>
-                    {group}
-                  </div>
-                )}
-                {groupOptions.map((o) => (
-                  <button
-                    key={o.value}
-                    onClick={() => { onChange(o.value); setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:opacity-80"
-                    style={{ color: o.value === value ? 'var(--fg)' : 'var(--fg-dim)' }}
-                  >
-                    {o.value === value && (
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5l2 2 4-4" /></svg>
-                    )}
-                    <span className={o.value === value ? '' : 'ml-[14px]'}>{o.label}</span>
-                  </button>
-                ))}
-              </div>
-            ))
-          ) : (
-            options.map((o) => (
+          {options.map((o) => {
+            const isSelected = o.value === value
+            return (
               <button
                 key={o.value}
                 onClick={() => { onChange(o.value); setOpen(false) }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:opacity-80"
-                style={{ color: o.value === value ? 'var(--fg)' : 'var(--fg-dim)' }}
+                className="w-full flex items-center gap-2 text-[12.5px] text-left"
+                style={{
+                  padding: '7px 12px',
+                  color: isSelected ? 'var(--fg-strong)' : 'var(--fg-regular)',
+                  background: isSelected ? 'rgba(10,132,255,.12)' : 'transparent',
+                  fontWeight: isSelected ? 600 : 400,
+                  letterSpacing: '-0.005em',
+                }}
+                onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--glass-1)' }}
+                onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
-                {o.value === value && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5l2 2 4-4" /></svg>
+                {isSelected ? (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#0A84FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M1.5 5l2.5 2.5 4.5-4.5" />
+                  </svg>
+                ) : (
+                  <span style={{ width: 10, flexShrink: 0 }} />
                 )}
-                <span className={o.value === value ? '' : 'ml-[14px]'}>{o.label}</span>
+                {o.label}
               </button>
-            ))
-          )}
+            )
+          })}
         </div>
       )}
     </div>
