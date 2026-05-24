@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events'
 import type { AppConfig } from '../config'
 import { logger } from '../logger'
+import { logPiEvent } from '../server-logs'
+import { buildPiWsUrl } from '@agent-chat/protocol'
 import {
   encodeFrame,
   decodeFrame,
@@ -46,8 +48,6 @@ class PiSessionConn extends EventEmitter {
   private ready = false
   public lastSeq = 0
   private readyResolve: (() => void) | null = null
-  private healthTimer: ReturnType<typeof setInterval> | null = null
-  private lastMessageAt = 0
 
   constructor(sessionId: string, config: AppConfig) {
     super()
@@ -75,18 +75,16 @@ class PiSessionConn extends EventEmitter {
 
   private attemptConnect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const url = buildPiAdapterUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
+      const url = buildPiWsUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
       logger.info({ url: url.replace(/token=[^&]+/, 'token=***'), sessionId: this.sessionId }, 'PI session WS connecting')
       const ws = new WebSocket(url)
       ws.addEventListener('open', async () => {
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
         await this.waitForReady()
-        this.startHealthProbe()
         resolve()
       })
 
       ws.addEventListener('message', (event) => {
-        this.lastMessageAt = Date.now()
         let frame: WSFrame | null = null
         try {
           frame = decodeFrame(
@@ -102,7 +100,6 @@ class PiSessionConn extends EventEmitter {
             sessionId: this.sessionId,
           }, 'Failed to parse PI message')
           // AIT-150 ③ — protocol errors indicate a broken connection; close and signal
-          this.stopHealthProbe()
           this.emit('event', {
             seq: 0,
             sessionId: this.sessionId,
@@ -124,7 +121,6 @@ class PiSessionConn extends EventEmitter {
 
       ws.addEventListener('close', (event) => {
         logger.info({ code: event.code, reason: event.reason, sessionId: this.sessionId }, 'PI session WS closed')
-        this.stopHealthProbe()
         // AIT-150 ④ — emit reconnecting first so UI shows transient state,
         // then disconnected. Full reconnect loop deferred to future version.
         this.emit('event', {
@@ -172,7 +168,14 @@ class PiSessionConn extends EventEmitter {
     switch (frame.t) {
       case 'pi.event':
       case 'event': {
+        const raw = frame.d as Record<string, unknown>
+        // keepalive events may omit sessionId/seq/ts — skip full PIEvent parsing
+        if (raw?.payload && typeof raw.payload === 'object' && (raw.payload as Record<string, unknown>).kind === 'keepalive') {
+          return
+        }
         const event = piEventSchema.parse(frame.d)
+        // Log PI event for debugging (BUG-044)
+        logPiEvent(this.sessionId, event)
         if (event.payload?.kind === 'adapter.ready') {
           logger.info({ sessionId: this.sessionId, adapterInstanceId: (event.payload as { adapterInstanceId?: string }).adapterInstanceId }, 'adapter.ready received')
           this.ready = true
@@ -218,7 +221,6 @@ class PiSessionConn extends EventEmitter {
       }
       case 'keepalive': {
         // Adapter heartbeat — send ack back so adapter knows we're alive
-        this.lastMessageAt = Date.now()
         if (this.ws?.readyState === WebSocket.OPEN) {
           this.ws.send(encodeFrame(createFrame('keepalive_ack', { kind: 'keepalive_ack' })))
         }
@@ -292,7 +294,6 @@ class PiSessionConn extends EventEmitter {
 
       try {
         this.ws.send(encoded)
-        this.lastMessageAt = Date.now()
       } catch (err) {
         // ws.send threw — connection is dead. Clean up pending entry and close.
         const entry = this.pending.get(id)
@@ -305,26 +306,7 @@ class PiSessionConn extends EventEmitter {
     })
   }
 
-  private startHealthProbe(): void {
-    this.lastMessageAt = Date.now()
-    this.healthTimer = setInterval(() => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
-      if (Date.now() - this.lastMessageAt > 45_000) {
-        logger.warn({ sessionId: this.sessionId }, 'PI health probe timeout, closing')
-        this.ws.close()
-      }
-    }, 15_000)
-  }
-
-  private stopHealthProbe(): void {
-    if (this.healthTimer) {
-      clearInterval(this.healthTimer)
-      this.healthTimer = null
-    }
-  }
-
   close(): void {
-    this.stopHealthProbe()
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -341,9 +323,7 @@ class PiSessionConn extends EventEmitter {
 }
 
 export function buildPiAdapterUrl(rawUrl: string, token: string): string {
-  const url = new URL(rawUrl)
-  if (token) url.searchParams.set('token', token)
-  return url.toString()
+  return buildPiWsUrl(rawUrl, token)
 }
 
 export class PiClient extends EventEmitter {
