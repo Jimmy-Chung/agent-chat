@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopicStore } from '@/stores/topic-store'
 import { useUiStore } from '@/stores/ui-store'
@@ -10,6 +10,7 @@ import { useSopTemplateStore } from '@/stores/sop-template-store'
 import { useToastStore } from '@/stores/toast-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
@@ -114,6 +115,35 @@ export function Sidebar() {
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const templates = useSopTemplateStore((s) => s.templates)
   const wsStatus = useWsStore((s) => s.status)
+
+  // Adapter version — fetch on hover, cache 60s
+  const [adapterVersion, setAdapterVersion] = useState<string | null>(null)
+  const adapterFetchedAt = useRef(0)
+  const fetchAdapterVersion = useCallback(async () => {
+    if (adapterVersion !== null && Date.now() - adapterFetchedAt.current < 60_000) return
+    try {
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL
+      let serverUrl = ''
+      if (wsUrl) {
+        try {
+          const u = new URL(wsUrl)
+          serverUrl = `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
+        } catch { /* fall through */ }
+      }
+      // PI adapter config comes from frontend localStorage (same source as WsProvider)
+      const wssUrl = localStorage.getItem(PI_WSS_URL_KEY) || ''
+      const piToken = localStorage.getItem(PI_TOKEN_KEY) || ''
+      const params = new URLSearchParams()
+      if (wssUrl) params.set('wssUrl', wssUrl)
+      if (piToken) params.set('piToken', piToken)
+      const res = await fetch(`${serverUrl}/api/agent-chat/v1/adapter-status?${params}`, { signal: AbortSignal.timeout(5_000) })
+      const data = await res.json()
+      setAdapterVersion(data.version ?? 'unknown')
+      adapterFetchedAt.current = Date.now()
+    } catch {
+      setAdapterVersion('unreachable')
+    }
+  }, [adapterVersion])
   const sessionHealthByTopic = useWsStore((s) => s.sessionHealthByTopic)
   const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
@@ -501,7 +531,22 @@ export function Sidebar() {
             onClick={() => setShowConnConfig(true)}
           />
           <NotificationBell />
-          <span className="ml-auto text-[11px]" style={{ fontFeatureSettings: '"tnum"' }}>v1.6.1</span>
+          <div className="ml-auto">
+            <Tooltip
+              variant="info"
+              side="top"
+              content={
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.0</span></div>
+                  <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
+                </div>
+              }
+              delayMs={200}
+              onShow={fetchAdapterVersion}
+            >
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.0</span>
+            </Tooltip>
+          </div>
         </div>
       </div>
 

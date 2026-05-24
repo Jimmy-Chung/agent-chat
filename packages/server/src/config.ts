@@ -5,8 +5,6 @@ export interface Env {
   TOPIC_DO: DurableObjectNamespace
   R2?: R2Bucket
   AGENT_CHAT_TOKEN?: string
-  PI_ADAPTER_URL?: string
-  PI_ADAPTER_TOKEN?: string
   R2_ACCOUNT_ID?: string
   R2_ACCESS_KEY_ID?: string
   R2_SECRET_ACCESS_KEY?: string
@@ -40,14 +38,10 @@ export interface AppConfig {
 export function createConfig(env: Env): AppConfig {
   return {
     token: env.AGENT_CHAT_TOKEN || '',
-    piAdapterUrl:
-      env.PI_ADAPTER_URL ||
-      DEFAULT_PI_ADAPTER_URL,
-    originalPiAdapterUrl:
-      env.PI_ADAPTER_URL ||
-      DEFAULT_PI_ADAPTER_URL,
-    piAdapterToken: env.PI_ADAPTER_TOKEN || '',
-    artifactTokenSecret: env.AGENT_CHAT_TOKEN || env.PI_ADAPTER_TOKEN || 'agent-chat-local-artifacts',
+    piAdapterUrl: DEFAULT_PI_ADAPTER_URL,
+    originalPiAdapterUrl: DEFAULT_PI_ADAPTER_URL,
+    piAdapterToken: '',
+    artifactTokenSecret: env.AGENT_CHAT_TOKEN || 'agent-chat-local-artifacts',
     logLevel: env.LOG_LEVEL || 'info',
     r2: {
       accountId: env.R2_ACCOUNT_ID || '',

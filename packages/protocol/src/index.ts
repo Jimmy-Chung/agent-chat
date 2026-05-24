@@ -253,6 +253,7 @@ export type {
 export {
   DEFAULT_PI_ADAPTER_URL,
   piWsToHttp,
+  piWsToHttpBase,
   buildPiWsUrl,
 } from './pi-adapter'
 

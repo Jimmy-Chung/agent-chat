@@ -453,6 +453,127 @@ code, pre {
 }
 
 /* =============================================================
+   Tooltip — S8 design spec
+   ============================================================= */
+
+.tip {
+  position: absolute;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+          backdrop-filter: blur(40px) saturate(200%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 24px rgba(0,0,0,0.45);
+  z-index: 999;
+  max-width: 300px;
+  white-space: nowrap;
+  animation: tip-in 180ms cubic-bezier(0.22,1.2,0.36,1) both;
+  pointer-events: none;
+}
+.tip.multi {
+  white-space: normal;
+  max-width: 264px;
+  padding: 9px 12px 10px;
+}
+.tip-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+.tip-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tip-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.tip-text {
+  font-size: 12px;
+  color: rgba(255,255,255,0.85);
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translate(var(--tx,0),calc(var(--ty,0) + 4px)) scale(0.96); }
+  to   { opacity: 1; transform: translate(var(--tx,0),var(--ty,0)) scale(1); }
+}
+
+/* INFO */
+.tip.info {
+  background: rgba(20,28,44,0.85);
+  border: 1px solid rgba(10,132,255,0.40);
+  color: #E6F0FF;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(10,132,255,0.12), 0 0 22px rgba(10,132,255,0.18);
+}
+.tip.info .tip-icon { color: #7CB6FF }
+.tip.info .tip-title { color: #fff }
+
+/* WARNING */
+.tip.warning {
+  background: rgba(44,32,16,0.86);
+  border: 1px solid rgba(255,159,10,0.42);
+  color: #FFEAC9;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,159,10,0.14), 0 0 22px rgba(255,159,10,0.18);
+}
+.tip.warning .tip-icon { color: #FFC470 }
+.tip.warning .tip-title { color: #FFF1D6 }
+
+/* ERROR */
+.tip.error {
+  background: rgba(48,18,18,0.88);
+  border: 1px solid rgba(255,69,58,0.46);
+  color: #FFD8D4;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,69,58,0.16), 0 0 22px rgba(255,69,58,0.18);
+}
+.tip.error .tip-icon { color: #FF8B82 }
+.tip.error .tip-title { color: #FFE2DD }
+
+/* Arrow */
+.tip::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  border: inherit;
+  transform: rotate(45deg);
+}
+.tip.top::after  { left:50%; bottom:-5px; margin-left:-4px; border-top:none; border-left:none }
+.tip.bottom::after { left:50%; top:-5px; margin-left:-4px; border-bottom:none; border-right:none }
+
+.tip.info.top::after    { background:rgba(20,28,44,0.85); border-color:rgba(10,132,255,0.40) }
+.tip.info.bottom::after { background:rgba(20,28,44,0.85); border-color:rgba(10,132,255,0.40) }
+.tip.warning.top::after    { background:rgba(44,32,16,0.86); border-color:rgba(255,159,10,0.42) }
+.tip.warning.bottom::after { background:rgba(44,32,16,0.86); border-color:rgba(255,159,10,0.42) }
+.tip.error.top::after    { background:rgba(48,18,18,0.88); border-color:rgba(255,69,58,0.46) }
+.tip.error.bottom::after { background:rgba(48,18,18,0.88); border-color:rgba(255,69,58,0.46) }
+
+.tip code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(0,0,0,0.32);
+  border: 1px solid rgba(255,255,255,0.10);
+  padding: 0 5px;
+  border-radius: 4px;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip { animation: none !important; }
+}
+
+/* =============================================================
    Mobile overlay animations
    ============================================================= */
 

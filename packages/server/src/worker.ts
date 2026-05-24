@@ -10,6 +10,7 @@ import { getD1 } from './db/migrate'
 import { handleArtifactAccessRequest } from './r2/artifact-access'
 import { createPushRoutes } from './routes/push'
 import { getLogs, clearLogs } from './server-logs'
+import { piWsToHttpBase } from '@agent-chat/protocol'
 
 let initialized = false
 let appConfig: AppConfig | null = null
@@ -86,8 +87,6 @@ app.get('/pi-healthz', async (c) => {
 app.get('/debug', (c) => {
   return c.json({
     token: '***',
-    piAdapterToken: '***',
-    piAdapterUrl: 'set',
     initialized,
   })
 })
@@ -100,6 +99,26 @@ app.get('/server-logs', (c) => {
 app.post('/server-logs/clear', (c) => {
   clearLogs()
   return c.json({ ok: true, cleared: true })
+})
+
+// Proxy: fetch adapter /api/agent-chat/v1/adapter-status
+// PI adapter URL comes from frontend query param since server has no server-side PI_ADAPTER_URL
+app.get('/api/agent-chat/v1/adapter-status', async (c) => {
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ version: 'not_configured' })
+
+  try {
+    const url = `${piWsToHttpBase(wssUrl)}/adapter-status`
+    const headers: Record<string, string> = {}
+    if (piToken) headers['Authorization'] = `Bearer ${piToken}`
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return c.json({ version: 'unknown' })
+    const data = await res.json() as Record<string, unknown>
+    return c.json(data, 200, { 'Cache-Control': 'no-store' })
+  } catch {
+    return c.json({ version: 'unreachable' })
+  }
 })
 
 export { TopicDurableObject } from './ws/topic-do'
@@ -139,7 +158,7 @@ export default {
         const doId = env.TOPIC_DO.idFromName(topicId)
         const stub = env.TOPIC_DO.get(doId) as DurableObjectStub<TopicDurableObject>
 
-        // Allow frontend to override PI adapter config per connection
+        // PI adapter config comes entirely from the frontend; server has no server-side config for it
         const config = { ...appConfig }
         const piWssUrl = url.searchParams.get('piWssUrl')
         const piTokenParam = url.searchParams.get('piToken')
