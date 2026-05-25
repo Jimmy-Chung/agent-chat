@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-25 [v1.7.1] — Provider 切换分组修复 + v1.7.x 首发
+
+> 本版本首次为 v1.7.x 线打 tag，含 v1.6.1 以来累积的 FEAT（AIT-167/171/172、FEAT-045 等）与本次 BUG-045 修复，以及若干进行中的 protocol/server/web 改动。
+
+### BUG-045 (AIT-173): 切换活跃 Provider 后分组被重置为 claude-code
+- Sidebar 标签页内 `handleSwitchProvider` 与 Provider 配置弹窗 `handleActivate` 调用 `updateProviderConfig` 时未带 `group`，adapter 整条替换后缺省 group 回落为 `claude-code`，导致 codex/pi-agent 分组的 Provider 一切换就跳到 Claude Code 分组
+- 修复：两处切换入口均回传当前 Provider 的 `group`，保持分组不变
+- 验证：Playwright 驱动真实 UI，切换 codex Provider 后停留在 Codex 分组；对照组（旧 payload）复现了分组跳变
+
 ## 2026-05-21 [v1.6.1] — 新建话题 Provider 透传修复
 
 ### BUG-041 (AIT-155): 新建话题未传递全局活跃 providerId 致 createSession 使用错误 Provider

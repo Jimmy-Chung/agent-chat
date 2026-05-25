@@ -136,7 +136,8 @@ export const interactionRequestSchema = z.object({
 
 export const agentStatusSchema = z.object({
   topicId: z.string(),
-  state: z.enum(['idle', 'thinking', 'tool', 'streaming', 'aborting']),
+  state: z.enum(['idle', 'processing', 'aborting']),
+  phase: z.enum(['thinking', 'streaming', 'tool_use']).optional(),
 })
 
 export const agentProgressSchema = z.object({

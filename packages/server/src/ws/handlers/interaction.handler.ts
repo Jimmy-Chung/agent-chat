@@ -24,7 +24,7 @@ export function registerInteractionHandlers(
           logger.warn({ err }, 'Failed to abort session on PI')
         }
       }
-      broadcaster.broadcast('agent.status', { topicId: data.topicId, state: 'idle' })
+      broadcaster.broadcast('agent.status', { topicId: data.topicId, state: 'aborting' })
       return
     }
 

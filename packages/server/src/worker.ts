@@ -121,6 +121,82 @@ app.get('/api/agent-chat/v1/adapter-status', async (c) => {
   }
 })
 
+// ─── Provider config HTTP proxy → adapter ────────────────────────────────────
+// The PI adapter URL + token come from the frontend as query params (same
+// pattern as /api/agent-chat/v1/adapter-status).
+
+const PI_PROXY_TIMEOUT_MS = 8_000
+
+function piAdapterHeaders(piToken: string): Record<string, string> {
+  return piToken ? { Authorization: `Bearer ${piToken}` } : {}
+}
+
+function checkAgentChatToken(authHeader: string | undefined): boolean {
+  if (!appConfig?.token) return true
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+  return token === appConfig.token
+}
+
+app.get('/api/agent-chat/v1/providers', async (c) => {
+  if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
+  const qs = new URLSearchParams()
+  const group = c.req.query('group')
+  if (group) qs.set('group', group)
+  const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers?${qs}`, {
+    headers: piAdapterHeaders(piToken),
+    signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
+  })
+  return c.json(await res.json(), res.status as 200)
+})
+
+app.post('/api/agent-chat/v1/providers', async (c) => {
+  if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
+  const body = await c.req.json()
+  const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...piAdapterHeaders(piToken) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
+  })
+  return c.json(await res.json(), res.status as 200)
+})
+
+app.patch('/api/agent-chat/v1/providers/:id', async (c) => {
+  if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
+  const id = c.req.param('id')
+  const body = await c.req.json()
+  const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...piAdapterHeaders(piToken) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
+  })
+  return c.json(await res.json(), res.status as 200)
+})
+
+app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
+  if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
+  const id = c.req.param('id')
+  const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers/${id}`, {
+    method: 'DELETE',
+    headers: piAdapterHeaders(piToken),
+    signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
+  })
+  return c.json(await res.json(), res.status as 200)
+})
+
 export { TopicDurableObject } from './ws/topic-do'
 
 export default {

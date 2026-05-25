@@ -602,13 +602,6 @@ case 'usage.snapshot': {
         handleMcpError(event.data as { requestId: string; code: string; message: string })
         break
 
-      case 'provider.rpc.result':
-        handleProviderRpcResult(event.data as ProviderRpcResult)
-        break
-
-      case 'provider.rpc.error':
-        handleProviderRpcError(event.data as { requestId: string; code: string; message: string })
-        break
     }
   }
 
@@ -692,7 +685,7 @@ export async function sendMcpCommand(params: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
@@ -717,61 +710,81 @@ export function handleMcpError(data: { requestId: string; code: string; message:
   entry.reject(new Error(`${data.code}: ${data.message}`))
 }
 
-// ─── Provider RPC via WS (server relays to adapter) ──
+// ─── Provider config HTTP API (server proxies to adapter REST endpoints) ──────
 
-export interface ProviderRpcResult {
-  requestId: string
-  result: unknown
+function getServerBase(): string {
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || ''
+  if (!wsUrl) return ''
+  try {
+    const u = new URL(wsUrl)
+    return `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
+  } catch {
+    return ''
+  }
 }
 
-const pendingProviderRpcRequests = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+function getAdapterQs(): string {
+  const wssUrl = localStorage.getItem('PI_ADAPTER_WSS_URL') || ''
+  const piToken = localStorage.getItem('PI_ADAPTER_TOKEN') || ''
+  const qs = new URLSearchParams()
+  if (wssUrl) qs.set('wssUrl', wssUrl)
+  if (piToken) qs.set('piToken', piToken)
+  return qs.toString()
+}
 
 export async function sendProviderRpc(
-  method: 'listProviderConfigs' | 'addProviderConfig' | 'updateProviderConfig' | 'removeProviderConfig' | 'switchSessionProvider' | 'getUsage',
+  method: 'listProviderConfigs' | 'addProviderConfig' | 'updateProviderConfig' | 'removeProviderConfig',
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  const { status } = useWsStore.getState()
-  if (status !== 'connected') {
-    throw new Error('WebSocket not connected')
-  }
-  const client = getWsClient()
-  const requestId = crypto.randomUUID()
+  const base = getServerBase()
+  const qs = getAdapterQs()
+  const { id, ...rest } = params as Record<string, unknown> & { id?: string }
 
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pendingProviderRpcRequests.delete(requestId)
-      reject(new Error(`Provider RPC timeout: ${method}`))
-    }, 15_000)
+  let url: string
+  let httpMethod: string
+  let body: string | undefined
 
-    pendingProviderRpcRequests.set(requestId, { resolve, reject, timer })
-
-    const sent = client.send({
-      type: 'provider.rpc',
-      data: { requestId, method, params },
-    })
-
-    if (!sent) {
-      clearTimeout(timer)
-      pendingProviderRpcRequests.delete(requestId)
-      reject(new Error('Failed to send provider RPC'))
+  switch (method) {
+    case 'listProviderConfigs': {
+      const listQs = new URLSearchParams(qs)
+      listQs.set('group', 'universal')
+      url = `${base}/api/agent-chat/v1/providers?${listQs}`
+      httpMethod = 'GET'
+      break
     }
+    case 'addProviderConfig':
+      url = `${base}/api/agent-chat/v1/providers?${qs}`
+      httpMethod = 'POST'
+      body = JSON.stringify(rest)
+      break
+    case 'updateProviderConfig':
+      url = `${base}/api/agent-chat/v1/providers/${id}?${qs}`
+      httpMethod = 'PATCH'
+      body = JSON.stringify(rest)
+      break
+    case 'removeProviderConfig':
+      url = `${base}/api/agent-chat/v1/providers/${id}?${qs}`
+      httpMethod = 'DELETE'
+      break
+  }
+
+  const agentChatToken = localStorage.getItem('AGENT_CHAT_TOKEN') || ''
+  const headers: Record<string, string> = {}
+  if (agentChatToken) headers['Authorization'] = `Bearer ${agentChatToken}`
+  if (body) headers['Content-Type'] = 'application/json'
+
+  const res = await fetch(url, {
+    method: httpMethod,
+    headers,
+    body,
+    signal: AbortSignal.timeout(10_000),
   })
-}
 
-export function handleProviderRpcResult(data: ProviderRpcResult): void {
-  const entry = pendingProviderRpcRequests.get(data.requestId)
-  if (!entry) return
-  pendingProviderRpcRequests.delete(data.requestId)
-  clearTimeout(entry.timer)
-  entry.resolve(data.result)
-}
-
-export function handleProviderRpcError(data: { requestId: string; code: string; message: string }): void {
-  const entry = pendingProviderRpcRequests.get(data.requestId)
-  if (!entry) return
-  pendingProviderRpcRequests.delete(data.requestId)
-  clearTimeout(entry.timer)
-  entry.reject(new Error(`${data.code}: ${data.message}`))
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }))
+    throw new Error((err as { message?: string }).message || res.statusText)
+  }
+  return res.json()
 }
 
 export type { WsClient }

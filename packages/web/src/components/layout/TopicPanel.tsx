@@ -147,6 +147,18 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
     return map
   }, [interactions])
 
+  // Interactions without messageId — render standalone at bottom of message list
+  const orphanInteractions = useMemo(() => {
+    return Object.values(interactions)
+      .filter((inter) => !inter.messageId && inter.topicId === activeTopic.id)
+      .map((inter) => ({
+        interactionId: inter.interactionId,
+        interactionKind: inter.interactionKind as 'approval' | 'choice',
+        prompt: inter.prompt,
+        options: inter.options,
+      }))
+  }, [interactions, activeTopic.id])
+
   if (activeTopic.kind === 'system_artifact_pool') {
     return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar} toggleMobileInspector={toggleMobileInspector}><ArtifactPoolView /></SystemTopicLayout>
   }
@@ -299,7 +311,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         sessionError={sessionHealth?.lastError}
       />
 
-      <MessageList messages={messages} partsByMessage={partsByMessage} toolResults={toolResults} usageByMessage={usageByMessage} approvalsByMessage={approvalsByMessage} cronByMessage={{}} />
+      <MessageList messages={messages} partsByMessage={partsByMessage} toolResults={toolResults} usageByMessage={usageByMessage} approvalsByMessage={approvalsByMessage} cronByMessage={{}} orphanInteractions={orphanInteractions} topicId={activeTopic.id} />
       <MessageInput topicId={activeTopic.id} />
 
       {deletingTopic && createPortal(

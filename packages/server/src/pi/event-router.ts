@@ -3,6 +3,12 @@ import type { PiClient } from './client'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+
+function mapAgentState(raw: string): { state: string; phase?: string } {
+  if (raw === 'idle' || raw === 'aborting' || raw === 'waiting_for_user') return { state: raw === 'waiting_for_user' ? 'processing' : raw }
+  const phaseMap: Record<string, string> = { thinking: 'thinking', streaming: 'streaming', tool: 'tool_use' }
+  return { state: 'processing', phase: phaseMap[raw] ?? 'thinking' }
+}
 import * as artifactRepo from '../db/repos/artifact.repo'
 import { artifactToPayload } from '../ws/artifact-control'
 import * as usageRepo from '../db/repos/usage.repo'
@@ -193,7 +199,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         messageId: msg.id,
         role: 'assistant',
       })
-      hub.broadcast('agent.status', { topicId, state: 'streaming' })
+      hub.broadcast('agent.status', { topicId, state: 'processing', phase: 'streaming' })
       break
     }
 
@@ -215,7 +221,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         part: payload.part,
       })
       if (kind === 'text' || kind === 'thinking') {
-        hub.broadcast('agent.status', { topicId, state: 'streaming' })
+        hub.broadcast('agent.status', { topicId, state: 'processing', phase: 'streaming' })
       }
       break
     }
@@ -373,7 +379,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'agent.status': {
       if (!topicId) return
-      hub.broadcast('agent.status', { topicId, state: payload.state })
+      hub.broadcast('agent.status', { topicId, ...mapAgentState(payload.state) })
       break
     }
 
