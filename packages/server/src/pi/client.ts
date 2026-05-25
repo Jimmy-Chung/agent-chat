@@ -174,7 +174,7 @@ class PiSessionConn extends EventEmitter {
           return
         }
         const event = piEventSchema.parse(frame.d)
-        // Log PI event for debugging (BUG-044)
+        // Log PI event for debugging (BUG-044) with cross-hop correlation (BUG-046).
         logPiEvent(this.sessionId, event)
         if (event.payload?.kind === 'adapter.ready') {
           logger.info({ sessionId: this.sessionId, adapterInstanceId: (event.payload as { adapterInstanceId?: string }).adapterInstanceId }, 'adapter.ready received')
@@ -328,6 +328,7 @@ export function buildPiAdapterUrl(rawUrl: string, token: string): string {
 
 export class PiClient extends EventEmitter {
   private sessions = new Map<string, PiSessionConn>()
+  private lastSeqBySession = new Map<string, number>()
   private config: AppConfig
 
   constructor(config: AppConfig) {
@@ -337,6 +338,10 @@ export class PiClient extends EventEmitter {
 
   private adoptSessionConn(conn: PiSessionConn, sessionId: string, action: 'created' | 'recreated' | 'reconnected'): void {
     conn.on('event', (event: PIEvent) => {
+      if (event.seq > 0) {
+        const lastSeq = this.lastSeqBySession.get(event.sessionId) ?? 0
+        if (event.seq > lastSeq) this.lastSeqBySession.set(event.sessionId, event.seq)
+      }
       this.emit('event', event)
     })
     conn.on('rpc', (request: AdapterRpcRequest) => {
@@ -362,6 +367,10 @@ export class PiClient extends EventEmitter {
     conn.close()
   }
 
+  protected createSessionConn(sessionId: string): PiSessionConn {
+    return new PiSessionConn(sessionId, this.config)
+  }
+
   get isConnected(): boolean {
     return this.sessions.size > 0
   }
@@ -371,12 +380,15 @@ export class PiClient extends EventEmitter {
   }
 
   getLastSeq(sessionId: string): number {
-    return this.sessions.get(sessionId)?.lastSeq ?? 0
+    return Math.max(
+      this.sessions.get(sessionId)?.lastSeq ?? 0,
+      this.lastSeqBySession.get(sessionId) ?? 0,
+    )
   }
 
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {
     const tempId = `pending-${Date.now()}`
-    const conn = new PiSessionConn(tempId, this.config)
+    const conn = this.createSessionConn(tempId)
 
     try {
       await conn.connect()
@@ -402,7 +414,7 @@ export class PiClient extends EventEmitter {
       this.sessions.delete(params.sessionId)
     }
 
-    const conn = new PiSessionConn(params.sessionId, this.config)
+    const conn = this.createSessionConn(params.sessionId)
 
     try {
       await conn.connect()
@@ -422,8 +434,8 @@ export class PiClient extends EventEmitter {
 
   async reconnectSession(sessionId: string): Promise<void> {
     const existing = this.sessions.get(sessionId)
+    const lastSeq = this.getLastSeq(sessionId)
     if (existing?.isConnected) {
-      const lastSeq = existing.lastSeq
       await this.rpc('attachSession', { sessionId, lastSeq })
       return
     }
@@ -434,11 +446,11 @@ export class PiClient extends EventEmitter {
       this.sessions.delete(sessionId)
     }
 
-    const conn = new PiSessionConn(sessionId, this.config)
+    const conn = this.createSessionConn(sessionId)
 
     try {
       await conn.connect()
-      await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
+      await conn.rpc('attachSession', { sessionId, lastSeq })
       this.adoptSessionConn(conn, sessionId, 'reconnected')
     } catch (err) {
       this.cleanupTransientConn(conn)
@@ -494,7 +506,7 @@ export class PiClient extends EventEmitter {
     // Always use a transient connection for global (session-agnostic) RPCs.
     // Reusing an active session's WS would send the frame on the session channel,
     // where the adapter does not route global methods like updateProviderConfig.
-    const transient = new PiSessionConn(`global-${Date.now()}`, this.config)
+    const transient = this.createSessionConn(`global-${Date.now()}`)
     try {
       await transient.connect()
       return await transient.rpc(method, params)

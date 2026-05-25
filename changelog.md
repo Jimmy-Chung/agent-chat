@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-25 [v1.7.3] — BUG-046 replay 游标配套修复
+
+> 配合 AIT-174 / BUG-046 的 adapter 方案 A：agent-chat 侧保留 PI session 的 lastSeq，避免断线重连后从 0 请求 replay。
+
+### BUG-046 (AIT-174): stale PI connection 重连保留 lastSeq
+- `PiClient` 在连接池外维护 per-session lastSeq，closed/stale conn 被移除后仍保留已处理游标
+- `reconnectSession()` 新建 WS 后使用 `attachSession({ sessionId, lastSeq })`，不再回退到 `lastSeq: 0`
+- `sendUserMessage RPC failed` 日志补充 `sessionId` + `clientMessageId`，便于断链窗口中定位未送达消息
+- 新增单测覆盖 stale session reconnect 时沿用 remembered lastSeq
+
 ## 2026-05-25 [v1.7.2] — agent.status 映射收尾 + 链路验证
 
 > 跟进 v1.7.1 带入的「agent.status 状态模型重构」WIP：补齐代码整洁与测试，并补跑真实 adapter 链路验证。

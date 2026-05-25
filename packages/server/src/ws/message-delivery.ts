@@ -195,6 +195,11 @@ async function attemptDelivery(
     // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        // BUG-046 — log outbound dispatch with correlation keys for cross-hop alignment.
+        logger.info(
+          { sessionId, clientMessageId: msg.client_message_id ?? msg.id, messageId: msg.id, attempt },
+          'sendUserMessage dispatching',
+        )
         const abortController = new AbortController()
         await withTimeout(
           input.pi.rpc('sendUserMessage', {
@@ -238,7 +243,15 @@ async function attemptDelivery(
     return false
   } catch (err) {
     logger.warn(
-      { err, topicId: input.topicId, messageId: msg.id, manual: input.manual, retryCount: options.retryCount },
+      {
+        err,
+        topicId: input.topicId,
+        sessionId,
+        clientMessageId: msg.client_message_id ?? msg.id,
+        messageId: msg.id,
+        manual: input.manual,
+        retryCount: options.retryCount,
+      },
       'sendUserMessage RPC failed',
     )
     return false

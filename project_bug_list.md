@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.2 |
+| 当前版本 | v1.7.3 |
 | 更新时间 | 2026-05-25 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -57,12 +57,26 @@
 | BUG-043 | AIT-158 |
 | BUG-044 | AIT-160 |
 | BUG-045 | AIT-173 |
+| BUG-046 | AIT-174 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-046: WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-046 |
+| 标题 | WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节 |
+| 状态 | 处理中 |
+| 发现时间 | 2026-05-25 |
+| 影响模块 | 全链路：浏览器 ↔ CF Worker(DurableObject) ↔ 隧道 ↔ adapter（外部） |
+| 描述 | 经「浏览器→CF Worker→隧道→adapter」时前端观察到消息丢失。判断：WSS 跑在 TCP 之上，TCP 不会让应用层丢包 → 实为设计/连接生命周期层面的消息丢失（重连空窗无 seq 续传、DO 休眠、代理未 drain、背压、孤儿连接等），非网络丢包。Tailscale 直连更稳是因可断开环节少。 |
+| 根因 | 待定位（外部依赖 adapter 日志规格）。计划：①[external] 索取 adapter Logs 数据结构与事件时机（字段、seq 是否单调/重连语义、入站 RPC 受理时刻、关联 id）；②评估两侧日志能否拼出完整往返并识别丢失（用 sessionId+seq 比对发出/收到序列定位 adapter→server，broadcastAll 定位 server→client）；不可则要求补充；③[external] 可评估则请 adapter 启用 CF Tunnel 入口测试；④据收集结果判定断点；⑤我方 DO/Worker/event-router 补跨环节追踪日志 + 客户端 seq-gap 检测。 |
+| Linear | AIT-174 |
 
 ### BUG-044: PI Adapter message.delta 首个 text 回显用户输入
 
