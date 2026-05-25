@@ -16,6 +16,7 @@ import { requestPushPermission } from '@/components/PushSetup'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
+import { getServerBase } from '@/lib/server-url'
 import type { ProviderConfig } from '@/stores/ws-store'
 
 function normalizeCwd(cwd: string): string {
@@ -298,14 +299,7 @@ export function Sidebar() {
   const fetchAdapterVersion = useCallback(async () => {
     if (adapterVersion !== null && Date.now() - adapterFetchedAt.current < 60_000) return
     try {
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL
-      let serverUrl = ''
-      if (wsUrl) {
-        try {
-          const u = new URL(wsUrl)
-          serverUrl = `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
-        } catch { /* fall through */ }
-      }
+      const serverUrl = getServerBase()
       // PI adapter config comes from frontend localStorage (same source as WsProvider)
       const wssUrl = localStorage.getItem(PI_WSS_URL_KEY) || ''
       const piToken = localStorage.getItem(PI_TOKEN_KEY) || ''
@@ -680,14 +674,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.4</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.5</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.4</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.5</span>
             </Tooltip>
           </div>
         </div>

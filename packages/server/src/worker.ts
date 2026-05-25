@@ -137,6 +137,18 @@ function checkAgentChatToken(authHeader: string | undefined): boolean {
   return token === appConfig.token
 }
 
+async function adapterResponse(res: Response): Promise<Response> {
+  const contentType = res.headers.get('content-type') || 'application/octet-stream'
+  const text = await res.text()
+  return new Response(text, {
+    status: res.status,
+    headers: {
+      'Content-Type': contentType,
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
 app.get('/api/agent-chat/v1/providers', async (c) => {
   if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
   const wssUrl = c.req.query('wssUrl')
@@ -149,7 +161,7 @@ app.get('/api/agent-chat/v1/providers', async (c) => {
     headers: piAdapterHeaders(piToken),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
-  return c.json(await res.json(), res.status as 200)
+  return adapterResponse(res)
 })
 
 app.post('/api/agent-chat/v1/providers', async (c) => {
@@ -164,7 +176,7 @@ app.post('/api/agent-chat/v1/providers', async (c) => {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
-  return c.json(await res.json(), res.status as 200)
+  return adapterResponse(res)
 })
 
 app.patch('/api/agent-chat/v1/providers/:id', async (c) => {
@@ -180,7 +192,7 @@ app.patch('/api/agent-chat/v1/providers/:id', async (c) => {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
-  return c.json(await res.json(), res.status as 200)
+  return adapterResponse(res)
 })
 
 app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
@@ -194,7 +206,7 @@ app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
     headers: piAdapterHeaders(piToken),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
-  return c.json(await res.json(), res.status as 200)
+  return adapterResponse(res)
 })
 
 export { TopicDurableObject } from './ws/topic-do'

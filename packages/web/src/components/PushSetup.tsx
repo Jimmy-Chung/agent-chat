@@ -7,19 +7,9 @@ import {
   subscribePush,
   saveSubscriptionToServer,
 } from '@/lib/push-client'
+import { getServerBase } from '@/lib/server-url'
 
-// Derive HTTP server URL from NEXT_PUBLIC_WS_URL (ws://host:port/ws → http://host:port)
-function getServerUrl(): string {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL
-  if (wsUrl) {
-    try {
-      const u = new URL(wsUrl)
-      return `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
-    } catch { /* fall through */ }
-  }
-  return ''
-}
-const SERVER_URL = getServerUrl()
+const SERVER_URL = getServerBase()
 
 function getToken(): string {
   if (typeof window === 'undefined') return ''

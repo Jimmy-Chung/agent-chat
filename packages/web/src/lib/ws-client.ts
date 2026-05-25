@@ -15,15 +15,7 @@ import { useMessageStore } from '@/stores/message-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useCronStore } from '@/stores/cron-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
-
-function getWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL
-  if (typeof window !== 'undefined') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${window.location.host}/ws`
-  }
-  return 'ws://127.0.0.1:8080/ws'
-}
+import { getServerBase, getWsUrl } from '@/lib/server-url'
 
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
 
@@ -711,17 +703,6 @@ export function handleMcpError(data: { requestId: string; code: string; message:
 }
 
 // ─── Provider config HTTP API (server proxies to adapter REST endpoints) ──────
-
-function getServerBase(): string {
-  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || ''
-  if (!wsUrl) return ''
-  try {
-    const u = new URL(wsUrl)
-    return `${u.protocol === 'wss:' ? 'https' : 'http'}://${u.host}`
-  } catch {
-    return ''
-  }
-}
 
 function getAdapterQs(): string {
   const wssUrl = localStorage.getItem('PI_ADAPTER_WSS_URL') || ''

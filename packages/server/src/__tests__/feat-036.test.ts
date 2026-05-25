@@ -121,3 +121,55 @@ describe('FEAT-036: WS upgrade reads PI config from URL params', () => {
     expect(res.status).toBe(401)
   })
 })
+
+describe('FEAT-036: provider proxy endpoint', () => {
+  beforeAll(async () => {
+    await setupTestDb()
+  })
+
+  async function fetch(path: string, init?: RequestInit) {
+    return worker.fetch(new Request(`http://localhost${path}`, init), env)
+  }
+
+  it('maps PI WSS URL to adapter providers HTTP endpoint', async () => {
+    const restore = mockHealthz(
+      new Response(JSON.stringify([{ id: 'provider-1' }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const res = await fetch(
+      '/api/agent-chat/v1/providers?wssUrl=wss://pi.example.com/api/agent-chat/v1/socket&piToken=pi-secret&group=universal',
+      { headers: { Authorization: 'Bearer test-token' } },
+    )
+
+    expect(res.status).toBe(200)
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const calledInit = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(calledUrl).toBe('https://pi.example.com/api/agent-chat/v1/providers?group=universal')
+    expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer pi-secret')
+
+    restore()
+  })
+
+  it('passes through non-JSON adapter errors instead of returning proxy 500', async () => {
+    const restore = mockHealthz(
+      new Response('error code: 1033', {
+        status: 530,
+        headers: { 'content-type': 'text/plain; charset=UTF-8' },
+      }),
+    )
+
+    const res = await fetch(
+      '/api/agent-chat/v1/providers?wssUrl=wss://pi-adapter.jimmy-jam.com/api/agent-chat/v1/socket&piToken=1234&group=universal',
+      { headers: { Authorization: 'Bearer test-token' } },
+    )
+
+    expect(res.status).toBe(530)
+    expect(res.headers.get('content-type')).toContain('text/plain')
+    await expect(res.text()).resolves.toBe('error code: 1033')
+
+    restore()
+  })
+})

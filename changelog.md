@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-26 [v1.7.5] — Provider proxy 生产域名路由修复
+
+> 修复 Pages 静态站在缺少 `NEXT_PUBLIC_WS_URL` 构建变量时，把 Provider HTTP proxy 请求打到 `agent-chat.jimmy-jam.com` 自身导致 Next 404 的问题。
+
+### BUG-046 (AIT-174): Provider proxy 固定走 Worker HTTP API
+- 前端统一通过 `server-url` 推导 Worker WS/HTTP base；生产 Pages 域名缺少构建变量时兜底到 `agent-chat-server.jimmychung038.workers.dev`
+- Provider 管理、adapter version、push 订阅、token 校验共用同一 Worker URL 推导逻辑
+- Worker provider proxy 遇到 adapter 非 JSON 错误时透传上游 status/body，不再把旧 tunnel 的 Cloudflare 530 文本错误转换成 Worker 500
+- 新增单测断言 `wss://pi.example.com/api/agent-chat/v1/socket` 最终转发为 `https://pi.example.com/api/agent-chat/v1/providers?group=universal`
+
 ## 2026-05-26 [v1.7.4] — BUG-046 transient disconnect 不再结束流式消息
 
 > 配合 AIT-174 streaming close + resume 联调：agent-chat DO 不再把 PI adapter 的短暂断链误判为 assistant message 失败。

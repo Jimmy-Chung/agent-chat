@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { getWsClient, type PiConfig } from '@/lib/ws-client'
+import { getWsUrl } from '@/lib/server-url'
 import { useWsStore } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
@@ -322,13 +323,4 @@ function verifyToken(token: string): Promise<boolean> {
       clearTimeout(timeout)
     })
   })
-}
-
-function getWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL
-  if (typeof window !== 'undefined') {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${window.location.host}/ws`
-  }
-  return 'ws://127.0.0.1:8080/ws'
 }
