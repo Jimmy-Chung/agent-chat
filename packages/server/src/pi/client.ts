@@ -491,13 +491,9 @@ export class PiClient extends EventEmitter {
     method: K,
     params: PiRpcMethod[K]['params'],
   ): Promise<PiRpcMethod[K]['result']> {
-    const conn = this.sessions.values().next().value as PiSessionConn | undefined
-    if (conn) {
-      return conn.rpc(method, params)
-    }
-    // No active session: create a transient conn for this one global RPC.
-    // Needed for session-agnostic methods (listCrons, runMcpCommand, …) that
-    // must work before any topic session exists.
+    // Always use a transient connection for global (session-agnostic) RPCs.
+    // Reusing an active session's WS would send the frame on the session channel,
+    // where the adapter does not route global methods like updateProviderConfig.
     const transient = new PiSessionConn(`global-${Date.now()}`, this.config)
     try {
       await transient.connect()

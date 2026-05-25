@@ -261,11 +261,12 @@ describe('PIEvent — positive parsing', () => {
   it('parses agent.status', () => {
     const event = piEventSchema.parse({
       ...baseEvent,
-      payload: { kind: 'agent.status', state: 'thinking' },
+      payload: { kind: 'agent.status', state: 'processing', phase: 'thinking' },
     })
     expect(event.payload.kind).toBe('agent.status')
     if (event.payload.kind === 'agent.status') {
-      expect(event.payload.state).toBe('thinking')
+      expect(event.payload.state).toBe('processing')
+      expect(event.payload.phase).toBe('thinking')
     }
   })
 
@@ -795,9 +796,11 @@ describe('Server event schemas', () => {
   it('parses agent.status', () => {
     const result = agentStatusSchema.parse({
       topicId: 't1',
-      state: 'streaming',
+      state: 'processing',
+      phase: 'streaming',
     })
-    expect(result.state).toBe('streaming')
+    expect(result.state).toBe('processing')
+    expect(result.phase).toBe('streaming')
   })
 
   it('parses artifact.moved', () => {
@@ -1020,17 +1023,25 @@ describe('Individual payload schemas', () => {
   it('agentStatusPayloadSchema accepts all valid states', () => {
     const states = [
       'idle',
-      'thinking',
-      'tool',
-      'streaming',
+      'processing',
       'aborting',
     ] as const
+    const phases = ['thinking', 'streaming', 'tool_use'] as const
     for (const state of states) {
       const result = agentStatusPayloadSchema.parse({
         kind: 'agent.status',
         state,
       })
       expect(result.state).toBe(state)
+    }
+    for (const phase of phases) {
+      const result = agentStatusPayloadSchema.parse({
+        kind: 'agent.status',
+        state: 'processing',
+        phase,
+      })
+      expect(result.state).toBe('processing')
+      expect(result.phase).toBe(phase)
     }
   })
 

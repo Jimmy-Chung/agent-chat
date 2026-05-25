@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.6.1 |
-| 更新时间 | 2026-05-21 |
+| 当前版本 | v1.7.1 |
+| 更新时间 | 2026-05-25 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -56,6 +56,7 @@
 | BUG-042 | AIT-156 |
 | BUG-043 | AIT-158 |
 | BUG-044 | AIT-160 |
+| BUG-045 | AIT-173 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
@@ -220,6 +221,21 @@
 ---
 
 ## 已修复
+
+### BUG-045: 切换活跃 Provider 后分组被重置为 claude-code
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-045 |
+| 标题 | 切换活跃 Provider 后分组被重置为 claude-code |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-25 |
+| 修复时间 | 2026-05-25 |
+| 修复版本 | v1.7.1 |
+| 影响模块 | packages/web/src/components/layout/Sidebar.tsx, packages/web/src/components/ProviderConfigModal.tsx |
+| 描述 | 在 codex（或 pi-agent）分组下点击「切换」将某 Provider 设为活跃后，该 Provider 会跳到 claude-code 分组。 |
+| 根因 | 两处「切换」入口（Sidebar 标签页内的 `handleSwitchProvider`、Provider 配置弹窗内的 `handleActivate`）调用 `updateProviderConfig` 时都只传 `{ id, isActive: true }`，未带 `group`。Adapter 端做整条记录替换，缺省 `group` 被回落为默认值 `claude-code`。编辑流程（handleSave）因为始终回传 `group` 不受影响。 |
+| 修复方案 | 两处「切换」入口均根据 id 从当前列表取出 Provider，调用时一并回传其现有 `group`，保持分组不变。 |
 
 ### BUG-034: 发消息后立即触发重试，未等待 5 秒响应窗口
 

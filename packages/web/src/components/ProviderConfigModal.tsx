@@ -65,6 +65,7 @@ export function ProviderConfigModal({
   const [formApiKey, setFormApiKey] = useState('')
   const [formBaseUrl, setFormBaseUrl] = useState('')
   const [formModels, setFormModels] = useState<string[]>([])
+  const [lockedModels, setLockedModels] = useState<string[]>([])
   const [modelInput, setModelInput] = useState('')
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -111,6 +112,7 @@ export function ProviderConfigModal({
     setFormApiKey('')
     setFormBaseUrl('')
     setFormModels([])
+    setLockedModels([])
     setModelInput('')
     setShowApiKey(false)
     setError('')
@@ -124,6 +126,8 @@ export function ProviderConfigModal({
     setFormApiKey('')
     setFormBaseUrl(cfg.baseUrl ?? '')
     setFormModels(cfg.models ?? [])
+    // isDefault providers: lock built-in models so they can't be removed
+    setLockedModels(cfg.isDefault ? (cfg.models ?? []) : [])
     setModelInput('')
     setShowApiKey(false)
     setError('')
@@ -191,11 +195,18 @@ export function ProviderConfigModal({
   const handleActivate = async (id: string, name: string) => {
     setSwitchingId(id)
     const prev = useWsStore.getState().providerConfigs
+    // Preserve the provider's group: the adapter replaces the record and would
+    // otherwise reset an omitted group to the default (claude-code).
+    const target = prev.find((c) => c.id === id)
     useWsStore.getState().setProviderConfigs(
       prev.map((c) => ({ ...c, isActive: c.id === id }))
     )
     try {
-      await sendProviderRpc('updateProviderConfig', { id, isActive: true })
+      await sendProviderRpc('updateProviderConfig', {
+        id,
+        isActive: true,
+        ...(target?.group ? { group: target.group } : {}),
+      })
       await fetchConfigs()
       useToastStore.getState().pushToast({
         tone: 'success',
@@ -225,6 +236,7 @@ export function ProviderConfigModal({
   }
 
   const removeModel = (name: string) => {
+    if (lockedModels.includes(name)) return
     setFormModels(formModels.filter((m) => m !== name))
   }
 
@@ -367,9 +379,22 @@ export function ProviderConfigModal({
                       >
                         <span className="inline-flex">{GROUP_ICONS[group]}</span>
                         {GROUP_LABELS[group]}
-                        <span className="ml-auto text-[10.5px] normal-case tracking-normal" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
-                          {configs.length === 0 ? 'empty' : `${configs.length} provider${configs.length > 1 ? 's' : ''}`}
+                        <span className="text-[10.5px] normal-case tracking-normal" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+                          {configs.length === 0 ? 'empty' : `${configs.length}`}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => openAdd(group)}
+                          className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-px text-[10px] font-semibold normal-case transition-opacity hover:opacity-80"
+                          style={{
+                            letterSpacing: '-0.005em', textTransform: 'none',
+                            background: 'rgba(10,132,255,.12)', color: '#6cb1ff',
+                            border: '1px solid rgba(10,132,255,.25)',
+                          }}
+                        >
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                          新增
+                        </button>
                       </div>
 
                       {configs.length === 0 ? (
@@ -487,16 +512,18 @@ export function ProviderConfigModal({
                                         <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
                                       </svg>
                                     </button>
-                                    <button
-                                      onClick={() => setDeletingId(cfg.id)}
-                                      className="flex h-[22px] w-[22px] items-center justify-center rounded-md transition-colors hover:opacity-80"
-                                      style={{ color: 'var(--state-danger, #FF453A)' }}
-                                      title="删除"
-                                    >
-                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                                        <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1.5 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5 6" />
-                                      </svg>
-                                    </button>
+                                    {!cfg.isDefault && (
+                                      <button
+                                        onClick={() => setDeletingId(cfg.id)}
+                                        className="flex h-[22px] w-[22px] items-center justify-center rounded-md transition-colors hover:opacity-80"
+                                        style={{ color: 'var(--state-danger, #FF453A)' }}
+                                        title="删除"
+                                      >
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                                          <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1.5 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5 6" />
+                                        </svg>
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -676,31 +703,42 @@ export function ProviderConfigModal({
                     border: '1px solid var(--hairline)',
                   }}
                 >
-                  {formModels.map((m) => (
-                    <span
-                      key={m}
-                      className="inline-flex items-center gap-1 rounded-md pl-2 pr-1 text-[11px]"
-                      style={{
-                        height: 22,
-                        background: 'rgba(10,132,255,.14)',
-                        border: '1px solid rgba(10,132,255,.32)',
-                        color: '#7CB6FF',
-                        fontFamily: 'var(--font-mono)',
-                        fontFeatureSettings: '"tnum"',
-                      }}
-                    >
-                      {m}
-                      <button
-                        onClick={() => removeModel(m)}
-                        className="flex h-[14px] w-[14px] items-center justify-center rounded transition-opacity hover:opacity-100"
-                        style={{ color: '#7CB6FF', opacity: 0.7 }}
+                  {formModels.map((m) => {
+                    const isLocked = lockedModels.includes(m)
+                    return (
+                      <span
+                        key={m}
+                        className="inline-flex items-center gap-1 rounded-md pl-2 text-[11px]"
+                        style={{
+                          height: 22,
+                          paddingRight: isLocked ? 6 : 4,
+                          background: isLocked ? 'rgba(255,255,255,.06)' : 'rgba(10,132,255,.14)',
+                          border: isLocked ? '1px solid var(--hairline)' : '1px solid rgba(10,132,255,.32)',
+                          color: isLocked ? 'var(--fg-dim)' : '#7CB6FF',
+                          fontFamily: 'var(--font-mono)',
+                          fontFeatureSettings: '"tnum"',
+                        }}
                       >
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                          <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
-                        </svg>
-                      </button>
-                    </span>
-                  ))}
+                        {isLocked && (
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
+                            <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        )}
+                        {m}
+                        {!isLocked && (
+                          <button
+                            onClick={() => removeModel(m)}
+                            className="flex h-[14px] w-[14px] items-center justify-center rounded transition-opacity hover:opacity-100"
+                            style={{ color: '#7CB6FF', opacity: 0.7 }}
+                          >
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                              <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+                            </svg>
+                          </button>
+                        )}
+                      </span>
+                    )
+                  })}
                   <input
                     type="text"
                     value={modelInput}

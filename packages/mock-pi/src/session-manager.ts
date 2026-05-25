@@ -153,7 +153,7 @@ export function createSessionManager(
     _messageId: string,
     ac: AbortController,
   ) {
-    emitEvent(session, { kind: 'agent.status', state: 'thinking' })
+    emitEvent(session, { kind: 'agent.status', state: 'processing', phase: 'thinking' })
 
     const seqStart = session.seq
     const newSeq = await runner.run(session.sessionId, ws, content, seqStart, (payload) => {

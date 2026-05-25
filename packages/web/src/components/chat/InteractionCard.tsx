@@ -45,6 +45,16 @@ export function InteractionCard({
   const isChoice = interactionKind === 'choice'
   const isPending = status === 'pending' && !resolved
 
+  // Options may arrive as "label — description" — only send label back to adapter
+  function parseLabel(opt: string): string {
+    const sep = opt.indexOf(' — ')
+    return sep >= 0 ? opt.slice(0, sep) : opt
+  }
+  function parseDesc(opt: string): string | undefined {
+    const sep = opt.indexOf(' — ')
+    return sep >= 0 ? opt.slice(sep + 3) : undefined
+  }
+
   // Keyboard navigation for choice mode
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!isPending || !isChoice) return
@@ -68,11 +78,12 @@ export function InteractionCard({
 
   function handleChoose(choice: string) {
     if (!isPending) return
+    const label = parseLabel(choice)
     setResolved(true)
-    setResolvedChoice(choice)
+    setResolvedChoice(label)
     getWsClient().send({
       type: 'user.action',
-      data: { topicId, action: 'choose', interactionId, choice },
+      data: { topicId, action: 'choose', interactionId, choice: label },
     })
   }
 
@@ -259,8 +270,15 @@ export function InteractionCard({
                   )}
                 </span>
                 {/* Option text */}
-                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-0.005em', textAlign: 'left' }}>
-                  {opt}
+                <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-0.005em' }}>
+                    {parseLabel(opt)}
+                  </span>
+                  {parseDesc(opt) && (
+                    <span style={{ fontSize: '12px', color: 'var(--fg-dim)', fontWeight: 400, lineHeight: 1.4 }}>
+                      {parseDesc(opt)}
+                    </span>
+                  )}
                 </span>
                 {/* Key hint */}
                 <span style={{

@@ -114,7 +114,9 @@ export const interactionRequestPayloadSchema = z.object({
 
 export const agentStatusPayloadSchema = z.object({
   kind: z.literal('agent.status'),
-  state: z.enum(['idle', 'thinking', 'tool', 'streaming', 'aborting']),
+  // Accept adapter state values; server maps before broadcasting to WS
+  state: z.enum(['idle', 'processing', 'aborting', 'thinking', 'streaming', 'tool', 'waiting_for_user']),
+  phase: z.enum(['thinking', 'streaming', 'tool_use']).optional(),
 })
 
 export const agentProgressPayloadSchema = z.object({

@@ -4,7 +4,15 @@ import { useRef, useEffect } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import type { ToolResultInfo } from './ToolCard'
 import { MessageBubble } from './MessageBubble'
+import { InteractionCard } from './InteractionCard'
 import { formatDateDivider, shouldShowDateDivider } from '@/lib/message-time'
+
+interface OrphanInteraction {
+  interactionId: string
+  interactionKind: 'approval' | 'choice'
+  prompt: string
+  options?: string[]
+}
 
 interface MessageListProps {
   messages: Message[]
@@ -29,6 +37,8 @@ interface MessageListProps {
     string,
     { cronId: string; runId: string; firedAt: number } | null
   >
+  orphanInteractions?: OrphanInteraction[]
+  topicId?: string
 }
 
 export function MessageList({
@@ -38,6 +48,8 @@ export function MessageList({
   usageByMessage,
   approvalsByMessage,
   cronByMessage,
+  orphanInteractions = [],
+  topicId = '',
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -119,6 +131,19 @@ export function MessageList({
           </div>
         </div>
       )}
+
+      {orphanInteractions.map((inter) => (
+        <div key={inter.interactionId} className="px-4 md:px-6">
+          <InteractionCard
+            interactionId={inter.interactionId}
+            topicId={topicId}
+            interactionKind={inter.interactionKind}
+            prompt={inter.prompt}
+            options={inter.options}
+            status="pending"
+          />
+        </div>
+      ))}
 
       <div ref={bottomRef} />
     </div>

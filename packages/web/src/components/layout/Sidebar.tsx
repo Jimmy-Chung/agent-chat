@@ -352,12 +352,14 @@ export function Sidebar() {
     const target = providerConfigs.find((c) => c.id === providerId)
     const targetName = target?.name ?? providerId
     setSwitchingId(providerId)
-    const prev = useWsStore.getState().providerConfigs
-    useWsStore.getState().setProviderConfigs(
-      prev.map((c) => ({ ...c, isActive: c.id === providerId }))
-    )
     try {
-      await sendProviderRpc('updateProviderConfig', { id: providerId, isActive: true })
+      // Preserve the provider's group: the adapter replaces the record and would
+      // otherwise reset an omitted group to the default (claude-code).
+      await sendProviderRpc('updateProviderConfig', {
+        id: providerId,
+        isActive: true,
+        ...(target?.group ? { group: target.group } : {}),
+      })
       const result = await sendProviderRpc('listProviderConfigs', {}) as ProviderConfig[]
       useWsStore.getState().setProviderConfigs(result ?? [])
       useToastStore.getState().pushToast({
@@ -367,7 +369,6 @@ export function Sidebar() {
         durationMs: 5000,
       })
     } catch {
-      useWsStore.getState().setProviderConfigs(prev)
       useToastStore.getState().pushToast({
         tone: 'error',
         title: '切换失败',
@@ -679,14 +680,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.0</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.1</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.0</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.1</span>
             </Tooltip>
           </div>
         </div>

@@ -910,7 +910,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               }
             }
           }
-          this.broadcastAll('agent.status', { topicId: data.topicId, state: 'idle' })
+          this.broadcastAll('agent.status', { topicId: data.topicId, state: 'aborting' })
           break
         }
 
