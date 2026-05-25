@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-05-25 [v1.7.2] — agent.status 映射收尾 + 链路验证
+
+> 跟进 v1.7.1 带入的「agent.status 状态模型重构」WIP：补齐代码整洁与测试，并补跑真实 adapter 链路验证。
+
+### chore: event-router `mapAgentState` 移出 import 块 + 单测
+- `mapAgentState`（adapter 原始 state → WS `{state, phase}` 映射）此前被误插在 import 语句中间，移到 imports 之后并导出
+- 新增 4 个单测覆盖 idle/aborting/waiting_for_user/thinking/streaming/tool/未知值的映射
+
+### 链路验证（R-007 / R-006，连真实 Tailscale adapter `100.87.35.81:7331`）
+- L0 心跳 5/5、L1-1 单轮直连、L1-2 双话题经 server、L3 压测（3 轮含 tool use + 产物）均通过
+- 探针确认真实 adapter 发原始 `agent.status:{state:'thinking'}`，`mapAgentState` 映射正确，生产路径无误
+- 已知 BUG-044（adapter 首个 text delta 回显用户输入）仍在册，属外部 adapter 侧
+
 ## 2026-05-25 [v1.7.1] — Provider 切换分组修复 + v1.7.x 首发
 
 > 本版本首次为 v1.7.x 线打 tag，含 v1.6.1 以来累积的 FEAT（AIT-167/171/172、FEAT-045 等）与本次 BUG-045 修复，以及若干进行中的 protocol/server/web 改动。
