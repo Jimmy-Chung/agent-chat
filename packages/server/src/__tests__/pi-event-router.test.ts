@@ -4,7 +4,7 @@ import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
-import { routePiEvents } from '../pi/event-router'
+import { routePiEvents, mapAgentState } from '../pi/event-router'
 
 function createMockHub() {
   const broadcastEvents: ServerEvent[] = []
@@ -27,6 +27,27 @@ function createMockPiClient() {
     rpc: vi.fn(),
   }
 }
+
+describe('mapAgentState — adapter state → WS {state, phase}', () => {
+  it('passes terminal states through unchanged with no phase', () => {
+    expect(mapAgentState('idle')).toEqual({ state: 'idle' })
+    expect(mapAgentState('aborting')).toEqual({ state: 'aborting' })
+  })
+
+  it('collapses waiting_for_user into processing with no phase', () => {
+    expect(mapAgentState('waiting_for_user')).toEqual({ state: 'processing' })
+  })
+
+  it('maps work states into processing + phase', () => {
+    expect(mapAgentState('thinking')).toEqual({ state: 'processing', phase: 'thinking' })
+    expect(mapAgentState('streaming')).toEqual({ state: 'processing', phase: 'streaming' })
+    expect(mapAgentState('tool')).toEqual({ state: 'processing', phase: 'tool_use' })
+  })
+
+  it('falls back to processing + thinking for unknown states', () => {
+    expect(mapAgentState('something-new')).toEqual({ state: 'processing', phase: 'thinking' })
+  })
+})
 
 describe('Event router — session.health', () => {
   let mockHub: ReturnType<typeof createMockHub>

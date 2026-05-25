@@ -3,12 +3,6 @@ import type { PiClient } from './client'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
-
-function mapAgentState(raw: string): { state: string; phase?: string } {
-  if (raw === 'idle' || raw === 'aborting' || raw === 'waiting_for_user') return { state: raw === 'waiting_for_user' ? 'processing' : raw }
-  const phaseMap: Record<string, string> = { thinking: 'thinking', streaming: 'streaming', tool: 'tool_use' }
-  return { state: 'processing', phase: phaseMap[raw] ?? 'thinking' }
-}
 import * as artifactRepo from '../db/repos/artifact.repo'
 import { artifactToPayload } from '../ws/artifact-control'
 import * as usageRepo from '../db/repos/usage.repo'
@@ -18,6 +12,26 @@ import { buildVapidAuthHeader } from '../lib/vapid'
 import { encryptPushPayload } from '../lib/web-push'
 import type { AppConfig } from '../config'
 import { logger } from '../logger'
+
+/**
+ * Map the adapter's agent-state vocabulary to the WS-facing model.
+ * The WS schema (ws-events.ts) carries state ∈ {idle, processing, aborting}
+ * plus an optional phase ∈ {thinking, streaming, tool_use}; the adapter emits
+ * a flatter set (thinking/streaming/tool/waiting_for_user/idle/aborting).
+ */
+export function mapAgentState(raw: string): {
+  state: 'idle' | 'processing' | 'aborting'
+  phase?: 'thinking' | 'streaming' | 'tool_use'
+} {
+  if (raw === 'idle' || raw === 'aborting') return { state: raw }
+  if (raw === 'waiting_for_user') return { state: 'processing' }
+  const phaseMap: Record<string, 'thinking' | 'streaming' | 'tool_use'> = {
+    thinking: 'thinking',
+    streaming: 'streaming',
+    tool: 'tool_use',
+  }
+  return { state: 'processing', phase: phaseMap[raw] ?? 'thinking' }
+}
 
 export interface EventBroadcaster {
   broadcast(type: string, data: unknown): void
