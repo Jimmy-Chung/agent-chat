@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-26 [v1.7.4] — BUG-046 transient disconnect 不再结束流式消息
+
+> 配合 AIT-174 streaming close + resume 联调：agent-chat DO 不再把 PI adapter 的短暂断链误判为 assistant message 失败。
+
+### BUG-046 (AIT-174): `session.health disconnected` 不再合成 `message.end(error)`
+- `event-router` 收到 `session.health disconnected` 时只广播连接健康状态，不再调用 `finalizeStaleMessagesByTopic`
+- in-flight assistant message 的结束原因改为等待 adapter 真实 `message.end`，避免 reconnect grace 窗口中提前 error end
+- 新增单测覆盖 transient disconnect 时不广播合成 `message.end(error)`，并保持 streaming message 状态
+
 ## 2026-05-25 [v1.7.3] — BUG-046 replay 游标配套修复
 
 > 配合 AIT-174 / BUG-046 的 adapter 方案 A：agent-chat 侧保留 PI session 的 lastSeq，避免断线重连后从 0 请求 replay。

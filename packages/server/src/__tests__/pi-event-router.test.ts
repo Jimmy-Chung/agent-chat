@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
+import * as messageRepo from '../db/repos/message.repo'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
 import { routePiEvents, mapAgentState } from '../pi/event-router'
@@ -107,6 +108,34 @@ describe('Event router — session.health', () => {
     expect(broadcast.type).toBe('session.health')
     expect((broadcast.data as Record<string, unknown>).state).toBe('disconnected')
     expect((broadcast.data as Record<string, unknown>).lastError).toBe('connection reset')
+  })
+
+  it('does not synthesize message.end(error) for streaming messages on transient disconnect', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Streaming Disconnect Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-stream-disc' })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-stream-disc',
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId: 'msg-stream-disc', role: 'assistant' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+    mockHub.clearBroadcastEvents()
+
+    mockPi.emit('event', {
+      seq: 0,
+      sessionId: 'sess-stream-disc',
+      ts: Date.now(),
+      payload: { kind: 'session.health', state: 'disconnected', piSessionId: 'sess-stream-disc' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    const events = mockHub.getBroadcastEvents()
+    expect(events.map((e) => e.type)).toEqual(['session.health'])
+    const msg = await messageRepo.getMessage('msg-stream-disc')
+    expect(msg?.status).toBe('streaming')
+    expect(msg?.stop_reason).toBeNull()
   })
 
   it('ignores session.health for unknown session', async () => {
