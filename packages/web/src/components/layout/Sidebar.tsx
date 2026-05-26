@@ -17,6 +17,7 @@ import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/component
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
+import { getWorkspaceDirMatches, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
 
@@ -87,6 +88,26 @@ function validateCreateTopic(input: {
 
 function usePushTopicCreateToast() {
   return useToastStore((s) => s.pushToast)
+}
+
+async function fetchWorkspaceBrowse(): Promise<WorkspaceBrowseResponse> {
+  const serverUrl = getServerBase()
+  const wssUrl = localStorage.getItem(PI_WSS_URL_KEY) || ''
+  const piToken = localStorage.getItem(PI_TOKEN_KEY) || ''
+  const params = new URLSearchParams()
+  if (wssUrl) params.set('wssUrl', wssUrl)
+  if (piToken) params.set('piToken', piToken)
+
+  const agentChatToken = localStorage.getItem('AGENT_CHAT_TOKEN') || ''
+  const headers: Record<string, string> = {}
+  if (agentChatToken) headers['Authorization'] = `Bearer ${agentChatToken}`
+
+  const res = await fetch(`${serverUrl}/api/agent-chat/v1/workspace?${params}`, {
+    headers,
+    signal: AbortSignal.timeout(5_000),
+  })
+  if (!res.ok) throw new Error(`workspace browse failed: HTTP ${res.status}`)
+  return res.json()
 }
 
 
@@ -285,6 +306,9 @@ export function Sidebar() {
   const [newTopicAgent, setNewTopicAgent] = useState<AgentType>('general')
   const [extension, setExtension] = useState<ExtensionType>('claude-code')
   const [cwd, setCwd] = useState('')
+  const [workspace, setWorkspace] = useState<WorkspaceBrowseResponse | null>(null)
+  const [workspaceLoading, setWorkspaceLoading] = useState(false)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [permissionTier, setPermissionTier] = useState<PermissionTier>('normal')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
@@ -380,6 +404,26 @@ export function Sidebar() {
     [templates, newTopicAgent],
   )
 
+  const loadWorkspace = useCallback(async () => {
+    if (workspaceLoading) return
+    setWorkspaceLoading(true)
+    setWorkspaceError(null)
+    try {
+      setWorkspace(await fetchWorkspaceBrowse())
+    } catch (err) {
+      setWorkspaceError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setWorkspaceLoading(false)
+    }
+  }, [workspaceLoading])
+
+  useEffect(() => {
+    if (!showNewTopic || newTopicAgent !== 'programming') return
+    if (!cwd.trim().startsWith('/')) return
+    if (workspace || workspaceLoading) return
+    void loadWorkspace()
+  }, [showNewTopic, newTopicAgent, cwd, workspace, workspaceLoading, loadWorkspace])
+
   const closeNewTopicModal = () => {
     setShowNewTopic(false)
     setNewTopicName('')
@@ -390,15 +434,36 @@ export function Sidebar() {
     setSelectedTemplateId('')
   }
 
-  const handleCreateTopic = () => {
+  const handleCreateTopic = async () => {
     const name = newTopicName.trim()
     if (!name) return
+    let currentWorkspace = workspace
+    if (newTopicAgent === 'programming' && cwd.trim().startsWith('/') && !currentWorkspace) {
+      setWorkspaceLoading(true)
+      setWorkspaceError(null)
+      try {
+        currentWorkspace = await fetchWorkspaceBrowse()
+        setWorkspace(currentWorkspace)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        setWorkspaceError(message)
+        setWorkspaceLoading(false)
+        pushToast({
+          tone: 'error',
+          title: '无法读取工作区',
+          description: '请确认 Adapter 已连接后再选择工作区目录。',
+        })
+        return
+      }
+      setWorkspaceLoading(false)
+    }
+    const resolvedCwd = resolveWorkspaceCwd(cwd, currentWorkspace)
 
     const validationError = validateCreateTopic({
       topics,
       name,
       agentType: newTopicAgent,
-      cwd,
+      cwd: resolvedCwd,
     })
     if (validationError) {
       pushToast(validationError)
@@ -422,7 +487,7 @@ export function Sidebar() {
               programming: {
                 extension,
                 yolo: permissionTier === 'yolo',
-                ...(cwd ? { cwd } : {}),
+                ...(resolvedCwd ? { cwd: resolvedCwd } : {}),
                 permissionMode,
               },
             }
@@ -675,14 +740,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.11</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.12</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.11</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.12</span>
             </Tooltip>
           </div>
         </div>
@@ -695,6 +760,9 @@ export function Sidebar() {
               agentType={newTopicAgent}
               extension={extension}
               cwd={cwd}
+              workspace={workspace}
+              workspaceLoading={workspaceLoading}
+              workspaceError={workspaceError}
               permissionTier={permissionTier}
               selectedTemplateId={selectedTemplateId}
               templates={programmingTemplates}
@@ -706,6 +774,7 @@ export function Sidebar() {
               onPermissionTierChange={setPermissionTier}
               onSelectedTemplateIdChange={setSelectedTemplateId}
               onCwdChange={setCwd}
+              onLoadWorkspace={loadWorkspace}
             />,
             document.body,
           )
@@ -734,6 +803,9 @@ function CreateTopicModal({
   agentType,
   extension,
   cwd,
+  workspace,
+  workspaceLoading,
+  workspaceError,
   permissionTier,
   selectedTemplateId,
   templates,
@@ -745,11 +817,15 @@ function CreateTopicModal({
   onPermissionTierChange,
   onSelectedTemplateIdChange,
   onCwdChange,
+  onLoadWorkspace,
 }: {
   name: string
   agentType: AgentType
   extension: ExtensionType
   cwd: string
+  workspace: WorkspaceBrowseResponse | null
+  workspaceLoading: boolean
+  workspaceError: string | null
   permissionTier: PermissionTier
   selectedTemplateId: string
   templates: Array<{
@@ -771,7 +847,15 @@ function CreateTopicModal({
   onPermissionTierChange: (value: PermissionTier) => void
   onSelectedTemplateIdChange: (value: string) => void
   onCwdChange: (value: string) => void
+  onLoadWorkspace: () => void
 }) {
+  const cwdMatches = useMemo(
+    () => workspace ? getWorkspaceDirMatches(cwd, workspace.subDirList).slice(0, 8) : [],
+    [cwd, workspace],
+  )
+  const resolvedCwd = useMemo(() => resolveWorkspaceCwd(cwd, workspace), [cwd, workspace])
+  const showWorkspacePicker = agentType === 'programming' && cwd.trim().startsWith('/')
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -922,14 +1006,20 @@ function CreateTopicModal({
                         color: cwd ? 'var(--fg-strong)' : 'var(--fg-dim)',
                       }}
                     >
-                      <span className="truncate">{cwd || '留空则自动创建工作目录'}</span>
+                      <span className="truncate">{resolvedCwd || '留空则自动创建工作目录'}</span>
                       <span className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>Folder</span>
                     </button>
                     <input
                       type="text"
                       value={cwd}
-                      onChange={(e) => onCwdChange(e.target.value)}
-                      placeholder="可选：手动输入工作目录"
+                      onFocus={() => {
+                        if (cwd.trim().startsWith('/') && !workspace) onLoadWorkspace()
+                      }}
+                      onChange={(e) => {
+                        onCwdChange(e.target.value)
+                        if (e.target.value.trim().startsWith('/') && !workspace) onLoadWorkspace()
+                      }}
+                      placeholder="输入 / 选择工作区目录，或输入新目录名"
                       className="h-10 w-full rounded-xl px-3.5 text-sm outline-none"
                       style={{
                         background: 'rgba(0,0,0,.20)',
@@ -937,6 +1027,58 @@ function CreateTopicModal({
                         border: '1px solid var(--hairline)',
                       }}
                     />
+                    {showWorkspacePicker && (
+                      <div
+                        className="overflow-hidden rounded-xl"
+                        style={{
+                          background: 'rgba(0,0,0,.22)',
+                          border: '1px solid var(--hairline)',
+                        }}
+                      >
+                        <div
+                          className="flex items-center justify-between px-3 py-2 text-[11.5px]"
+                          style={{ color: 'var(--fg-dim)', borderBottom: '1px solid var(--hairline)' }}
+                        >
+                          <span className="truncate">
+                            {workspace?.workspacePath ?? (workspaceLoading ? '正在读取工作区...' : '工作区目录')}
+                          </span>
+                          {workspaceError && (
+                            <button
+                              type="button"
+                              onClick={onLoadWorkspace}
+                              className="shrink-0"
+                              style={{ color: '#ff9f7a' }}
+                            >
+                              重试
+                            </button>
+                          )}
+                        </div>
+                        {cwdMatches.length > 0 ? (
+                          <div className="max-h-44 overflow-y-auto py-1">
+                            {cwdMatches.map((dir) => (
+                              <button
+                                key={dir}
+                                type="button"
+                                onClick={() => onCwdChange(`/${dir}`)}
+                                className="flex h-8 w-full items-center gap-2 px-3 text-left text-[13px]"
+                                style={{ color: 'var(--fg-regular)' }}
+                              >
+                                <span style={{ color: 'var(--fg-dim)' }}>/</span>
+                                <span className="truncate">{dir}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+                            {workspaceLoading
+                              ? '读取中...'
+                              : workspaceError
+                                ? '无法读取工作区目录，请重试后再创建。'
+                                : '没有匹配目录，创建时会按输入在工作区下使用新目录。'}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </Field>
               </div>
