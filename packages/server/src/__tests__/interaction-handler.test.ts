@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import * as messageRepo from '../db/repos/message.repo'
 
 function createMockHub() {
   const broadcastEvents: any[] = []
@@ -51,6 +52,32 @@ describe('Interaction handler — user.action abort', () => {
     await actionHandler({}, { d: { topicId: topic.id, action: 'abort' } })
 
     expect(mockPi.rpc).toHaveBeenCalledWith('abortSession', { sessionId: 'sess-abort-1' })
+  })
+
+  it('finalizes local streaming messages and returns agent status to idle after abort', async () => {
+    const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
+    const actionHandler = actionCall![1]
+
+    const topic = await topicRepo.createTopic({ name: 'Abort Finalize', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-abort-finalize' })
+    const message = await messageRepo.createMessage({
+      topicId: topic.id,
+      role: 'assistant',
+      status: 'streaming',
+    })
+
+    await actionHandler({}, { d: { topicId: topic.id, action: 'abort' } })
+
+    const updated = await messageRepo.getMessage(message.id)
+    expect(updated?.status).toBe('aborted')
+    expect(updated?.stop_reason).toBe('aborted')
+
+    const events = mockHub.getBroadcastEvents()
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'agent.status', data: { topicId: topic.id, state: 'aborting' } }),
+      expect.objectContaining({ type: 'message.end', data: { topicId: topic.id, messageId: message.id, stopReason: 'aborted' } }),
+      expect.objectContaining({ type: 'agent.status', data: { topicId: topic.id, state: 'idle' } }),
+    ]))
   })
 
   it('no-ops abort for topic without PI session', async () => {

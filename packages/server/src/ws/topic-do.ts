@@ -36,6 +36,8 @@ import {
   type PendingUpload,
   requestArtifactUpload,
 } from './artifact-control'
+import { abortSessionWithTimeout, finalizeTopicAbort } from './abort-control'
+import { listPendingInteractionHistory } from './interaction-history'
 
 interface DOEnv {
   DB: D1Database
@@ -213,16 +215,40 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
   broadcastAll(type: string, data: Record<string, unknown>): void {
     const sockets = this.ctx.getWebSockets()
-    logger.debug({ type, sockets: sockets.length, states: sockets.map((ws) => ws.readyState) }, 'broadcastAll')
+    const states = sockets.map((ws) => ws.readyState)
     const raw = encodeFrame(createFrame(type as never, data))
+    let sent = 0
     for (const ws of sockets) {
-      if (ws.readyState === WebSocket.READY_STATE_OPEN) ws.send(raw)
+      if (ws.readyState !== WebSocket.READY_STATE_OPEN) continue
+      try {
+        ws.send(raw)
+        sent += 1
+      } catch (err) {
+        logger.warn({ err, type, ...this.broadcastTraceFields(data) }, 'WS event broadcast failed')
+      }
     }
+    logger.info(
+      { type, sockets: sockets.length, sent, states, ...this.broadcastTraceFields(data) },
+      'WS event broadcasted',
+    )
   }
 
   // EventBroadcaster interface (used by routePiEvents)
   broadcast(type: string, data: unknown): void {
     this.broadcastAll(type, data as Record<string, unknown>)
+  }
+
+  private broadcastTraceFields(data: Record<string, unknown>): Record<string, unknown> {
+    return {
+      topicId: data.topicId,
+      messageId: data.messageId,
+      clientMessageId: data.clientMessageId,
+      artifactId: data.artifactId ?? data.id,
+      interactionId: data.interactionId,
+      cronId: data.cronId,
+      status: data.status,
+      code: data.code,
+    }
   }
 
   private artifactToPayload(artifact: import('@agent-chat/protocol').Artifact): Record<string, unknown> {
@@ -403,13 +429,19 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       case 'messages.load': {
         const d = frame.d as { topicId: string }
         try {
+          await messageRepo.flushParts()
           const msgs = await messageRepo.listMessagesByTopic(d.topicId)
           const partsByMessage: Record<string, unknown[]> = {}
           for (const msg of msgs) {
             const parts = await messageRepo.getMessageParts(msg.id)
             if (parts.length > 0) partsByMessage[msg.id] = parts
           }
-          this.sendTo(ws, 'messages.history', { topicId: d.topicId, messages: msgs, partsByMessage })
+          this.sendTo(ws, 'messages.history', {
+            topicId: d.topicId,
+            messages: msgs,
+            partsByMessage,
+            pendingInteractions: await listPendingInteractionHistory(d.topicId),
+          })
         } catch (err) {
           logger.error({ err, topicId: d.topicId }, 'Failed to load messages')
         }
@@ -899,18 +931,20 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const data = userActionSchema.parse(frame.d)
 
         if (data.action === 'abort') {
+          this.broadcastAll('agent.status', { topicId: data.topicId, state: 'aborting' })
           const topic = await topicRepo.getTopic(data.topicId)
           if (topic?.pi_session_id) {
+            const sessionId = topic.pi_session_id
             const pi = await this.ensurePiClient()
-            if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
+            if (pi && await this.ensureSession(pi, sessionId)) {
               try {
-                await pi.rpc('abortSession', { sessionId: topic.pi_session_id })
+                await abortSessionWithTimeout(() => pi.rpc('abortSession', { sessionId }))
               } catch (err) {
                 logger.warn({ err }, 'Failed to abort session on PI')
               }
             }
           }
-          this.broadcastAll('agent.status', { topicId: data.topicId, state: 'aborting' })
+          await finalizeTopicAbort(data.topicId, this)
           break
         }
 

@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.6 |
+| 当前版本 | v1.7.7 |
 | 更新时间 | 2026-05-26 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -58,12 +58,29 @@
 | BUG-044 | AIT-160 |
 | BUG-045 | AIT-173 |
 | BUG-046 | AIT-174 |
+| BUG-047 | AIT-175 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-047: AIT-175 — push 交互丢失恢复与 Aborting 状态残留
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-047 |
+| 标题 | push 交互通知已到但前端未恢复消息，且状态条可能长期停在 Aborting |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-26 |
+| 修复时间 | 2026-05-26 |
+| 修复版本 | v1.7.7 |
+| 影响模块 | packages/server/src/ws, packages/web/src/lib/ws-client.ts, packages/web/public/sw.js, packages/web/src/stores/message-store.ts |
+| 描述 | 线上「KKK」话题中，agent 发出“你要推到哪个仓库”交互请求后，系统 push 已收到，但前端仍停在 thinking；另有对话结束后长时间无新消息但状态条一直显示 Aborting、Stop 无有效反馈。 |
+| 根因 | `interaction.request` 只走实时 WS 和 push，`messages.history` 没有回放 pending interactions；前端 WS 断线时会本地伪造 `aborting`；用户 abort 后 server 只广播 `aborting`，缺少本地 finalize/idle 收尾兜底。 |
+| 修复方案 | `messages.history` 增加 pending interactions；前端 history hydrate interactions 并按 topic 替换；WS 断线不再设置 `aborting`；Stop 后 server 调用 adapter abort 并本地将 streaming 消息标记为 aborted，随后广播 `agent.status: idle`；Service Worker 前台去重并支持点击通知路由到目标 topic。 |
+| 测试证据 | protocol/server/web typecheck；schema.test.ts；message-handler.test.ts；interaction-handler.test.ts；ws-client-visibility.test.ts；ws-client-dispatch.test.ts；topic-store.test.ts；message-store.test.ts |
 
 ### BUG-044: PI Adapter message.delta 首个 text 回显用户输入
 

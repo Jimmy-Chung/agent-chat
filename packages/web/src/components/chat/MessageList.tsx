@@ -12,6 +12,9 @@ interface OrphanInteraction {
   interactionKind: 'approval' | 'choice'
   prompt: string
   options?: string[]
+  status?: 'pending' | 'resolved' | 'timeout'
+  response?: string
+  defaultTimeoutMs?: number
 }
 
 interface MessageListProps {
@@ -140,7 +143,9 @@ export function MessageList({
             interactionKind={inter.interactionKind}
             prompt={inter.prompt}
             options={inter.options}
-            status="pending"
+            status={inter.status ?? 'pending'}
+            response={inter.response}
+            defaultTimeoutMs={inter.defaultTimeoutMs}
           />
         </div>
       ))}

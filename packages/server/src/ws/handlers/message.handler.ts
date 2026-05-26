@@ -6,6 +6,7 @@ import * as messageRepo from '../../db/repos/message.repo'
 import type { EventBroadcaster } from '../../pi/event-router'
 import { logger } from '../../logger'
 import { createPendingUserMessage, deliverUserMessage, startAutoDelivery } from '../message-delivery'
+import { listPendingInteractionHistory } from '../interaction-history'
 
 async function loadMessageHistory(topicId: string) {
   const msgs = await messageRepo.listMessagesByTopic(topicId)
@@ -38,6 +39,7 @@ async function loadMessageHistory(topicId: string) {
       turn_id: m.turn_id,
     })),
     partsByMessage,
+    pendingInteractions: await listPendingInteractionHistory(topicId),
   }
 }
 

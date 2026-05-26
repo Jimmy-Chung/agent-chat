@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as topicRepo from '../db/repos/topic.repo'
+import * as interactionRepo from '../db/repos/interaction.repo'
 import { _setMinRetryWaitForTest } from '../ws/message-delivery'
 
 function createMockHub() {
@@ -75,8 +76,36 @@ describe('Message handler', () => {
         topicId: topic.id,
         messages: [],
         partsByMessage: {},
+        pendingInteractions: [],
       },
     })
+  })
+
+  it('loads pending interactions with message history', async () => {
+    const handler = await getHandler('client:messages.load')
+    const topic = await topicRepo.createTopic({ name: 'Interaction History', kind: 'normal', agentType: 'general' })
+    await interactionRepo.createInteraction({
+      topicId: topic.id,
+      kind: 'choice',
+      prompt: '你要推到哪个仓库',
+      optionsJson: JSON.stringify(['repo-a', 'repo-b']),
+    })
+
+    await handler('socket-interaction', {
+      d: { topicId: topic.id },
+    })
+
+    const payload = mockHub.sendToClient.mock.calls.at(-1)?.[1]
+    expect(payload).toEqual(expect.objectContaining({ type: 'messages.history' }))
+    expect(payload.data.pendingInteractions).toEqual([
+      expect.objectContaining({
+        topicId: topic.id,
+        interactionKind: 'choice',
+        prompt: '你要推到哪个仓库',
+        options: ['repo-a', 'repo-b'],
+        status: 'pending',
+      }),
+    ])
   })
 
   it('loads persisted history for a topic', async () => {

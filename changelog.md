@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-26 [v1.7.7] — AIT-175 推送交互恢复 + Aborting 收口
+
+> 合并处理线上「KKK」话题中 push 已到但前端仍卡 thinking、以及对话结束后状态条长期停在 `Aborting` 的问题。
+
+### BUG-047 (AIT-175): push interaction 可恢复 + abort 状态本地收尾
+- `messages.history` 增加 pending interactions 回放；前端重连、切回 topic 或点击通知后能恢复「你要推到哪个仓库」这类 choice/approval 卡片
+- Service Worker 前台可见窗口时抑制重复系统通知；点击通知会聚焦已有 PWA 窗口并路由到目标 topic
+- 前端 WS 断线不再本地伪造 `aborting`，避免连接问题污染 agent 状态
+- 用户点击 Stop 后，server 调用 adapter abort 后会本地 finalize streaming 消息并广播 `agent.status: idle`，避免状态条永久停在 `Aborting`
+- `message.end(stopReason=tool_use)` 不再触发“有新回复”push，避免工具调用中间态打扰用户
+- 补充针对 foreground reconnect、Service Worker push、pending interaction history、abort finalize 的单测
+
 ## 2026-05-26 [v1.7.6] — History reload 清理 Aborting 状态残留
 
 > 针对线上 topic `01KSH0ZRX44ZJ61CT9HHMHZ5XW` 的状态排查：DB 历史中消息已全部完成，但前端仍可能保留断线时本地设置的 `aborting` 状态。

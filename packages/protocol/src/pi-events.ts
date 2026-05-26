@@ -293,6 +293,7 @@ export const piEventSchema = z.object({
   seq: z.number(),
   sessionId: z.string(),
   ts: z.number(),
+  turnId: z.string().optional(),
   payload: payloadSchema,
 })
 
@@ -300,5 +301,6 @@ export type PIEvent = {
   seq: number
   sessionId: string
   ts: number
+  turnId?: string
   payload: PIPayload
 }

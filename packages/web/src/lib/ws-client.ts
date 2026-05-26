@@ -36,12 +36,14 @@ class WsClient {
   private attempt = 0
   private disposed = false
   private piConfig: PiConfig | null = null
+  private visibilityBound = false
 
   setPiConfig(config: PiConfig | null): void {
     this.piConfig = config
   }
 
   connect(piConfig?: PiConfig): void {
+    this.bindVisibility()
     if (this.ws?.readyState === WebSocket.OPEN) return
     this.disposed = false
     if (piConfig) this.piConfig = piConfig
@@ -88,15 +90,6 @@ class WsClient {
         return
       }
       useWsStore.getState().setStatus('disconnected')
-      // WS 断连 → 当前活跃话题如果处于 processing，标记为 aborting
-      // 其他话题等用户切过去时再处理（那时 WS 已重连或会触发 session.health）
-      const activeTopicId = useTopicStore.getState().activeTopicId
-      if (activeTopicId) {
-        const status = useMessageStore.getState().agentStatusByTopic[activeTopicId]
-        if (status === 'processing') {
-          useMessageStore.getState().setAgentStatus(activeTopicId, 'aborting')
-        }
-      }
       this.scheduleReconnect()
     }
 
@@ -107,6 +100,7 @@ class WsClient {
 
   disconnect(): void {
     this.disposed = true
+    this.unbindVisibility()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -120,6 +114,45 @@ class WsClient {
       this.ws = null
     }
     useWsStore.getState().setStatus('disconnected')
+  }
+
+  // ─── AIT-175: foreground reconnect ────────────────────────────────────────
+  // Mobile browsers tear down the WS when the tab/PWA goes to the background
+  // (and may suspend the JS engine). When the page returns to the foreground we
+  // can't rely on the exponential-backoff timer (it may be far out, or never
+  // fired while suspended). Reconnect immediately and reset the backoff so the
+  // socket recovers in seconds. The post-open `topics.list` → `setTopics` →
+  // `messages.load` flow then re-pulls any history that arrived while we were
+  // offline, so no messages are lost.
+  private bindVisibility(): void {
+    if (this.visibilityBound || typeof document === 'undefined') return
+    document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    this.visibilityBound = true
+  }
+
+  private unbindVisibility(): void {
+    if (!this.visibilityBound || typeof document === 'undefined') return
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    this.visibilityBound = false
+  }
+
+  private handleVisibilityChange = (): void => {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState !== 'visible') return
+    this.reconnectNow()
+  }
+
+  /** Reconnect right now, skipping backoff. No-op if already open/connecting. */
+  reconnectNow(): void {
+    if (this.disposed) return
+    const state = this.ws?.readyState
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.attempt = 0
+    this.connect()
   }
 
   send(event: ClientEvent): boolean {
@@ -459,6 +492,8 @@ class WsClient {
           interactionKind: d.interactionKind as string,
           prompt: d.prompt as string,
           options: d.options as string[] | undefined,
+          status: 'pending',
+          defaultTimeoutMs: d.defaultTimeoutMs as number | undefined,
         })
         break
       }
@@ -553,7 +588,12 @@ case 'usage.snapshot': {
       }
 
       case 'messages.history': {
-        const d = event.data as { topicId: string; messages: unknown[]; partsByMessage: Record<string, unknown[]> }
+        const d = event.data as {
+          topicId: string
+          messages: unknown[]
+          partsByMessage: Record<string, unknown[]>
+          pendingInteractions?: unknown[]
+        }
         const msgs = d.messages.map((m) => {
           const r = m as Record<string, unknown>
           return {
@@ -572,7 +612,6 @@ case 'usage.snapshot': {
           }
         })
         messageStore.setMessages(d.topicId, msgs)
-        messageStore.reconcileAgentStatusFromMessages(d.topicId)
         for (const [msgId, parts] of Object.entries(d.partsByMessage)) {
           for (const p of parts) {
             const r = p as Record<string, unknown>
@@ -584,6 +623,24 @@ case 'usage.snapshot': {
             )
           }
         }
+        messageStore.setInteractionsForTopic(
+          d.topicId,
+          (d.pendingInteractions ?? []).map((entry) => {
+            const r = entry as Record<string, unknown>
+            return {
+              interactionId: r.interactionId as string,
+              messageId: (r.messageId as string) ?? '',
+              topicId: r.topicId as string,
+              interactionKind: r.interactionKind as string,
+              prompt: r.prompt as string,
+              options: r.options as string[] | undefined,
+              status: r.status as 'pending' | 'resolved' | 'timeout' | undefined,
+              response: r.response as string | undefined,
+              defaultTimeoutMs: r.defaultTimeoutMs as number | undefined,
+            }
+          }),
+        )
+        messageStore.reconcileAgentStatusFromMessages(d.topicId)
         break
       }
 

@@ -3,6 +3,8 @@ import { setupTestDb, teardownTestDb } from './db-helper'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
+import * as pushRepo from '../db/repos/push-subscription.repo'
+import type { AppConfig } from '../config'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
 import { routePiEvents, mapAgentState } from '../pi/event-router'
@@ -384,5 +386,82 @@ describe('Event router — message.end derives agent.status idle (AIT-137)', () 
     const types = events.map((e) => e.type)
     expect(types).toContain('message.end')
     expect(types).not.toContain('agent.status')
+  })
+})
+
+// 体验微调 — Web Push must NOT fire on a 'tool_use' stop (the agent is just
+// pausing to call a tool). Pushing "有新回复" on every tool call spams the user.
+// Only real turn endings (end_turn / error / aborted / ...) and interaction
+// requests should push.
+describe('message.end Web Push gating — skip tool_use', () => {
+  let mockHub: ReturnType<typeof createMockHub>
+  let mockPi: ReturnType<typeof createMockPiClient>
+  let listSubsSpy: ReturnType<typeof vi.spyOn>
+
+  const pushConfig = {
+    vapidPublicKey: 'BTestPublicKey',
+    vapidPrivateKey: 'testPrivateKey',
+    vapidSubject: 'mailto:test@example.com',
+  } as unknown as AppConfig
+
+  beforeEach(async () => {
+    await setupTestDb()
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    // listSubscriptions is the first thing sendPushToAll touches after the vapid
+    // key check, so spying on it tells us whether the push path was entered.
+    listSubsSpy = vi.spyOn(pushRepo, 'listSubscriptions').mockResolvedValue([])
+    routePiEvents(mockPi as any, mockHub as any, pushConfig)
+  })
+
+  afterEach(() => {
+    teardownTestDb()
+    vi.restoreAllMocks()
+  })
+
+  async function startMessage(sessionId: string, messageId: string): Promise<void> {
+    const topic = await topicRepo.createTopic({ name: 'Push Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: sessionId })
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId, role: 'assistant' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+  }
+
+  it('does NOT enter the push path when stopReason is tool_use', async () => {
+    const sessionId = 'sess-push-tool-use'
+    const messageId = 'msg-push-tool-use'
+    await startMessage(sessionId, messageId)
+    listSubsSpy.mockClear()
+
+    mockPi.emit('event', {
+      seq: 2,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId, stopReason: 'tool_use' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(listSubsSpy).not.toHaveBeenCalled()
+  })
+
+  it('enters the push path on a real turn ending (stopReason=end_turn)', async () => {
+    const sessionId = 'sess-push-end-turn'
+    const messageId = 'msg-push-end-turn'
+    await startMessage(sessionId, messageId)
+    listSubsSpy.mockClear()
+
+    mockPi.emit('event', {
+      seq: 2,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId, stopReason: 'end_turn' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(listSubsSpy).toHaveBeenCalled()
   })
 })

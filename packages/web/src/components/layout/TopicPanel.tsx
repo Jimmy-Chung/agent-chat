@@ -140,7 +140,8 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           interactionKind: inter.interactionKind,
           prompt: inter.prompt,
           options: inter.options,
-          status: 'pending',
+          status: inter.status ?? 'pending',
+          response: inter.response,
         }
       }
     }
@@ -156,6 +157,9 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         interactionKind: inter.interactionKind as 'approval' | 'choice',
         prompt: inter.prompt,
         options: inter.options,
+        status: inter.status ?? 'pending',
+        response: inter.response,
+        defaultTimeoutMs: inter.defaultTimeoutMs,
       }))
   }, [interactions, activeTopic.id])
 

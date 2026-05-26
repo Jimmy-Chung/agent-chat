@@ -291,6 +291,19 @@ export const messagesHistorySchema = z.object({
       }),
     ),
   ),
+  pendingInteractions: z.array(
+    z.object({
+      topicId: z.string(),
+      interactionId: z.string(),
+      messageId: z.string().optional(),
+      interactionKind: z.enum(['approval', 'choice']),
+      prompt: z.string(),
+      options: z.array(z.string()).optional(),
+      status: z.enum(['pending', 'resolved', 'timeout']).optional(),
+      response: z.string().optional(),
+      defaultTimeoutMs: z.number().optional(),
+    }),
+  ).optional(),
 })
 
 export const errorSchema = z.object({

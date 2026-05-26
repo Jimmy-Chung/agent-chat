@@ -4,6 +4,18 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 
+export interface StoredInteraction {
+  interactionId: string
+  messageId: string
+  topicId: string
+  interactionKind: string
+  prompt: string
+  options?: string[]
+  status?: 'pending' | 'resolved' | 'timeout'
+  response?: string
+  defaultTimeoutMs?: number
+}
+
 export interface PendingMessage {
   id: string
   content: string
@@ -26,7 +38,7 @@ interface MessageState {
   agentPhaseByTopic: Record<string, string | undefined>
   progressByTopic: Record<string, { phase: string; message: string; metadata?: Record<string, unknown> }>
   usageByMessage: Record<string, { model: string; inputTokens: number; outputTokens: number }>
-  interactions: Record<string, { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }>
+  interactions: Record<string, StoredInteraction>
   pendingMessagesByTopic: Record<string, PendingMessage[]>
 }
 
@@ -54,7 +66,8 @@ interface MessageActions {
   setProgress: (topicId: string, progress: { phase: string; message: string; metadata?: Record<string, unknown> }) => void
   clearProgress: (topicId: string) => void
   setUsage: (messageId: string, data: { model: string; inputTokens: number; outputTokens: number }) => void
-  setInteraction: (id: string, data: { interactionId: string; messageId: string; topicId: string; interactionKind: string; prompt: string; options?: string[] }) => void
+  setInteraction: (id: string, data: StoredInteraction) => void
+  setInteractionsForTopic: (topicId: string, interactions: StoredInteraction[]) => void
   addPendingMessage: (topicId: string, content: string, clientMessageId: string) => void
   removePendingMessage: (topicId: string, id: string) => void
   clearPendingMessages: (topicId: string) => void
@@ -323,6 +336,17 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     setInteraction: (id, data) => {
       set((s) => {
         s.interactions[id] = data
+      })
+    },
+
+    setInteractionsForTopic: (topicId, interactions) => {
+      set((s) => {
+        for (const [id, interaction] of Object.entries(s.interactions)) {
+          if (interaction.topicId === topicId) delete s.interactions[id]
+        }
+        for (const interaction of interactions) {
+          s.interactions[interaction.interactionId] = interaction
+        }
       })
     },
 

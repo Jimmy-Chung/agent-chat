@@ -160,7 +160,17 @@ export function routePiEvents(
       lastSeqBySession.set(event.sessionId, event.seq)
     }
 
-    logger.info({ kind: event.payload.kind, sessionId: event.sessionId, seq: event.seq }, 'PI event received')
+    logger.info(
+      {
+        kind: event.payload.kind,
+        sessionId: event.sessionId,
+        seq: event.seq,
+        // BUG-046 — correlation keys for end-to-end alignment with adapter logs.
+        turnId: event.turnId,
+        messageId: (event.payload as { messageId?: string }).messageId,
+      },
+      'PI event received',
+    )
 
     // BUG-044: Debug — log full event payload for message.delta (echo investigation)
     if (event.payload.kind === 'message.delta') {
@@ -274,13 +284,17 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       // Skip 'tool_use' because the agent is still working: a tool.result will follow.
       if (payload.stopReason !== 'tool_use') {
         hub.broadcast('agent.status', { topicId, state: 'idle' })
-      }
-      if (config) {
-        const topic = await topicRepo.getTopic(topicId)
-        sendPushToAll(
-          { title: 'agent-chat', body: `${topic?.name ?? '话题'} 有新回复`, tag: `msg-${topicId}`, url: `/?topic=${topicId}` },
-          config,
-        ).catch(() => {})
+        // Web Push only for real turn endings — a 'tool_use' stop is just the agent
+        // pausing to call a tool (a tool.result + more output follow), so pushing
+        // "有新回复" on every tool call spams the user. Final replies / errors push;
+        // interaction.request (approvals/choices) pushes separately below.
+        if (config) {
+          const topic = await topicRepo.getTopic(topicId)
+          sendPushToAll(
+            { title: 'agent-chat', body: `${topic?.name ?? '话题'} 有新回复`, tag: `msg-${topicId}`, url: `/?topic=${topicId}` },
+            config,
+          ).catch(() => {})
+        }
       }
       break
     }

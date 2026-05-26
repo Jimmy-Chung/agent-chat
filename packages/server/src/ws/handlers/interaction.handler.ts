@@ -5,6 +5,7 @@ import * as topicRepo from '../../db/repos/topic.repo'
 import * as interactionRepo from '../../db/repos/interaction.repo'
 import { logger } from '../../logger'
 import type { EventBroadcaster } from '../../pi/event-router'
+import { abortSessionWithTimeout, finalizeTopicAbort } from '../abort-control'
 
 export function registerInteractionHandlers(
   hub: { on: (event: string, handler: (...args: unknown[]) => void) => void },
@@ -16,15 +17,17 @@ export function registerInteractionHandlers(
     const data = userActionSchema.parse(frame.d)
 
     if (data.action === 'abort') {
+      broadcaster.broadcast('agent.status', { topicId: data.topicId, state: 'aborting' })
       const topic = await topicRepo.getTopic(data.topicId)
       if (topic?.pi_session_id) {
+        const sessionId = topic.pi_session_id
         try {
-          await pi.rpc('abortSession', { sessionId: topic.pi_session_id })
+          await abortSessionWithTimeout(() => pi.rpc('abortSession', { sessionId }))
         } catch (err) {
           logger.warn({ err }, 'Failed to abort session on PI')
         }
       }
-      broadcaster.broadcast('agent.status', { topicId: data.topicId, state: 'aborting' })
+      await finalizeTopicAbort(data.topicId, broadcaster)
       return
     }
 

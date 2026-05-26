@@ -57,12 +57,14 @@ describe('PIEvent — positive parsing', () => {
   it('parses message.start', () => {
     const event = piEventSchema.parse({
       ...baseEvent,
+      turnId: 'turn-1',
       payload: {
         kind: 'message.start',
         messageId: 'msg-1',
         role: 'assistant',
       },
     })
+    expect(event.turnId).toBe('turn-1')
     expect(event.payload.kind).toBe('message.start')
     if (event.payload.kind === 'message.start') {
       expect(event.payload.messageId).toBe('msg-1')
