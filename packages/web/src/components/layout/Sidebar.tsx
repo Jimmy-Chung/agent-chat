@@ -309,6 +309,7 @@ export function Sidebar() {
   const [workspace, setWorkspace] = useState<WorkspaceBrowseResponse | null>(null)
   const [workspaceLoading, setWorkspaceLoading] = useState(false)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const workspaceLoadInFlight = useRef(false)
   const [permissionTier, setPermissionTier] = useState<PermissionTier>('normal')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
@@ -405,7 +406,8 @@ export function Sidebar() {
   )
 
   const loadWorkspace = useCallback(async () => {
-    if (workspaceLoading) return
+    if (workspaceLoadInFlight.current) return
+    workspaceLoadInFlight.current = true
     setWorkspaceLoading(true)
     setWorkspaceError(null)
     try {
@@ -413,16 +415,17 @@ export function Sidebar() {
     } catch (err) {
       setWorkspaceError(err instanceof Error ? err.message : String(err))
     } finally {
+      workspaceLoadInFlight.current = false
       setWorkspaceLoading(false)
     }
-  }, [workspaceLoading])
+  }, [])
 
   useEffect(() => {
     if (!showNewTopic || newTopicAgent !== 'programming') return
     if (!cwd.trim().startsWith('/')) return
-    if (workspace || workspaceLoading) return
+    if (workspace || workspaceLoading || workspaceError) return
     void loadWorkspace()
-  }, [showNewTopic, newTopicAgent, cwd, workspace, workspaceLoading, loadWorkspace])
+  }, [showNewTopic, newTopicAgent, cwd, workspace, workspaceLoading, workspaceError, loadWorkspace])
 
   const closeNewTopicModal = () => {
     setShowNewTopic(false)
@@ -431,6 +434,8 @@ export function Sidebar() {
     setExtension('claude-code')
     setPermissionTier('normal')
     setCwd('')
+    setWorkspace(null)
+    setWorkspaceError(null)
     setSelectedTemplateId('')
   }
 
@@ -740,14 +745,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.12</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.13</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.12</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.13</span>
             </Tooltip>
           </div>
         </div>

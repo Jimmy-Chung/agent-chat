@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.7 |
-| 更新时间 | 2026-05-26 |
+| 当前版本 | v1.7.13 |
+| 更新时间 | 2026-05-27 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -59,12 +59,32 @@
 | BUG-045 | AIT-173 |
 | BUG-046 | AIT-174 |
 | BUG-047 | AIT-175 |
+| BUG-048 | — |
+| BUG-049 | — |
+| BUG-050 | — |
+| BUG-051 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-051: 新建 Programming 话题输入 `/` 后工作区选择器闪烁
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-051 |
+| 标题 | 新建 Programming 话题输入 `/` 后工作区选择器闪烁 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-27 |
+| 修复时间 | 2026-05-27 |
+| 修复版本 | v1.7.13 |
+| 影响模块 | packages/web/src/components/layout/Sidebar.tsx |
+| 描述 | 创建 Programming 话题时，在 Working Directory 输入 `/` 后，如果 workspace API 暂时不可用，目录选择器会持续在读取状态与错误状态之间闪烁。 |
+| 根因 | `cwd` 保持 `/` 时，自动读取 workspace 的 effect 在 `workspaceLoading` 回到 false 后会再次触发；同时输入框 `onChange` 也会触发读取，缺少 in-flight guard 与失败后的自动重试停止条件。 |
+| 修复方案 | `loadWorkspace` 增加 ref 级 in-flight guard；自动 effect 遇到 `workspaceError` 后停止自动重试，只保留手动「重试」；关闭新建话题弹窗时清理 workspace/error 状态。 |
+| 测试证据 | `PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web typecheck`；`PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web test -- workspace-path`；`PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web build`。 |
 
 ### BUG-047: AIT-175 — push 交互丢失恢复与 Aborting 状态残留
 

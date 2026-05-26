@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-27 [v1.7.13] — 工作区目录读取防抖修复
+
+### BUG-051: 新建 Programming 话题输入 `/` 后工作区选择器闪烁
+- 修复新建话题 Working Directory 输入 `/` 时，工作区读取失败后自动 effect 反复重试，导致选择器在「读取中/错误」之间持续闪烁的问题
+- `loadWorkspace` 增加 in-flight guard，避免输入框 `onChange` 与自动 effect 同时触发并发请求
+- 自动读取失败后停止自动重试，保留 UI 内「重试」按钮用于手动恢复
+- 关闭新建话题弹窗时清理 workspace 缓存与错误状态，避免下次打开继承旧错误
+- 验证：`PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web typecheck` 通过；`PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web test -- workspace-path` 通过；`PATH=/opt/homebrew/bin:$PATH pnpm --filter @agent-chat/web build` 通过
+
 ## 2026-05-27 [v1.7.12] — 工作区根目录快捷选择
 
 ### AIT-177: 新建 Programming 话题支持 workspace 相对路径
