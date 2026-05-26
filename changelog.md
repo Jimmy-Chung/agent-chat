@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-26 [v1.7.9] — 恢复 Pages 跨域 Worker 路由
+
+> 线上确认 `agent-chat.jimmy-jam.com` 当前并未把 `/api/*` 与 `/ws` 接入同源 Worker，本版本先恢复到稳定可用的 Pages 跨域访问 `workers.dev` 方案。
+
+### BUG-050: 回退到 `workers.dev` 作为 Pages 的后端入口
+- 前端 `server-url` 恢复 `agent-chat.jimmy-jam.com` / `.pages.dev` 走 `wss://agent-chat-server.jimmychung038.workers.dev/ws`
+- Pages 构建 workflow 恢复注入 `NEXT_PUBLIC_WS_URL`，确保静态产物固定指向 Worker 后端
+- 保留 `v1.7.8` 中新增的 gateway 发送诊断日志，继续用于 Adapter 联调
+
 ## 2026-05-26 [v1.7.8] — 同源 Pages/Worker 路由修复 + 发送链路诊断增强
 
 > 当前线上 `agent-chat.jimmy-jam.com` 的 Pages 与 server 已经同源部署，本版本去掉历史上的外部 Worker 强制分流，并补齐首轮发送失败时可提供给 Adapter 的网关侧诊断信息。
