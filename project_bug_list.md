@@ -65,19 +65,6 @@
 
 ## 未完成
 
-### BUG-046: WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节
-
-| 字段 | 值 |
-|---|---|
-| ID | BUG-046 |
-| 标题 | WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节 |
-| 状态 | 处理中 |
-| 发现时间 | 2026-05-25 |
-| 影响模块 | 全链路：浏览器 ↔ CF Worker(DurableObject) ↔ 隧道 ↔ adapter（外部） |
-| 描述 | 经「浏览器→CF Worker→隧道→adapter」时前端观察到消息丢失。判断：WSS 跑在 TCP 之上，TCP 不会让应用层丢包 → 实为设计/连接生命周期层面的消息丢失（重连空窗无 seq 续传、DO 休眠、代理未 drain、背压、孤儿连接等），非网络丢包。Tailscale 直连更稳是因可断开环节少。 |
-| 根因 | 待定位（外部依赖 adapter 日志规格）。计划：①[external] 索取 adapter Logs 数据结构与事件时机（字段、seq 是否单调/重连语义、入站 RPC 受理时刻、关联 id）；②评估两侧日志能否拼出完整往返并识别丢失（用 sessionId+seq 比对发出/收到序列定位 adapter→server，broadcastAll 定位 server→client）；不可则要求补充；③[external] 可评估则请 adapter 启用 CF Tunnel 入口测试；④据收集结果判定断点；⑤我方 DO/Worker/event-router 补跨环节追踪日志 + 客户端 seq-gap 检测。 |
-| Linear | AIT-174 |
-
 ### BUG-044: PI Adapter message.delta 首个 text 回显用户输入
 
 | 字段 | 值 |
@@ -235,6 +222,23 @@
 ---
 
 ## 已修复
+
+### BUG-046: WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-046 |
+| 标题 | WSS 消息丢失排查 — 建立端到端可追踪性，定位断点环节 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-25 |
+| 修复时间 | 2026-05-26 |
+| 修复版本 | agent-chat v1.7.3/v1.7.4/v1.7.5 + adapter v1.9.6-2-g8e50852 |
+| 影响模块 | 全链路：浏览器 ↔ CF Worker(DurableObject) ↔ 隧道 ↔ adapter（外部） |
+| 描述 | 经「浏览器→CF Worker→隧道→adapter」时前端观察到消息丢失。判断：WSS 跑在 TCP 之上，TCP 不会让应用层丢包 → 实为设计/连接生命周期层面的消息丢失（重连空窗无 seq 续传、DO 休眠、代理未 drain、背压、孤儿连接等），非网络丢包。 |
+| 根因 | 多点叠加：1) adapter WS close 后首次 CLOSING 窗口未及时进入 grace，streaming delta 可能 drop；2) agent-chat reconnectSession 在 stale/closed PI conn 场景未保留 lastSeq；3) agent-chat 在 transient `session.health disconnected` 时本地合成 `message.end(error)`，提前终止 in-flight assistant；4) Pages 域名缺少 Worker API route 时 provider proxy 请求可能打到同源 `/api/...` 产生 404。 |
+| 修复方案 | adapter v1.9.6-2 实现 proactive grace、pendingEvents buffer、drainPendingEvents + replayAfter、SessionStore 持久化与 admin endpoint 移除；agent-chat v1.7.3 保留 lastSeq 并补发送失败日志，v1.7.4 不再在 transient disconnect 合成 error end，v1.7.5 修复 provider proxy 生产域名路由与上游错误透传。 |
+| 验证证据 | streaming close + resume 主链路通过；post-resume public smoke 通过：topic `01KSGR8PZ7GTMVGH3SSX128RJS`，session `285ff176-ac5a-4f70-ad75-20e96309c325`，assistant `msg_1779752532356_ui2za6`，最终 `message.end { stopReason: "end_turn" }`。 |
+| Linear | AIT-174 |
 
 ### BUG-045: 切换活跃 Provider 后分组被重置为 claude-code
 
