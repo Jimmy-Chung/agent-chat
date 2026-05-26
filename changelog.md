@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-05-26 [v1.7.8] — 同源 Pages/Worker 路由修复 + 发送链路诊断增强
+
+> 当前线上 `agent-chat.jimmy-jam.com` 的 Pages 与 server 已经同源部署，本版本去掉历史上的外部 Worker 强制分流，并补齐首轮发送失败时可提供给 Adapter 的网关侧诊断信息。
+
+### BUG-048: 同源部署不再强制跳到外部 Worker 域名
+- 前端 `server-url` 删除对 `agent-chat.jimmy-jam.com` / `.pages.dev` 的硬编码 Worker 路由，默认走当前页面同源 `/ws`
+- Pages 部署 workflow 不再注入 `NEXT_PUBLIC_WS_URL`，避免构建期把旧的外部 Worker 地址继续写死进产物
+- 线上同源部署下，Provider HTTP proxy / token 校验 / push 订阅 / WS 连接统一回到页面所在域名
+
+### BUG-049: server 发送链路补充可交付给 Adapter 的网关诊断日志
+- `/server-logs` 除 Adapter 入站 PI 事件外，新增 gateway 出站日志：`sendUserMessage.dispatch/ack/failed/session_busy`
+- session 恢复链路新增 `session.reconnect/reconnect_failed/recreate/recreate_failed` 诊断项
+- 每条诊断日志附带 `topicId`、`sessionId`、`messageId`、`clientMessageId`、`attempt`、`status` 和截断后的 payload 预览，便于和 Adapter 侧日志按轮次对齐
+
 ## 2026-05-26 [v1.7.7] — AIT-175 推送交互恢复 + Aborting 收口
 
 > 合并处理线上「KKK」话题中 push 已到但前端仍卡 thinking、以及对话结束后状态条长期停在 `Aborting` 的问题。

@@ -23,12 +23,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build Next.js
         run: pnpm -F web build
-        env:
-          # Server (Cloudflare Worker) public WS URL, e.g. wss://<worker-domain>/ws
-          # NEXT_PUBLIC_* is inlined at build time; set repo variable NEXT_PUBLIC_WS_URL.
-          # Without it getServerBase() is empty and the web sends /api/* to its own
-          # Pages origin → 404 (see BUG-046).
-          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL }}
       - name: Create Pages project via Cloudflare API
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

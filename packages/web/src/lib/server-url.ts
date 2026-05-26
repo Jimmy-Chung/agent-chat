@@ -1,13 +1,6 @@
-const DEFAULT_PUBLIC_WS_URL = 'wss://agent-chat-server.jimmychung038.workers.dev/ws'
-
-function shouldUseDefaultWorker(hostname: string): boolean {
-  return hostname === 'agent-chat.jimmy-jam.com' || hostname.endsWith('.pages.dev')
-}
-
 export function getWsUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL
   if (typeof window !== 'undefined') {
-    if (shouldUseDefaultWorker(window.location.hostname)) return DEFAULT_PUBLIC_WS_URL
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${proto}//${window.location.host}/ws`
   }

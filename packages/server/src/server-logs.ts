@@ -1,17 +1,21 @@
 /**
  * Server-side PI event log buffer for debugging
- * Stores recent PI events received from adapter for cross-validation
+ * Stores recent PI events and outbound gateway activity for cross-validation
  */
 
 interface LogEntry {
   ts: number
-  source: 'pi-client'
-  sessionId: string
+  source: 'pi-client' | 'gateway'
+  sessionId?: string
   eventKind: string
-  seq: number
+  seq?: number
   // BUG-046 — cross-hop correlation keys for aligning with adapter logs.
   turnId?: string
   messageId?: string
+  topicId?: string
+  clientMessageId?: string
+  attempt?: number
+  status?: string
   payloadPreview: string
 }
 
@@ -35,6 +39,36 @@ export function logPiEvent(
     payloadPreview: preview,
   })
   // Keep only recent entries
+  if (entries.length > MAX_ENTRIES) {
+    entries.splice(0, entries.length - MAX_ENTRIES)
+  }
+}
+
+export function logGatewayEvent(input: {
+  eventKind: string
+  topicId?: string
+  sessionId?: string
+  messageId?: string
+  clientMessageId?: string
+  turnId?: string
+  attempt?: number
+  status?: string
+  payload?: unknown
+}) {
+  const preview = JSON.stringify(input.payload ?? {}).slice(0, 400)
+  entries.push({
+    ts: Date.now(),
+    source: 'gateway',
+    sessionId: input.sessionId,
+    eventKind: input.eventKind,
+    turnId: input.turnId,
+    messageId: input.messageId,
+    topicId: input.topicId,
+    clientMessageId: input.clientMessageId,
+    attempt: input.attempt,
+    status: input.status,
+    payloadPreview: preview,
+  })
   if (entries.length > MAX_ENTRIES) {
     entries.splice(0, entries.length - MAX_ENTRIES)
   }

@@ -6,6 +6,7 @@ import * as topicRepo from '../db/repos/topic.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import { logger } from '../logger'
 import { startPendingTurnWatchdog } from '../pi/event-router'
+import { logGatewayEvent } from '../server-logs'
 import {
   ARTIFACT_URL_TTL_MS,
   buildArtifactAccessUrl,
@@ -195,6 +196,23 @@ async function attemptDelivery(
     // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        logGatewayEvent({
+          eventKind: 'sendUserMessage.dispatch',
+          topicId: input.topicId,
+          sessionId,
+          messageId: msg.id,
+          clientMessageId: msg.client_message_id ?? msg.id,
+          attempt,
+          status: 'dispatching',
+          payload: {
+            contentPreview: input.content.slice(0, 400),
+            contentLength: input.content.length,
+            mentionedArtifacts,
+            manual: input.manual,
+            retryCount: options.retryCount,
+            streamingBehavior: 'followUp',
+          },
+        })
         // BUG-046 — log outbound dispatch with correlation keys for cross-hop alignment.
         logger.info(
           { sessionId, clientMessageId: msg.client_message_id ?? msg.id, messageId: msg.id, attempt },
@@ -229,9 +247,35 @@ async function attemptDelivery(
           input.broadcaster,
           resolveTurnWatchdogTimeout(),
         )
+        logGatewayEvent({
+          eventKind: 'sendUserMessage.ack',
+          topicId: input.topicId,
+          sessionId,
+          messageId: msg.id,
+          clientMessageId: msg.client_message_id ?? msg.id,
+          attempt,
+          status: 'done',
+          payload: {
+            manual: input.manual,
+            retryCount: options.retryCount,
+          },
+        })
         return true
       } catch (rpcErr) {
         if (rpcErr instanceof PiRpcError && rpcErr.code === 'session_busy' && attempt < 2) {
+          logGatewayEvent({
+            eventKind: 'sendUserMessage.session_busy',
+            topicId: input.topicId,
+            sessionId,
+            messageId: msg.id,
+            clientMessageId: msg.client_message_id ?? msg.id,
+            attempt,
+            status: 'retrying',
+            payload: {
+              code: rpcErr.code,
+              message: rpcErr.message,
+            },
+          })
           const delay = Math.min(1000 * Math.pow(2, attempt), 4000)
           logger.info({ topicId: input.topicId, attempt, delay }, 'session_busy, retrying with backoff')
           await new Promise((r) => setTimeout(r, delay))
@@ -254,6 +298,19 @@ async function attemptDelivery(
       },
       'sendUserMessage RPC failed',
     )
+    logGatewayEvent({
+      eventKind: 'sendUserMessage.failed',
+      topicId: input.topicId,
+      sessionId,
+      messageId: msg.id,
+      clientMessageId: msg.client_message_id ?? msg.id,
+      status: 'failed',
+      payload: {
+        manual: input.manual,
+        retryCount: options.retryCount,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    })
     return false
   }
 }
@@ -274,16 +331,41 @@ async function ensureDeliverableSession(
   try {
     await pi.reconnectSession(sessionId)
     logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected for delivery')
+    logGatewayEvent({
+      eventKind: 'session.reconnect',
+      topicId: topic.id,
+      sessionId,
+      status: 'reconnected',
+      payload: { path: 'ensureDeliverableSession.reconnect' },
+    })
     return sessionId
   } catch (err) {
     const code = err instanceof PiRpcError ? err.code : undefined
     logger.warn({ err, code, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
+    logGatewayEvent({
+      eventKind: 'session.reconnect_failed',
+      topicId: topic.id,
+      sessionId,
+      status: 'failed',
+      payload: {
+        path: 'ensureDeliverableSession.reconnect',
+        code,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    })
   }
 
   // Reconnect failed — try recreate (creates new session if old one is gone)
   try {
     logger.info({ topicId: topic.id, sessionId }, 'attempting recreateSession after reconnect failure')
     const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
+    logGatewayEvent({
+      eventKind: 'session.recreate',
+      topicId: topic.id,
+      sessionId,
+      status: 'recreated',
+      payload: { path: 'ensureDeliverableSession.recreate' },
+    })
     return (result as { sessionId: string }).sessionId
   } catch (recreateErr) {
     const recreateCode = recreateErr instanceof PiRpcError ? recreateErr.code : undefined
@@ -293,13 +375,41 @@ async function ensureDeliverableSession(
       try {
         await pi.reconnectSession(sessionId)
         logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected after session_exists fallback')
+        logGatewayEvent({
+          eventKind: 'session.reconnect',
+          topicId: topic.id,
+          sessionId,
+          status: 'reconnected',
+          payload: { path: 'ensureDeliverableSession.session_exists_fallback' },
+        })
         return sessionId
       } catch (retryErr) {
         logger.warn({ err: retryErr, topicId: topic.id, sessionId }, 'retry reconnectSession also failed')
+        logGatewayEvent({
+          eventKind: 'session.reconnect_failed',
+          topicId: topic.id,
+          sessionId,
+          status: 'failed',
+          payload: {
+            path: 'ensureDeliverableSession.session_exists_fallback',
+            error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+          },
+        })
         return null
       }
     }
     logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
+    logGatewayEvent({
+      eventKind: 'session.recreate_failed',
+      topicId: topic.id,
+      sessionId,
+      status: 'failed',
+      payload: {
+        path: 'ensureDeliverableSession.recreate',
+        code: recreateCode,
+        error: recreateErr instanceof Error ? recreateErr.message : String(recreateErr),
+      },
+    })
     return null
   }
 }
