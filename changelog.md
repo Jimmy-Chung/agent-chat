@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-26 [v1.7.6] — History reload 清理 Aborting 状态残留
+
+> 针对线上 topic `01KSH0ZRX44ZJ61CT9HHMHZ5XW` 的状态排查：DB 历史中消息已全部完成，但前端仍可能保留断线时本地设置的 `aborting` 状态。
+
+### UI 状态收口
+- `messages.history` 返回后，根据该 topic 的消息状态重新校准 agent 状态
+- 当历史中不存在 `streaming` / `pending` / `retrying` / `needs_retry` 消息时，强制清理 `aborting` 残留并置为 `idle`
+- 保留真实活跃消息场景：如果 history 中仍有 active message，不覆盖 `processing` 状态
+- 新增 `message-store` 单测覆盖无活跃消息清理 `aborting` 与有活跃消息不误清
+
 ## 2026-05-26 [v1.7.5] — Provider proxy 生产域名路由修复
 
 > 修复 Pages 静态站在缺少 `NEXT_PUBLIC_WS_URL` 构建变量时，把 Provider HTTP proxy 请求打到 `agent-chat.jimmy-jam.com` 自身导致 Next 404 的问题。

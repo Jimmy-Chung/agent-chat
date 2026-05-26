@@ -39,6 +39,7 @@ interface MessageActions {
   upsertSnapshotPart: (messageId: string, kind: MessagePart['kind'], contentJson: string, stableId: string) => void
   getPartContent: (messageId: string, kind: MessagePart['kind']) => string
   setMessages: (topicId: string, messages: Message[]) => void
+  reconcileAgentStatusFromMessages: (topicId: string) => void
   removeMessagesByTopic: (topicId: string) => void
   startStreaming: (topicId: string, messageId: string) => void
   appendDelta: (messageId: string, text: string) => void
@@ -186,6 +187,22 @@ export const useMessageStore = create<MessageState & MessageActions>()(
           delete s.streamingToolInputs[messageId]
           delete s.usageByMessage[messageId]
         }
+      })
+    },
+
+    reconcileAgentStatusFromMessages: (topicId) => {
+      set((s) => {
+        const hasActiveMessages = (s.byTopic[topicId] ?? []).some((m) =>
+          m.status === 'streaming'
+          || m.status === 'pending'
+          || m.status === 'retrying'
+          || m.status === 'needs_retry',
+        )
+        if (hasActiveMessages) return
+
+        s.agentStatusByTopic[topicId] = 'idle'
+        delete s.agentPhaseByTopic[topicId]
+        delete s.progressByTopic[topicId]
       })
     },
 

@@ -38,12 +38,18 @@ describe('MessageStore', () => {
       partsByMessage: {},
       loading: false,
       streamingText: {},
+      streamingThinking: {},
+      streamingToolInputs: {},
       streamingTopicId: null,
+      streamingMessageId: null,
       todosByTopic: {},
       planByTopic: {},
       agentStatusByTopic: {},
+      agentPhaseByTopic: {},
+      progressByTopic: {},
       usageByMessage: {},
       interactions: {},
+      pendingMessagesByTopic: {},
     })
   })
 
@@ -80,6 +86,37 @@ describe('MessageStore', () => {
     const state = useMessageStore.getState()
     expect(state.streamingText['m1']).toBe('Hello')
     expect(state.streamingThinking['m1']).toBe('Thinking')
+  })
+
+  it('reconcileAgentStatusFromMessages clears aborting residue when history has no active messages', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [
+      makeMessage({ id: 'm1', status: 'done' }),
+      makeMessage({ id: 'm2', status: 'done' }),
+    ])
+    store.setAgentStatus('topic1', 'aborting')
+    store.setProgress('topic1', { phase: 'abort', message: 'Aborting' })
+
+    store.reconcileAgentStatusFromMessages('topic1')
+
+    const state = useMessageStore.getState()
+    expect(state.agentStatusByTopic['topic1']).toBe('idle')
+    expect(state.agentPhaseByTopic['topic1']).toBeUndefined()
+    expect(state.progressByTopic['topic1']).toBeUndefined()
+  })
+
+  it('reconcileAgentStatusFromMessages keeps processing when history has active messages', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [
+      makeMessage({ id: 'm1', role: 'assistant', status: 'streaming' }),
+    ])
+    store.setAgentStatus('topic1', 'processing', 'streaming')
+
+    store.reconcileAgentStatusFromMessages('topic1')
+
+    const state = useMessageStore.getState()
+    expect(state.agentStatusByTopic['topic1']).toBe('processing')
+    expect(state.agentPhaseByTopic['topic1']).toBe('streaming')
   })
 
   it('addMessage appends a message to a topic', () => {

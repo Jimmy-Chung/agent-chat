@@ -572,6 +572,7 @@ case 'usage.snapshot': {
           }
         })
         messageStore.setMessages(d.topicId, msgs)
+        messageStore.reconcileAgentStatusFromMessages(d.topicId)
         for (const [msgId, parts] of Object.entries(d.partsByMessage)) {
           for (const p of parts) {
             const r = p as Record<string, unknown>
