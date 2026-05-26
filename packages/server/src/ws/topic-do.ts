@@ -38,6 +38,7 @@ import {
 } from './artifact-control'
 import { abortSessionWithTimeout, finalizeTopicAbort } from './abort-control'
 import { listPendingInteractionHistory } from './interaction-history'
+import { buildConnectedSessionHealthPayload } from './session-health'
 
 interface DOEnv {
   DB: D1Database
@@ -417,6 +418,15 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const topic = await topicRepo.getTopic(d.topicId)
           const hasSession = !!topic?.pi_session_id
           this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: hasSession })
+
+          const connectedHealth = buildConnectedSessionHealthPayload({
+            topicId: d.topicId,
+            piSessionId: topic?.pi_session_id,
+            isAttached: !!(pi && topic?.pi_session_id && pi.hasSession(topic.pi_session_id)),
+          })
+          if (connectedHealth) {
+            this.sendTo(ws, 'session.health', connectedHealth)
+          }
 
           if (hasSession && pi && !pi.hasSession(topic!.pi_session_id!)) {
             this.ctx.waitUntil(this.restoreSessionInBackground(d.topicId, pi))
