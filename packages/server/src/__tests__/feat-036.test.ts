@@ -172,4 +172,39 @@ describe('FEAT-036: provider proxy endpoint', () => {
 
     restore()
   })
+
+  it('returns reachable=true when adapter-status upstream is healthy', async () => {
+    const restore = mockHealthz(
+      new Response(JSON.stringify({ version: '1.9.9' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const res = await fetch('/api/agent-chat/v1/adapter-status?wssUrl=wss://pi.example.com/api/agent-chat/v1/socket')
+    const body = await res.json() as { version: string; reachable: boolean }
+
+    expect(body.version).toBe('1.9.9')
+    expect(body.reachable).toBe(true)
+
+    restore()
+  })
+
+  it('returns reachable=false with HTTP status when adapter-status upstream fails', async () => {
+    const restore = mockHealthz(
+      new Response('bad gateway', {
+        status: 502,
+        headers: { 'content-type': 'text/plain; charset=UTF-8' },
+      }),
+    )
+
+    const res = await fetch('/api/agent-chat/v1/adapter-status?wssUrl=wss://pi.example.com/api/agent-chat/v1/socket')
+    const body = await res.json() as { version: string; reachable: boolean; lastError: string }
+
+    expect(body.version).toBe('unknown')
+    expect(body.reachable).toBe(false)
+    expect(body.lastError).toBe('HTTP 502')
+
+    restore()
+  })
 })

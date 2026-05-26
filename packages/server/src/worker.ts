@@ -106,18 +106,22 @@ app.post('/server-logs/clear', (c) => {
 app.get('/api/agent-chat/v1/adapter-status', async (c) => {
   const wssUrl = c.req.query('wssUrl')
   const piToken = c.req.query('piToken') || ''
-  if (!wssUrl) return c.json({ version: 'not_configured' })
+  if (!wssUrl) return c.json({ version: 'not_configured', reachable: false, lastError: 'not_configured' })
 
   try {
     const url = `${piWsToHttpBase(wssUrl)}/adapter-status`
     const headers: Record<string, string> = {}
     if (piToken) headers['Authorization'] = `Bearer ${piToken}`
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return c.json({ version: 'unknown' })
+    if (!res.ok) return c.json({ version: 'unknown', reachable: false, lastError: `HTTP ${res.status}` })
     const data = await res.json() as Record<string, unknown>
-    return c.json(data, 200, { 'Cache-Control': 'no-store' })
-  } catch {
-    return c.json({ version: 'unreachable' })
+    return c.json({ ...data, reachable: true }, 200, { 'Cache-Control': 'no-store' })
+  } catch (err) {
+    return c.json({
+      version: 'unreachable',
+      reachable: false,
+      lastError: err instanceof Error ? err.message : String(err),
+    })
   }
 })
 

@@ -4,7 +4,12 @@ import type { ConnectionStatus } from '../stores/ws-store'
 
 describe('WsStore', () => {
   beforeEach(() => {
-    useWsStore.setState({ status: 'disconnected', lastSeq: null, sessionHealthByTopic: {} })
+    useWsStore.setState({
+      status: 'disconnected',
+      lastSeq: null,
+      sessionHealthByTopic: {},
+      adapterLink: { reachable: null, checkedAt: null, version: null },
+    })
   })
 
   it('should have correct initial state', () => {
@@ -12,6 +17,7 @@ describe('WsStore', () => {
     expect(state.status).toBe('disconnected')
     expect(state.lastSeq).toBeNull()
     expect(state.sessionHealthByTopic).toEqual({})
+    expect(state.adapterLink).toEqual({ reachable: null, checkedAt: null, version: null })
   })
 
   it('connect sets status to connecting', () => {
@@ -50,5 +56,20 @@ describe('WsStore', () => {
 
     useWsStore.getState().setSessionHealth('topic2', 'disconnected', 'connection reset')
     expect(useWsStore.getState().sessionHealthByTopic['topic2']).toEqual({ state: 'disconnected', lastError: 'connection reset' })
+  })
+
+  it('setAdapterLink updates global adapter connectivity state', () => {
+    useWsStore.getState().setAdapterLink({
+      reachable: false,
+      checkedAt: 123,
+      lastError: 'HTTP 502',
+      version: 'unknown',
+    })
+    expect(useWsStore.getState().adapterLink).toEqual({
+      reachable: false,
+      checkedAt: 123,
+      lastError: 'HTTP 502',
+      version: 'unknown',
+    })
   })
 })

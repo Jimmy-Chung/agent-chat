@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { getWsClient, type PiConfig } from '@/lib/ws-client'
-import { getWsUrl } from '@/lib/server-url'
+import { getServerBase, getWsUrl } from '@/lib/server-url'
 import { useWsStore } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
@@ -119,6 +119,7 @@ function MainContent({
 }
 
 const TOKEN_KEY = 'AGENT_CHAT_TOKEN'
+const ADAPTER_LINK_POLL_MS = 30_000
 
 type Step = 'auth' | 'pi-config' | 'main'
 
@@ -173,6 +174,58 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
       resetConnection(setPiConfig, setStep)
     }
   }, [unauthorized])
+
+  useEffect(() => {
+    if (step !== 'main' || !piConfig || status !== 'connected') return
+
+    let cancelled = false
+
+    const probe = async () => {
+      const params = new URLSearchParams()
+      if (piConfig.wssUrl) params.set('wssUrl', piConfig.wssUrl)
+      if (piConfig.piToken) params.set('piToken', piConfig.piToken)
+
+      try {
+        const res = await fetch(
+          `${getServerBase()}/api/agent-chat/v1/adapter-status?${params}`,
+          { signal: AbortSignal.timeout(5_000) },
+        )
+        const data = await res.json() as {
+          reachable?: boolean
+          lastError?: string
+          version?: string
+        }
+        if (cancelled) return
+        useWsStore.getState().setAdapterLink({
+          reachable: typeof data.reachable === 'boolean' ? data.reachable : false,
+          lastError: data.lastError,
+          checkedAt: Date.now(),
+          version: data.version ?? null,
+        })
+      } catch (err) {
+        if (cancelled) return
+        useWsStore.getState().setAdapterLink({
+          reachable: false,
+          lastError: err instanceof Error ? err.message : String(err),
+          checkedAt: Date.now(),
+          version: 'unreachable',
+        })
+      }
+    }
+
+    void probe()
+    const intervalId = window.setInterval(() => { void probe() }, ADAPTER_LINK_POLL_MS)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void probe()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [piConfig, status, step])
 
   const handleAuthSuccess = useCallback(() => {
     setStep('pi-config')

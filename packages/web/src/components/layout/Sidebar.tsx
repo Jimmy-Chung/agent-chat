@@ -17,7 +17,8 @@ import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/component
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
-import type { ProviderConfig } from '@/stores/ws-store'
+import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
+import { resolvePiBadgeState } from '@/lib/connection-status'
 
 function normalizeCwd(cwd: string): string {
   return cwd.trim().replace(/\/+$/, '') || '/'
@@ -292,6 +293,7 @@ export function Sidebar() {
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const templates = useSopTemplateStore((s) => s.templates)
   const wsStatus = useWsStore((s) => s.status)
+  const adapterLink = useWsStore((s) => s.adapterLink)
 
   // Adapter version — fetch on hover, cache 60s
   const [adapterVersion, setAdapterVersion] = useState<string | null>(null)
@@ -314,7 +316,6 @@ export function Sidebar() {
       setAdapterVersion('unreachable')
     }
   }, [adapterVersion])
-  const sessionHealthByTopic = useWsStore((s) => s.sessionHealthByTopic)
   const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
   const providerConfigs = useWsStore((s) => s.providerConfigs)
@@ -663,8 +664,8 @@ export function Sidebar() {
           style={{ borderTop: '1px solid var(--hairline)', color: 'var(--fg-dim)' }}
         >
           <PiStatusBadge
-            piState={activeTopicId ? sessionHealthByTopic[activeTopicId]?.state : undefined}
             wsStatus={wsStatus}
+            adapterLink={adapterLink}
             onClick={() => setShowConnConfig(true)}
           />
           <NotificationBell />
@@ -674,14 +675,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.7</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.10</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.7</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.10</span>
             </Tooltip>
           </div>
         </div>
@@ -1143,71 +1144,37 @@ function NotificationBell() {
   )
 }
 
-function PiStatusBadge({ piState, wsStatus, onClick }: {
-  piState: string | undefined
+function PiStatusBadge({ wsStatus, adapterLink, onClick }: {
   wsStatus: string
+  adapterLink: AdapterLinkState
   onClick?: () => void
 }) {
   const Tag = onClick ? 'button' : 'span'
   const interactive = onClick ? 'cursor-pointer transition-opacity hover:opacity-80' : ''
-
-  // PI adapter connected
-  if (piState === 'connected') {
-    return (
-      <Tag
-        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
-        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
-        style={{ height: 22, background: 'rgba(48,209,88,0.10)', color: '#6FE39A', border: '1px solid rgba(48,209,88,0.22)' }}
-      >
-        <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-ok)', boxShadow: '0 0 8px var(--state-ok)' }} />
-        PI 已连接
-      </Tag>
-    )
-  }
-  // PI adapter reconnecting
-  if (piState === 'reconnecting') {
-    return (
-      <Tag
-        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
-        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
-        style={{ height: 22, background: 'rgba(255,159,10,0.12)', color: '#FFB340', border: '1px solid rgba(255,159,10,0.28)' }}
-      >
-        <span className="inline-block h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#FFB340' }} />
-        重连中...
-      </Tag>
-    )
-  }
-  // PI adapter explicitly disconnected
-  if (piState === 'disconnected') {
-    return (
-      <Tag
-        {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
-        className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
-        style={{ height: 22, background: 'rgba(255,69,58,0.10)', color: '#FF6B6B', border: '1px solid rgba(255,69,58,0.22)' }}
-      >
-        <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--state-danger)' }} />
-        PI 已断开
-      </Tag>
-    )
-  }
-  // No PI session yet — fall back to server WS status
-  const ok = wsStatus === 'connected'
+  const state = resolvePiBadgeState(wsStatus as 'connecting' | 'connected' | 'disconnected', adapterLink)
+  const palette = state.tone === 'ok'
+    ? { bg: 'rgba(48,209,88,0.10)', fg: '#6FE39A', border: '1px solid rgba(48,209,88,0.22)', dot: 'var(--state-ok)', shadow: '0 0 8px var(--state-ok)' }
+    : state.tone === 'warning'
+      ? { bg: 'rgba(255,159,10,0.12)', fg: '#FFB340', border: '1px solid rgba(255,159,10,0.28)', dot: '#FFB340', shadow: 'none' }
+      : state.tone === 'danger'
+        ? { bg: 'rgba(255,69,58,0.10)', fg: '#FF6B6B', border: '1px solid rgba(255,69,58,0.22)', dot: 'var(--state-danger)', shadow: 'none' }
+        : { bg: 'rgba(255,255,255,0.08)', fg: 'var(--fg-dim)', border: '1px solid var(--hairline)', dot: 'var(--fg-dim)', shadow: 'none' }
   return (
     <Tag
       {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
       className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
       style={{
         height: 22,
-        background: ok ? 'rgba(48,209,88,0.10)' : 'rgba(255,69,58,0.10)',
-        color: ok ? '#6FE39A' : '#FF6B6B',
-        border: ok ? '1px solid rgba(48,209,88,0.22)' : '1px solid rgba(255,69,58,0.22)',
+        background: palette.bg,
+        color: palette.fg,
+        border: palette.border,
       }}
     >
       <span
-        className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: ok ? 'var(--state-ok)' : 'var(--state-danger)', boxShadow: ok ? '0 0 8px var(--state-ok)' : 'none' }}
+        className={`inline-block h-1.5 w-1.5 rounded-full${state.pulse ? ' animate-pulse' : ''}`}
+        style={{ backgroundColor: palette.dot, boxShadow: palette.shadow }}
       />
-      {ok ? '已连接' : wsStatus === 'connecting' ? '连接中...' : '已断开'}
+      {state.label}
     </Tag>
   )
 }

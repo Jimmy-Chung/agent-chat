@@ -17,6 +17,7 @@ import { McpSettingsModal } from '@/components/McpSettingsModal'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
+import { resolvePiBadgeState, resolveTopicSessionDotState } from '@/lib/connection-status'
 
 class TopicErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -84,6 +85,8 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   const interactions = useMessageStore((s) => s.interactions)
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[activeTopic.id] ?? 'idle')
   const sessionHealth = useWsStore((s) => s.sessionHealthByTopic[activeTopic.id])
+  const wsStatus = useWsStore((s) => s.status)
+  const adapterLink = useWsStore((s) => s.adapterLink)
   const planMode = activeTopic.plan_mode ?? false
   const togglePlanMode = useCallback(() => {
     getWsClient().send({
@@ -174,6 +177,10 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   }
 
   const messages = byTopic[activeTopic.id] ?? EMPTY_MESSAGES
+  const globalLinkHealthy = resolvePiBadgeState(wsStatus, adapterLink).tone === 'ok'
+  const sessionDotState = globalLinkHealthy
+    ? resolveTopicSessionDotState(sessionHealth?.state)
+    : 'hidden'
 
   return (
     <div className="flex h-full flex-col">
@@ -190,9 +197,25 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           <MenuIcon />
         </button>
 
-        <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.012em' }}>
-          {activeTopic.name}
-        </h2>
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.012em' }}>
+            {activeTopic.name}
+          </h2>
+          {sessionDotState !== 'hidden' && (
+            <span
+              title={sessionDotState === 'healthy' ? '当前话题链路健康' : '当前话题链路异常'}
+              className={sessionDotState === 'unhealthy' ? 'animate-pulse' : ''}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                flexShrink: 0,
+                background: sessionDotState === 'healthy' ? '#6FE39A' : '#FF6B6B',
+                boxShadow: sessionDotState === 'healthy' ? '0 0 8px rgba(48,209,88,.9)' : '0 0 8px rgba(255,69,58,.7)',
+              }}
+            />
+          )}
+        </div>
 
         {activeTopic.agent_type === 'programming' && (
           <span className="inline-flex items-center rounded-full text-[11.5px] font-medium" style={{ height: 22, letterSpacing: '-0.005em' }}>

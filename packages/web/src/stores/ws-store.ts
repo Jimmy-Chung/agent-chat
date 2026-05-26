@@ -18,11 +18,19 @@ export interface ProviderConfig {
   group?: string
 }
 
+export interface AdapterLinkState {
+  reachable: boolean | null
+  lastError?: string
+  checkedAt: number | null
+  version?: string | null
+}
+
 interface WsState {
   status: ConnectionStatus
   lastSeq: number | null
   sessionHealthByTopic: Record<string, { state: string; lastError?: string }>
   sessionReadyByTopic: Record<string, boolean>
+  adapterLink: AdapterLinkState
   unauthorized: boolean
   providerConfigs: ProviderConfig[]
   providerConfigsLoading: boolean
@@ -36,6 +44,7 @@ interface WsActions {
   setLastSeq: (seq: number) => void
   setSessionHealth: (topicId: string, state: string, lastError?: string) => void
   setSessionReady: (topicId: string, ready: boolean) => void
+  setAdapterLink: (next: AdapterLinkState) => void
   setUnauthorized: () => void
   setProviderConfigs: (configs: ProviderConfig[]) => void
   setProviderConfigsLoading: (loading: boolean) => void
@@ -47,6 +56,7 @@ export const useWsStore = create<WsState & WsActions>()(
     lastSeq: null,
     sessionHealthByTopic: {},
     sessionReadyByTopic: {},
+    adapterLink: { reachable: null, checkedAt: null, version: null },
     unauthorized: false,
     providerConfigs: [],
     providerConfigsLoading: false,
@@ -88,6 +98,12 @@ export const useWsStore = create<WsState & WsActions>()(
     setSessionReady: (topicId, ready) => {
       set((s) => {
         s.sessionReadyByTopic[topicId] = ready
+      })
+    },
+
+    setAdapterLink: (next) => {
+      set((s) => {
+        s.adapterLink = next
       })
     },
 
