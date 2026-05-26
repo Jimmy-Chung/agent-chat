@@ -173,6 +173,31 @@ describe('FEAT-036: provider proxy endpoint', () => {
     restore()
   })
 
+  it('maps PI WSS URL to adapter workspace HTTP endpoint', async () => {
+    const restore = mockHealthz(
+      new Response(JSON.stringify({ workspacePath: '/Users/test/Desktop/workspace', subDirList: ['agent-chat'] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const res = await fetch(
+      '/api/agent-chat/v1/workspace?wssUrl=wss://pi.example.com/api/agent-chat/v1/socket&piToken=pi-secret',
+      { headers: { Authorization: 'Bearer test-token' } },
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { workspacePath: string; subDirList: string[] }
+    expect(body.workspacePath).toBe('/Users/test/Desktop/workspace')
+    expect(body.subDirList).toEqual(['agent-chat'])
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const calledInit = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(calledUrl).toBe('https://pi.example.com/api/agent-chat/v1/workspace')
+    expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer pi-secret')
+
+    restore()
+  })
+
   it('returns reachable=true when adapter-status upstream is healthy', async () => {
     const restore = mockHealthz(
       new Response(JSON.stringify({ version: '1.9.9' }), {

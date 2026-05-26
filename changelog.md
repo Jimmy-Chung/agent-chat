@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-27 [v1.7.12] — 工作区根目录快捷选择
+
+### AIT-177: 新建 Programming 话题支持 workspace 相对路径
+- 新增 `/api/agent-chat/v1/workspace` 代理接口，转发到 Adapter 的 `/api/agent-chat/v1/workspace`
+- 新建话题的 Working Directory 输入 `/` 时读取工作区根目录与一级子目录，并按输入内容展示候选
+- 输入 `/项目名` 会解析为 `workspacePath/项目名` 后再创建话题；没有匹配目录时同样按该路径交给 Adapter 作为新工程目录
+- 同目录话题校验改用解析后的绝对 cwd，避免 workspace 快捷路径绕过重复检查
+
 ## 2026-05-26 [v1.7.9] — 恢复 Pages 跨域 Worker 路由
 
 > 线上确认 `agent-chat.jimmy-jam.com` 当前并未把 `/api/*` 与 `/ws` 接入同源 Worker，本版本先恢复到稳定可用的 Pages 跨域访问 `workers.dev` 方案。

@@ -168,6 +168,18 @@ app.get('/api/agent-chat/v1/providers', async (c) => {
   return adapterResponse(res)
 })
 
+app.get('/api/agent-chat/v1/workspace', async (c) => {
+  if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+  const wssUrl = c.req.query('wssUrl')
+  const piToken = c.req.query('piToken') || ''
+  if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
+  const res = await fetch(`${piWsToHttpBase(wssUrl)}/workspace`, {
+    headers: piAdapterHeaders(piToken),
+    signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
+  })
+  return adapterResponse(res)
+})
+
 app.post('/api/agent-chat/v1/providers', async (c) => {
   if (!checkAgentChatToken(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
   const wssUrl = c.req.query('wssUrl')

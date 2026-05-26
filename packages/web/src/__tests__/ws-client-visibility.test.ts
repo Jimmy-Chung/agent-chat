@@ -48,8 +48,6 @@ class MockWebSocket {
   }
 }
 
-vi.stubGlobal('WebSocket', MockWebSocket)
-
 function setVisibility(state: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', {
     value: state,
@@ -63,6 +61,13 @@ let getWsClient: typeof import('@/lib/ws-client').getWsClient
 
 beforeEach(async () => {
   vi.useFakeTimers()
+  vi.stubGlobal('WebSocket', MockWebSocket)
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn(() => null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+    clear: vi.fn(),
+  })
   MockWebSocket.instances = []
   setVisibility('visible')
   ;({ getWsClient } = await import('@/lib/ws-client'))
@@ -70,6 +75,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   getWsClient().disconnect()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
 })
 
