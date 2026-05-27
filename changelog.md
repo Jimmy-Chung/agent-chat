@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-27 [v1.7.17] — Codex 话题子类型显示修复
+
+### BUG-055: 保留 topic programming spec，避免 Codex 话题回退显示 Claude Code
+- 修复前端 `ws-client` topic 映射把 `programming_spec_json` / `general_spec_json` 固定置空的问题
+- 新建或更新 Codex programming 话题后，header 可从原始 `programming_spec_json.extension` 读取并显示 `Codex`
+- 验证：新增 `ws-client-topic-mapping` 单测覆盖 Codex topic spec 保留
+
 ## 2026-05-27 [v1.7.16] — Programming 子类型显示与创建一致性修复
 
 ### BUG-054: Header 子类型只显示名称，创建时保持所选子类型

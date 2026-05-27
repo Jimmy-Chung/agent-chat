@@ -29,6 +29,25 @@ export interface PiConfig {
   piToken: string
 }
 
+export function rawTopicToTopic(raw: Record<string, unknown>): import('@agent-chat/protocol').Topic {
+  return {
+    id: raw.id as string,
+    name: raw.name as string,
+    kind: raw.kind as import('@agent-chat/protocol').Topic['kind'],
+    agent_type: raw.agent_type as import('@agent-chat/protocol').Topic['agent_type'],
+    pi_session_id: (raw.pi_session_id as string) ?? null,
+    programming_spec_json: (raw.programming_spec_json as string) ?? null,
+    general_spec_json: (raw.general_spec_json as string) ?? null,
+    sop_template_id: null,
+    current_model: (raw.current_model as string) ?? null,
+    history_frozen_at: (raw.history_frozen_at as number) ?? null,
+    plan_mode: Boolean(raw.plan_mode),
+    created_at: raw.created_at as number,
+    updated_at: raw.updated_at as number,
+    archived: (raw.archived as boolean) ?? false,
+  }
+}
+
 class WsClient {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -175,40 +194,21 @@ class WsClient {
     this.dispatch(event)
   }
 
-  private toTopic(raw: Record<string, unknown>): import('@agent-chat/protocol').Topic {
-    return {
-      id: raw.id as string,
-      name: raw.name as string,
-      kind: raw.kind as import('@agent-chat/protocol').Topic['kind'],
-      agent_type: raw.agent_type as import('@agent-chat/protocol').Topic['agent_type'],
-      pi_session_id: (raw.pi_session_id as string) ?? null,
-      programming_spec_json: null,
-      general_spec_json: null,
-      sop_template_id: null,
-      current_model: (raw.current_model as string) ?? null,
-      history_frozen_at: (raw.history_frozen_at as number) ?? null,
-      plan_mode: Boolean(raw.plan_mode),
-      created_at: raw.created_at as number,
-      updated_at: raw.updated_at as number,
-      archived: (raw.archived as boolean) ?? false,
-    }
-  }
-
   private dispatch(event: ServerEvent): void {
     const topicStore = useTopicStore.getState()
     const messageStore = useMessageStore.getState()
 
     switch (event.type) {
       case 'topics.list':
-        topicStore.setTopics(event.data.topics.map((t) => this.toTopic(t as Record<string, unknown>)))
+        topicStore.setTopics(event.data.topics.map((t) => rawTopicToTopic(t as Record<string, unknown>)))
         break
 
       case 'topic.created':
-        topicStore.upsertTopic(this.toTopic(event.data as Record<string, unknown>))
+        topicStore.upsertTopic(rawTopicToTopic(event.data as Record<string, unknown>))
         break
 
       case 'topic.updated':
-        topicStore.upsertTopic(this.toTopic(event.data as Record<string, unknown>))
+        topicStore.upsertTopic(rawTopicToTopic(event.data as Record<string, unknown>))
         break
 
       case 'topic.deleted':
