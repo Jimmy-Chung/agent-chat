@@ -1,4 +1,4 @@
-/server-logs https://agent-chat-server.jimmychung038.workers.dev/server-logs 200
-/server-logs/* https://agent-chat-server.jimmychung038.workers.dev/server-logs/:splat 200
-/servers-logs https://agent-chat-server.jimmychung038.workers.dev/server-logs 200
-/servers-logs/* https://agent-chat-server.jimmychung038.workers.dev/server-logs/:splat 200
+/server-logs https://agent-chat-server.jimmychung038.workers.dev/server-logs 302
+/server-logs/* https://agent-chat-server.jimmychung038.workers.dev/server-logs/:splat 302
+/servers-logs https://agent-chat-server.jimmychung038.workers.dev/server-logs 302
+/servers-logs/* https://agent-chat-server.jimmychung038.workers.dev/server-logs/:splat 302
