@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-28 [v1.7.19] — 定时任务标签搜索与投影补全
+
+### AIT-186: cron 标签贯通与搜索
+- cron 协议补齐 `tags`，支持创建/编辑/列表/上报统一透传
+- server cron 投影新增 `tags_json`，并通过 `cron.edit` / `cron.updated` / `cron.created` 同步到 D1
+- cron admin 页面支持按标签、表达式、任务名、来源话题搜索
+- Inspector 中的 Cron 面板展示标签 chips
+- 版本显示更新为 `v1.7.19`
+
 ## 2026-05-27 [v1.7.18] — 定时任务 Adapter 真源联调
 
 ### AIT-185: agent-chat 侧 cron 投影改造

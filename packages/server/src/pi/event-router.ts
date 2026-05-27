@@ -203,6 +203,7 @@ function cronJobToPayload(job: {
   pi_cron_id: string
   cron_expr: string
   prompt: string
+  tags?: string[] | null
   status: string
   next_run_at: number | null
   created_at?: number
@@ -211,10 +212,11 @@ function cronJobToPayload(job: {
   return {
     cronId: job.pi_cron_id,
     localCronId: job.id,
-    originTopicId: job.origin_topic_id,
-    cronExpr: job.cron_expr,
-    prompt: job.prompt,
-    status: job.status,
+      originTopicId: job.origin_topic_id,
+      cronExpr: job.cron_expr,
+      prompt: job.prompt,
+      tags: job.tags ?? undefined,
+      status: job.status,
     lastRunAt: undefined,
     nextRunAt: job.next_run_at ?? undefined,
     createdAt: job.created_at,
@@ -463,6 +465,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
           cron_expr: payload.cronExpr,
           prompt: payload.prompt,
           next_run_at: payload.nextRunAt,
+          tags: payload.tags,
         })
       } else {
         await cronRepo.createCronJob({
@@ -470,6 +473,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
           piCronId: payload.cronId,
           cronExpr: payload.cronExpr,
           prompt: payload.prompt,
+          tags: payload.tags,
           status: payload.status,
           nextRunAt: payload.nextRunAt,
         })
@@ -631,6 +635,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         status: payload.status,
         ...(payload.cronExpr ? { cron_expr: payload.cronExpr } : {}),
         ...(payload.prompt ? { prompt: payload.prompt } : {}),
+        ...(payload.tags !== undefined ? { tags: payload.tags } : {}),
         next_run_at: payload.nextRunAt,
       })
       if (updated) hub.broadcast('cron.upserted', cronJobToPayload(updated))

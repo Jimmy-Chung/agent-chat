@@ -102,6 +102,7 @@ export interface CronJob {
   pi_cron_id: string
   cron_expr: string
   prompt: string
+  tags?: string[]
   status: 'active' | 'paused' | 'error'
   next_run_at: number | null
   created_at: number

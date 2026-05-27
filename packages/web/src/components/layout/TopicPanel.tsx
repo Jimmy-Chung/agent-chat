@@ -759,6 +759,7 @@ function CronAdminView() {
   const topics = useTopicStore((s) => s.topics)
   const wsClient = getWsClient()
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all')
+  const [query, setQuery] = useState('')
 
   const statusColor: Record<string, string> = {
     active: 'var(--state-ok)',
@@ -772,7 +773,16 @@ function CronAdminView() {
     error: '错误',
   }
 
-  const filteredCrons = crons.filter((cron) => filter === 'all' || cron.status === filter)
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredCrons = crons.filter((cron) => {
+    if (filter !== 'all' && cron.status !== filter) return false
+    if (!normalizedQuery) return true
+    const topicName = topics.find((t) => t.id === cron.originTopicId)?.name ?? ''
+    const haystack = [cron.prompt, cron.cronExpr, cron.originTopicId, topicName, ...(cron.tags ?? [])]
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(normalizedQuery)
+  })
 
   if (crons.length === 0) {
     return <p className="py-8 text-center text-sm" style={{ color: 'var(--fg-dim)' }}>暂无定时任务</p>
@@ -780,6 +790,19 @@ function CronAdminView() {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索标签、表达式、任务名"
+          className="min-w-0 flex-1 rounded-2xl px-3 py-2 text-sm outline-none"
+          style={{
+            background: 'rgba(255,255,255,.04)',
+            color: 'var(--fg-strong)',
+            border: '1px solid var(--hairline)',
+          }}
+        />
+      </div>
       <div className="flex flex-wrap gap-2">
         {[
           { id: 'all', label: '全部' },
@@ -836,6 +859,11 @@ function CronAdminView() {
                     {topic?.name ?? c.originTopicId}
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>{c.cronExpr}</span>
+                  {c.tags?.map((tag) => (
+                    <span key={tag} className="rounded-full px-2 py-0.5" style={{ background: 'rgba(10,132,255,.10)', border: '1px solid rgba(10,132,255,.22)', color: '#7CB6FF' }}>
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               </div>
               <span

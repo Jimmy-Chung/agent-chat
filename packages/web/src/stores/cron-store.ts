@@ -11,6 +11,7 @@ interface CronJob {
   cronExpr: string
   prompt: string
   timezone?: string
+  tags?: string[]
   status: 'active' | 'paused' | 'error'
   lastRunAt?: number
   nextRunAt?: number

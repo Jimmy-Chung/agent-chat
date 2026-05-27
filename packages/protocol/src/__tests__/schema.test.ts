@@ -755,6 +755,7 @@ describe('Server event schemas', () => {
           cronExpr: '0 9 * * *',
           prompt: 'Daily report',
           timezone: 'Asia/Shanghai',
+          tags: ['ops', 'daily'],
           status: 'active',
           lastRunAt: 1699990000000,
           nextRunAt: 1700000000000,
@@ -775,6 +776,7 @@ describe('Server event schemas', () => {
       originTopicId: 't1',
       cronExpr: '0 9 * * *',
       prompt: 'Daily report',
+      tags: ['ops'],
       status: 'paused',
     })
     expect(result.status).toBe('paused')
@@ -944,8 +946,10 @@ describe('Client event schemas', () => {
     const result = schema.parse({
       cronId: 'c1',
       cronExpr: '0 10 * * *',
+      tags: ['tag-a', 'tag-b'],
     })
     expect(result.prompt).toBeUndefined()
+    expect(result.tags).toEqual(['tag-a', 'tag-b'])
   })
 
   it('rejects topic.delete with invalid artifactStrategy', () => {

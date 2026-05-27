@@ -11,6 +11,7 @@ export async function createCronJob(input: {
   piCronId: string
   cronExpr: string
   prompt: string
+  tags?: string[]
   status?: CronJob['status']
   nextRunAt?: number | null
 }): Promise<CronJob> {
@@ -21,6 +22,7 @@ export async function createCronJob(input: {
     piCronId: input.piCronId,
     cronExpr: input.cronExpr,
     prompt: input.prompt,
+    tagsJson: input.tags ? JSON.stringify(input.tags) : null,
     status: input.status ?? 'active',
     nextRunAt: input.nextRunAt ?? null,
     createdAt: now,
@@ -51,7 +53,7 @@ export async function listCronJobs(): Promise<CronJob[]> {
 export async function updateCronJob(
   id: string,
   data: Partial<
-    Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id'>
+    Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id' | 'tags'>
   >,
 ): Promise<CronJob | undefined> {
   const updates: Record<string, unknown> = { updatedAt: Date.now() }
@@ -60,6 +62,7 @@ export async function updateCronJob(
   if (data.cron_expr !== undefined) updates.cronExpr = data.cron_expr
   if (data.prompt !== undefined) updates.prompt = data.prompt
   if (data.pi_cron_id !== undefined) updates.piCronId = data.pi_cron_id
+  if (data.tags !== undefined) updates.tagsJson = JSON.stringify(data.tags)
 
   await getDb()
     .update(cronJobs)
@@ -165,10 +168,21 @@ function toJobDomain(row: Record<string, unknown>): CronJob {
     pi_cron_id: row.piCronId as string,
     cron_expr: row.cronExpr as string,
     prompt: row.prompt as string,
+    tags: parseTags(row.tagsJson),
     status: row.status as CronJob['status'],
     next_run_at: (row.nextRunAt as number) || null,
     created_at: row.createdAt as number,
     updated_at: row.updatedAt as number,
+  }
+}
+
+function parseTags(value: unknown): string[] | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((tag): tag is string => typeof tag === 'string') : undefined
+  } catch {
+    return undefined
   }
 }
 

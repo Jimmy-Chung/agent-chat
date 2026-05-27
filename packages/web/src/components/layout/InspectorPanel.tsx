@@ -459,6 +459,15 @@ function CronTab({ topicId }: { topicId: string | null }) {
               <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'rgba(255,255,255,.08)', color: 'var(--fg-dim)' }}>{cron.status}</span>
             </div>
             <div className="mt-2 text-[12px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>{cron.cronExpr}</div>
+            {cron.tags && cron.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {cron.tags.map((tag) => (
+                  <span key={tag} className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'rgba(10,132,255,.10)', border: '1px solid rgba(10,132,255,.22)', color: '#7CB6FF' }}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="mt-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
               最近结果：{latestRun?.summary ?? formatRunStatus(latestRun?.status)}
             </div>

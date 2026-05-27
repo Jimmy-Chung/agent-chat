@@ -26,6 +26,7 @@ describe('CronRepo', () => {
       piCronId: 'pi-cron-001',
       cronExpr: '0 * * * *',
       prompt: 'Run hourly task',
+      tags: ['ops', 'hourly'],
     })
 
     expect(job.id).toBeTruthy()
@@ -33,6 +34,7 @@ describe('CronRepo', () => {
     expect(job.pi_cron_id).toBe('pi-cron-001')
     expect(job.cron_expr).toBe('0 * * * *')
     expect(job.prompt).toBe('Run hourly task')
+    expect(job.tags).toEqual(['ops', 'hourly'])
     expect(job.status).toBe('active')
     expect(job.created_at).toBeGreaterThan(0)
   })
@@ -44,12 +46,14 @@ describe('CronRepo', () => {
       piCronId: 'pi-cron-002',
       cronExpr: '0 0 * * *',
       prompt: 'Daily task',
+      tags: ['daily'],
       status: 'paused',
       nextRunAt: nextRun,
     })
 
     expect(job.status).toBe('paused')
     expect(job.next_run_at).toBe(nextRun)
+    expect(job.tags).toEqual(['daily'])
   })
 
   it('should get a cron job by id', async () => {
@@ -96,9 +100,11 @@ describe('CronRepo', () => {
     const updated = await cronRepo.updateCronJob(job.id, {
       cron_expr: '0 0 * * *',
       prompt: 'Updated',
+      tags: ['updated'],
     })
     expect(updated!.cron_expr).toBe('0 0 * * *')
     expect(updated!.prompt).toBe('Updated')
+    expect(updated!.tags).toEqual(['updated'])
   })
 
   it('should delete a cron job', async () => {

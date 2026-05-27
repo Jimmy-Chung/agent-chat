@@ -126,6 +126,8 @@ export const agentProgressPayloadSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 })
 
+const cronTagsSchema = z.array(z.string())
+
 export const cronCreatedPayloadSchema = z.object({
   kind: z.literal('cron.created'),
   cronId: z.string(),
@@ -136,6 +138,7 @@ export const cronCreatedPayloadSchema = z.object({
   cronExpr: z.string(),
   prompt: z.string(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
@@ -214,6 +217,7 @@ export const cronUpdatedPayloadSchema = z.object({
   cronExpr: z.string().optional(),
   prompt: z.string().optional(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),

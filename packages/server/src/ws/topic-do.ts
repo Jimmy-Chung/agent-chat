@@ -272,6 +272,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     pi_cron_id: string
     cron_expr: string
     prompt: string
+    tags?: string[] | null
     status: string
     next_run_at: number | null
     created_at?: number
@@ -283,6 +284,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       originTopicId: job.origin_topic_id,
       cronExpr: job.cron_expr,
       prompt: job.prompt,
+      tags: job.tags ?? undefined,
       status: job.status,
       lastRunAt: undefined as number | undefined,
       nextRunAt: job.next_run_at ?? undefined,
@@ -295,9 +297,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     try {
       const result = await pi.rpcGlobal('listCrons', {}) as Array<{
         cronId: string
+        originTopicId?: string
         originSessionId: string
         cronExpr: string
         prompt: string
+        tags?: string[]
         status: string
         lastRunAt?: number
         nextRunAt?: number
@@ -305,7 +309,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       for (const c of result) {
         const topics = await topicRepo.listTopics()
         const originTopic = topics.find(t => t.pi_session_id === c.originSessionId)
-        const originTopicId = originTopic?.id ?? null
+        const originTopicId = c.originTopicId ?? originTopic?.id ?? null
         const existing = await cronRepo.getCronJobByPiCronId(c.cronId)
         if (existing) {
           await cronRepo.updateCronJob(existing.id, {
@@ -313,6 +317,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             cron_expr: c.cronExpr,
             prompt: c.prompt,
             next_run_at: c.nextRunAt,
+            tags: c.tags,
           })
         } else if (originTopicId) {
           await cronRepo.createCronJob({
@@ -320,6 +325,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             piCronId: c.cronId,
             cronExpr: c.cronExpr,
             prompt: c.prompt,
+            tags: c.tags,
             status: c.status as 'active' | 'paused' | 'error',
             nextRunAt: c.nextRunAt,
           })
@@ -590,6 +596,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         this.broadcastAll('topic.deleted', { id: data.id })
         if (topic.pi_session_id) {
           const pi = await this.ensurePiClient()
+          try {
+            await pi?.rpc('destroySession', { sessionId: topic.pi_session_id })
+          } catch (err) {
+            logger.warn({ err, sessionId: topic.pi_session_id }, 'Failed to destroy PI session while deleting topic')
+          }
           pi?.disconnectSession(topic.pi_session_id)
         }
         break
@@ -816,7 +827,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('pauseCron', { cronId: data.cronId })
+            await pi.rpcGlobal('pauseCron', { cronId: data.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to pause cron on PI')
           }
@@ -834,7 +845,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('resumeCron', { cronId: d.cronId })
+            await pi.rpcGlobal('resumeCron', { cronId: d.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to resume cron on PI')
           }
@@ -851,7 +862,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('deleteCron', { cronId: data.cronId })
+            await pi.rpcGlobal('deleteCron', { cronId: data.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to delete cron on PI')
           }
@@ -869,15 +880,17 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const updated = await cronRepo.updateCronJob(job.id, {
           ...(data.cronExpr ? { cron_expr: data.cronExpr } : {}),
           ...(data.prompt ? { prompt: data.prompt } : {}),
+          ...(data.tags !== undefined ? { tags: data.tags } : {}),
         })
         if (updated) {
           const pi = await this.ensurePiClient()
           if (pi) {
             try {
-              await pi.rpc('updateCron', {
+              await pi.rpcGlobal('updateCron', {
                 cronId: data.cronId,
                 ...(data.cronExpr ? { cronExpr: data.cronExpr } : {}),
                 ...(data.prompt ? { prompt: data.prompt } : {}),
+                ...(data.tags !== undefined ? { tags: data.tags } : {}),
               })
             } catch (err) {
               logger.warn({ err }, 'Failed to sync cron edit to PI')

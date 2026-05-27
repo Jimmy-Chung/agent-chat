@@ -147,6 +147,8 @@ export const agentProgressSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
 })
 
+const cronTagsSchema = z.array(z.string())
+
 export const cronListSchema = z.object({
   crons: z.array(
     z.object({
@@ -159,6 +161,7 @@ export const cronListSchema = z.object({
       cronExpr: z.string(),
       prompt: z.string(),
       timezone: z.string().optional(),
+      tags: cronTagsSchema.optional(),
       status: z.enum(['active', 'paused', 'error']),
       lastRunAt: z.number().optional(),
       nextRunAt: z.number().optional(),
@@ -178,6 +181,7 @@ export const cronUpsertedSchema = z.object({
   cronExpr: z.string(),
   prompt: z.string(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
@@ -520,6 +524,7 @@ export const cronEditSchema = z.object({
   cronId: z.string(),
   cronExpr: z.string().optional(),
   prompt: z.string().optional(),
+  tags: cronTagsSchema.optional(),
 })
 
 export const cronSyncSchema = z.object({})

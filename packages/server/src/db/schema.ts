@@ -139,6 +139,7 @@ export const cronJobs = sqliteTable('cron_jobs', {
   piCronId: text('pi_cron_id').notNull(),
   cronExpr: text('cron_expr').notNull(),
   prompt: text('prompt').notNull(),
+  tagsJson: text('tags_json'),
   status: text('status', {
     enum: ['active', 'paused', 'error'],
   }).notNull(),

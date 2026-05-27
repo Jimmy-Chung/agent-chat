@@ -147,6 +147,8 @@ export type ResolveInteractionResult = z.infer<
 
 // ─── Cron ─────────────────────────────────────────────────────────
 
+const cronTagsSchema = z.array(z.string())
+
 // createCron
 export const createCronParamsSchema = z.object({
   originSessionId: z.string(),
@@ -156,6 +158,7 @@ export const createCronParamsSchema = z.object({
   cronExpr: z.string(),
   prompt: z.string(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
 })
 
 export const createCronResultSchema = z.object({
@@ -178,6 +181,7 @@ const cronInfoSchema = z.object({
   cronExpr: z.string(),
   prompt: z.string(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
@@ -225,6 +229,7 @@ export const updateCronParamsSchema = z.object({
   cronExpr: z.string().optional(),
   prompt: z.string().optional(),
   timezone: z.string().optional(),
+  tags: cronTagsSchema.optional(),
 })
 
 export const updateCronResultSchema = okResultSchema
