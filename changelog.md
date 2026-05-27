@@ -1,10 +1,10 @@
 # Changelog
 
-## 2026-05-27 [v1.7.15] — Model 选择器改为只读显示
+## 2026-05-27 [v1.7.15] — Extension 选择器改为只读显示
 
-### BUG-053: Programming 话题 Model 标签移除下拉箭头，改为只读展示
-- `ProviderModelSelect` 组件在底部输入区显示当前模型名（如 claude/codex），原实现为 button + chevron + 下拉菜单的可交互选择器，但该字段实际不需要用户手动切换
-- 修复：移除 button 交互、chevron 图标和下拉弹窗，改为纯只读的 label + value 文字展示，保留原有视觉样式
+### BUG-053: 移除 header Extension 下拉箭头和交互，改为只读展示
+- `ExtensionDropdown` 组件在 header 显示 "›Claude Code" / "›Codex"，原为 button + chevron + 下拉菜单的可切换选择器
+- 修复：移除 button 交互、chevron 图标和下拉弹窗，改为纯只读的 span 展示，保留 › prefix + label 样式
 
 ## 2026-05-27 [v1.7.14] — flushParts 写竞争修复 + Stop 后重连上下文保留
 

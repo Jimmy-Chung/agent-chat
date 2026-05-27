@@ -1000,60 +1000,15 @@ function formatRunStatus(status?: string): string {
 }
 
 function ExtensionDropdown({ extension }: { extension: 'claude-code' | 'codex' }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLSpanElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    window.addEventListener('mousedown', handler)
-    return () => window.removeEventListener('mousedown', handler)
-  }, [open])
-
   const label = extension === 'claude-code' ? 'Claude Code' : 'Codex'
 
   return (
-    <span ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1 rounded-r-full pl-1.5 pr-2 py-0.5 h-full transition-colors hover:opacity-80"
-        style={{ background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', color: '#6cb1ff' }}
-      >
-        <span className="text-[10px] opacity-50" style={{ margin: '0 -1px' }}>›</span>
-        {label}
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.2">
-          <path d="M2 3l2 2 2-2" />
-        </svg>
-      </button>
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1.5 rounded-lg shadow-lg z-40 py-1 min-w-[140px]"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--hairline)' }}
-        >
-          {(['claude-code', 'codex'] as const).map((ext) => (
-            <button
-              key={ext}
-              onClick={() => {
-                setOpen(false)
-                if (ext !== extension) {
-                  window.dispatchEvent(new CustomEvent('agent-chat:extension-changed', { detail: { extension: ext } }))
-                }
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-left transition-colors hover:opacity-80"
-              style={{ color: ext === extension ? 'var(--fg)' : 'var(--fg-dim)' }}
-            >
-              {ext === extension && (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5l2 2 4-4" /></svg>
-              )}
-              <span className={ext === extension ? '' : 'ml-[14px]'}>
-                {ext === 'claude-code' ? 'Claude Code' : 'Codex'}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+    <span
+      className="inline-flex items-center gap-1 rounded-r-full pl-1.5 pr-2 py-0.5 h-full"
+      style={{ background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', color: '#6cb1ff' }}
+    >
+      <span className="text-[10px] opacity-50" style={{ margin: '0 -1px' }}>›</span>
+      {label}
     </span>
   )
 }

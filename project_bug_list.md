@@ -82,10 +82,10 @@
 | 发现时间 | 2026-05-27 |
 | 修复时间 | 2026-05-27 |
 | 修复版本 | v1.7.15 |
-| 影响模块 | packages/web/src/components/chat/MessageInput.tsx |
-| 描述 | 页面底部输入区 Model 标签显示当前模型名（claude/codex 等），但带有下拉箭头和可点击交互，实际该字段为只读信息展示，不应提供选择交互。 |
-| 根因 | `ProviderModelSelect` 组件实现为 button + chevron + 下拉菜单的交互式选择器，但 Model 字段仅需展示当前模型名，不需要用户手动切换。 |
-| 修复方案 | 将 `ProviderModelSelect` 改为纯只读展示组件，移除 button、chevron 和下拉菜单，保留 label + value 的文字展示样式。 |
+| 影响模块 | packages/web/src/components/layout/TopicPanel.tsx |
+| 描述 | 页面 header 中 "Programming | ›Claude Code" 分段控件显示当前 extension 名称，但带有下拉箭头和可点击交互切换 Claude Code/Codex，实际该字段应为只读信息展示。 |
+| 根因 | `ExtensionDropdown` 组件实现为 button + chevron + 下拉菜单的交互式选择器，允许用户切换 extension。 |
+| 修复方案 | 将 `ExtensionDropdown` 改为纯只读展示组件，移除 button、chevron 和下拉菜单，保留 › prefix + label 的文字展示样式。 |
 
 ### BUG-052: Stop 后下一条消息丢失上下文（失忆）
 
