@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.13 |
+| 当前版本 | v1.7.14 |
 | 更新时间 | 2026-05-27 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -63,12 +63,29 @@
 | BUG-049 | — |
 | BUG-050 | — |
 | BUG-051 | — |
+| BUG-052 | AIT-179 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-052: Stop 后下一条消息丢失上下文（失忆）
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-052 |
+| 标题 | Stop 后下一条消息丢失上下文（失忆） |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-27 |
+| 修复时间 | 2026-05-27 |
+| 修复版本 | v1.7.14 |
+| 影响模块 | packages/server/src/db/repos/message.repo.ts, packages/server/src/pi/client.ts, packages/server/src/ws/topic-do.ts |
+| 描述 | 用户按下 Stop 中断 agent 后，在同一话题发送下一条消息，agent 表现出「失忆」，对之前的对话内容一无所知，从零上下文开始回复。另：高频 message.delta 场景下 flushParts 并发写竞争导致 message_parts 出现 duplicate ordinal，内容截断。 |
+| 根因 | ①`bufferPartDelta` 以 fire-and-forget 调用 `flushParts`，多个 flush 并发执行时对同一 ordinal 产生写竞争，导致 text/thinking part 重复写入、内容截断。②DO 休眠后 `PiClient` 内存丢失，重连时 `lastSeq=0`，adapter 全量重放或（grace period 超时后）session 已 destroy，`recreateSession` 拿不到 persisted record，上下文归零。 |
+| 修复方案 | ①引入 `flushLock` promise 链，所有 `flushParts` 调用串行执行。②`PiClient.onLastSeqUpdate` hook 在每次 seq 推进时写入 DO 持久存储；`ensureSession` 重连前读取并 `restoreLastSeq`，使 `attachSession` 携带正确游标。 |
+| 外部依赖 | AIT-179 — adapter 侧仍需修复：grace timeout 时不应删除 persisted sessionStore record（区分显式 destroySession 与 grace timeout cleanup） |
 
 ### BUG-051: 新建 Programming 话题输入 `/` 后工作区选择器闪烁
 
