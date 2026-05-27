@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-27 [v1.7.14] — flushParts 写竞争修复 + Stop 后重连上下文保留
+
+### BUG-052 (Q1): 修复 flushParts 并发写竞争导致 message_parts duplicate ordinal
+- `bufferPartDelta` 在大小阈值触发时以 fire-and-forget 方式调用 `flushParts`，多个 flush 并发执行时会对同一 ordinal 位置产生竞争，造成 text/thinking part 写入重复 ordinal、内容截断
+- 修复：引入 `flushLock` promise 链，所有 flush 调用串行执行，避免 DB ordinal 分配时的并发冲突
+
+### BUG-052 (Q3 server 侧): Durable Object 休眠后重连使用正确 lastSeq
+- DO 休眠后，内存中的 `PiClient` 及 `lastSeqBySession` 全部丢失，重连时 `attachSession` 以 `lastSeq=0` 发送，导致 adapter 全量重放或（grace period 超时后）上下文归零（失忆）
+- 修复：`PiClient.onLastSeqUpdate` hook 在每次 seq 推进时写入 DO 持久存储；`ensureSession` 在重连前读取并通过 `restoreLastSeq` 恢复，使 `attachSession` 携带正确游标
+
 ## 2026-05-27 [v1.7.13] — 工作区目录读取防抖修复
 
 ### BUG-051: 新建 Programming 话题输入 `/` 后工作区选择器闪烁

@@ -146,6 +146,10 @@ interface PendingPart {
 
 const pendingParts = new Map<string, PendingPart>()
 let flushTimer: ReturnType<typeof setTimeout> | null = null
+// Flush lock: chain all flush calls so they run serially.
+// Prevents concurrent flushParts executions racing on DB ordinal assignment,
+// which previously caused duplicate ordinal entries for text/thinking parts.
+let flushLock: Promise<void> = Promise.resolve()
 
 const FLUSH_INTERVAL_MS = 100
 const FLUSH_SIZE_THRESHOLD = 32 * 1024
@@ -192,13 +196,22 @@ export function bufferPartDelta(
   )
 
   if (totalSize >= FLUSH_SIZE_THRESHOLD) {
-    flushParts()
+    void flushParts()
   } else if (!flushTimer) {
-    flushTimer = setTimeout(flushParts, FLUSH_INTERVAL_MS)
+    flushTimer = setTimeout(() => { void flushParts() }, FLUSH_INTERVAL_MS)
   }
 }
 
-export async function flushParts(): Promise<void> {
+export function flushParts(): Promise<void> {
+  // Chain onto the lock so concurrent calls always run sequentially.
+  flushLock = flushLock.then(() => _doFlushParts()).catch((err) => {
+    // Log but don't rethrow — a failed flush shouldn't break the chain.
+    console.warn('[flushParts] error during flush:', err)
+  })
+  return flushLock
+}
+
+async function _doFlushParts(): Promise<void> {
   if (flushTimer) {
     clearTimeout(flushTimer)
     flushTimer = null

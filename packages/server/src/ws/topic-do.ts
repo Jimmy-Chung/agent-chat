@@ -93,6 +93,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         reply(errorToRpc(err))
       }
     })
+    // Persist lastSeq to DO storage so reconnects after hibernation use the
+    // correct sequence number instead of 0, preventing context loss (BUG-052).
+    this.piClient.onLastSeqUpdate = (sessionId, seq) => {
+      void this.ctx.storage.put(`pi_last_seq:${sessionId}`, seq)
+    }
     return this.piClient
   }
 
@@ -106,10 +111,14 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     return null
   }
 
-  // After DO hibernation the piClient is recreated with no sessions — reconnect on demand
+  // After DO hibernation the piClient is recreated with no sessions — reconnect on demand.
+  // Restores persisted lastSeq before reconnecting so attachSession uses the correct
+  // sequence number instead of 0, reducing context loss after wake-up (BUG-052).
   private async ensureSession(pi: PiClient, sessionId: string): Promise<boolean> {
     if (pi.hasSession(sessionId)) return true
     try {
+      const persistedSeq = await this.ctx.storage.get<number>(`pi_last_seq:${sessionId}`)
+      if (persistedSeq) pi.restoreLastSeq(sessionId, persistedSeq)
       await pi.reconnectSession(sessionId)
       return true
     } catch (err) {
