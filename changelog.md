@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-27 [v1.7.16] — Programming 子类型显示与创建一致性修复
+
+### BUG-054: Header 子类型只显示名称，创建时保持所选子类型
+- 移除 header 中 `Claude Code` / `Codex` 前面的 `›` 前缀，子类型作为 `Programming` 下的只读文本展示
+- 创建 Programming 话题时，`providerId` 只选择与当前 extension 同组的 active provider，避免全局 active provider 覆盖用户创建时选择的子类型
+- 验证：新增 `provider-selection` 单测覆盖同组 provider 选择和跨组不回退
+
 ## 2026-05-27 [v1.7.15] — Extension 选择器改为只读显示
 
 ### BUG-053: 移除 header Extension 下拉箭头和交互，改为只读展示

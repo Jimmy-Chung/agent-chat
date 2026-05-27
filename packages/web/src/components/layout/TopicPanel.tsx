@@ -1007,7 +1007,6 @@ function ExtensionDropdown({ extension }: { extension: 'claude-code' | 'codex' }
       className="inline-flex items-center gap-1 rounded-r-full pl-1.5 pr-2 py-0.5 h-full"
       style={{ background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', color: '#6cb1ff' }}
     >
-      <span className="text-[10px] opacity-50" style={{ margin: '0 -1px' }}>›</span>
       {label}
     </span>
   )
