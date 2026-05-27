@@ -92,12 +92,19 @@ app.get('/debug', (c) => {
 })
 
 // Server-side PI event logs for debugging (BUG-044)
-app.get('/server-logs', (c) => {
-  return c.json(getLogs())
+app.get('/server-logs', async (c) => {
+  const sessionId = c.req.query('sessionId') ?? undefined
+  const topicId = c.req.query('topicId') ?? undefined
+  const messageId = c.req.query('messageId') ?? undefined
+  const turnId = c.req.query('turnId') ?? undefined
+  const limit = c.req.query('limit') ? Number(c.req.query('limit')) : undefined
+  const from = c.req.query('from') ? Number(c.req.query('from')) : undefined
+  const to = c.req.query('to') ? Number(c.req.query('to')) : undefined
+  return c.json(await getLogs({ sessionId, topicId, messageId, turnId, limit, from, to }))
 })
 
-app.post('/server-logs/clear', (c) => {
-  clearLogs()
+app.post('/server-logs/clear', async (c) => {
+  await clearLogs()
   return c.json({ ok: true, cleared: true })
 })
 

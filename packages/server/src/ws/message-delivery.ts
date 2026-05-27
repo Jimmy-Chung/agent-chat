@@ -196,7 +196,7 @@ async function attemptDelivery(
     // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        logGatewayEvent({
+        void logGatewayEvent({
           eventKind: 'sendUserMessage.dispatch',
           topicId: input.topicId,
           sessionId,
@@ -247,7 +247,7 @@ async function attemptDelivery(
           input.broadcaster,
           resolveTurnWatchdogTimeout(),
         )
-        logGatewayEvent({
+        void logGatewayEvent({
           eventKind: 'sendUserMessage.ack',
           topicId: input.topicId,
           sessionId,
@@ -263,7 +263,7 @@ async function attemptDelivery(
         return true
       } catch (rpcErr) {
         if (rpcErr instanceof PiRpcError && rpcErr.code === 'session_busy' && attempt < 2) {
-          logGatewayEvent({
+          void logGatewayEvent({
             eventKind: 'sendUserMessage.session_busy',
             topicId: input.topicId,
             sessionId,
@@ -298,7 +298,7 @@ async function attemptDelivery(
       },
       'sendUserMessage RPC failed',
     )
-    logGatewayEvent({
+    void logGatewayEvent({
       eventKind: 'sendUserMessage.failed',
       topicId: input.topicId,
       sessionId,
@@ -331,7 +331,7 @@ async function ensureDeliverableSession(
   try {
     await pi.reconnectSession(sessionId)
     logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected for delivery')
-    logGatewayEvent({
+    void logGatewayEvent({
       eventKind: 'session.reconnect',
       topicId: topic.id,
       sessionId,
@@ -342,7 +342,7 @@ async function ensureDeliverableSession(
   } catch (err) {
     const code = err instanceof PiRpcError ? err.code : undefined
     logger.warn({ err, code, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
-    logGatewayEvent({
+    void logGatewayEvent({
       eventKind: 'session.reconnect_failed',
       topicId: topic.id,
       sessionId,
@@ -359,7 +359,7 @@ async function ensureDeliverableSession(
   try {
     logger.info({ topicId: topic.id, sessionId }, 'attempting recreateSession after reconnect failure')
     const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
-    logGatewayEvent({
+    void logGatewayEvent({
       eventKind: 'session.recreate',
       topicId: topic.id,
       sessionId,
@@ -375,7 +375,7 @@ async function ensureDeliverableSession(
       try {
         await pi.reconnectSession(sessionId)
         logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected after session_exists fallback')
-        logGatewayEvent({
+        void logGatewayEvent({
           eventKind: 'session.reconnect',
           topicId: topic.id,
           sessionId,
@@ -385,7 +385,7 @@ async function ensureDeliverableSession(
         return sessionId
       } catch (retryErr) {
         logger.warn({ err: retryErr, topicId: topic.id, sessionId }, 'retry reconnectSession also failed')
-        logGatewayEvent({
+        void logGatewayEvent({
           eventKind: 'session.reconnect_failed',
           topicId: topic.id,
           sessionId,
@@ -399,7 +399,7 @@ async function ensureDeliverableSession(
       }
     }
     logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
-    logGatewayEvent({
+    void logGatewayEvent({
       eventKind: 'session.recreate_failed',
       topicId: topic.id,
       sessionId,

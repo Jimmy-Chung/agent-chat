@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-28 [v1.7.20] — 线上日志查询修复
+
+### BUG-056: server logs 持久化与 Pages 转发
+- server `/server-logs` 从进程内数组改为写入 D1 `audit_log`，避免 Worker / DO isolate 切换后查询为空
+- `/server-logs` 支持 `sessionId`、`topicId`、`messageId`、`turnId`、`from`、`to`、`limit` 过滤
+- Cloudflare Pages 静态站新增 `_redirects`，让 `agent-chat.jimmy-jam.com/server-logs` 与 `/servers-logs` 转发到 Worker 日志接口
+- 版本显示更新为 `v1.7.20`
+
 ## 2026-05-28 [v1.7.19] — 定时任务标签搜索与投影补全
 
 ### AIT-186: cron 标签贯通与搜索

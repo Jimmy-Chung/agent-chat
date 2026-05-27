@@ -175,7 +175,7 @@ class PiSessionConn extends EventEmitter {
         }
         const event = piEventSchema.parse(frame.d)
         // Log PI event for debugging (BUG-044) with cross-hop correlation (BUG-046).
-        logPiEvent(this.sessionId, event)
+        void logPiEvent(this.sessionId, event)
         if (event.payload?.kind === 'adapter.ready') {
           logger.info({ sessionId: this.sessionId, adapterInstanceId: (event.payload as { adapterInstanceId?: string }).adapterInstanceId }, 'adapter.ready received')
           this.ready = true

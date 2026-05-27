@@ -1,15 +1,13 @@
-/**
- * Server-side PI event log buffer for debugging
- * Stores recent PI events and outbound gateway activity for cross-validation
- */
+import { desc, eq, and, gte, lte } from 'drizzle-orm'
+import { getDb } from './db/migrate'
+import { auditLog } from './db/schema'
 
-interface LogEntry {
+export interface ServerLogEntry {
   ts: number
   source: 'pi-client' | 'gateway'
   sessionId?: string
   eventKind: string
   seq?: number
-  // BUG-046 — cross-hop correlation keys for aligning with adapter logs.
   turnId?: string
   messageId?: string
   topicId?: string
@@ -19,32 +17,56 @@ interface LogEntry {
   payloadPreview: string
 }
 
-const MAX_ENTRIES = 500
-const entries: LogEntry[] = []
+const MAX_PREVIEW_CHARS = 400
 
-export function logPiEvent(
-  sessionId: string,
-  event: { seq: number; turnId?: string; payload?: { kind?: string; messageId?: string }; [key: string]: unknown },
-) {
-  const kind = event.payload?.kind ?? 'unknown'
-  const preview = JSON.stringify(event.payload).slice(0, 200)
-  entries.push({
-    ts: Date.now(),
-    source: 'pi-client',
-    sessionId,
-    eventKind: kind,
-    seq: event.seq,
-    turnId: event.turnId,
-    messageId: event.payload?.messageId,
-    payloadPreview: preview,
-  })
-  // Keep only recent entries
-  if (entries.length > MAX_ENTRIES) {
-    entries.splice(0, entries.length - MAX_ENTRIES)
+function normalizePayloadPreview(payload: unknown): string {
+  try {
+    return JSON.stringify(payload ?? {}).slice(0, MAX_PREVIEW_CHARS)
+  } catch {
+    return '"[unserializable payload]"'
   }
 }
 
-export function logGatewayEvent(input: {
+function logDetail(entry: ServerLogEntry): string {
+  return JSON.stringify(entry)
+}
+
+function parseEntry(detailJson: string | null): ServerLogEntry | null {
+  if (!detailJson) return null
+  try {
+    const value = JSON.parse(detailJson) as ServerLogEntry
+    return value
+  } catch {
+    return null
+  }
+}
+
+export async function logPiEvent(
+  sessionId: string,
+  event: { seq: number; turnId?: string; payload?: { kind?: string; messageId?: string }; [key: string]: unknown },
+) {
+  const entry: ServerLogEntry = {
+    ts: Date.now(),
+    source: 'pi-client',
+    sessionId,
+    eventKind: event.payload?.kind ?? 'unknown',
+    seq: event.seq,
+    turnId: event.turnId,
+    messageId: event.payload?.messageId,
+    payloadPreview: normalizePayloadPreview(event.payload),
+  }
+  try {
+    await getDb().insert(auditLog).values({
+      ts: entry.ts,
+      kind: 'server-log',
+      detailJson: logDetail(entry),
+    }).run()
+  } catch {
+    // Debug logging must never break the PI event path.
+  }
+}
+
+export async function logGatewayEvent(input: {
   eventKind: string
   topicId?: string
   sessionId?: string
@@ -55,8 +77,7 @@ export function logGatewayEvent(input: {
   status?: string
   payload?: unknown
 }) {
-  const preview = JSON.stringify(input.payload ?? {}).slice(0, 400)
-  entries.push({
+  const entry: ServerLogEntry = {
     ts: Date.now(),
     source: 'gateway',
     sessionId: input.sessionId,
@@ -67,21 +88,62 @@ export function logGatewayEvent(input: {
     clientMessageId: input.clientMessageId,
     attempt: input.attempt,
     status: input.status,
-    payloadPreview: preview,
-  })
-  if (entries.length > MAX_ENTRIES) {
-    entries.splice(0, entries.length - MAX_ENTRIES)
+    payloadPreview: normalizePayloadPreview(input.payload),
+  }
+  try {
+    await getDb().insert(auditLog).values({
+      ts: entry.ts,
+      kind: 'server-log',
+      detailJson: logDetail(entry),
+    }).run()
+  } catch {
+    // Debug logging must never break message delivery.
   }
 }
 
-export function getLogs() {
+export async function getLogs(input?: {
+  sessionId?: string
+  topicId?: string
+  messageId?: string
+  turnId?: string
+  limit?: number
+  from?: number
+  to?: number
+}) {
+  const limit = Math.min(Math.max(input?.limit ?? 100, 1), 500)
+  const clauses = [eq(auditLog.kind, 'server-log')]
+  if (input?.from) clauses.push(gte(auditLog.ts, input.from))
+  if (input?.to) clauses.push(lte(auditLog.ts, input.to))
+
+  const rows = await getDb()
+    .select()
+    .from(auditLog)
+    .where(clauses.length > 1 ? and(...clauses) : clauses[0])
+    .orderBy(desc(auditLog.ts))
+    .limit(limit)
+    .all()
+
+  const entries = rows
+    .map((row) => parseEntry(row.detailJson ?? null))
+    .filter((entry): entry is ServerLogEntry => !!entry)
+    .filter((entry) => {
+      if (input?.sessionId && entry.sessionId !== input.sessionId) return false
+      if (input?.topicId && entry.topicId !== input.topicId) return false
+      if (input?.messageId && entry.messageId !== input.messageId) return false
+      if (input?.turnId && entry.turnId !== input.turnId) return false
+      return true
+    })
+
   return {
     ok: true,
     count: entries.length,
-    entries: entries.slice().reverse(), // Most recent first
+    entries,
   }
 }
 
-export function clearLogs() {
-  entries.length = 0
+export async function clearLogs() {
+  await getDb()
+    .delete(auditLog)
+    .where(eq(auditLog.kind, 'server-log'))
+    .run()
 }
