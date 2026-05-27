@@ -3,17 +3,25 @@ import { immer } from 'zustand/middleware/immer'
 
 interface CronJob {
   cronId: string
+  localCronId?: string
   originTopicId: string
+  originSessionId?: string
+  runtime?: string
+  providerGroup?: string
   cronExpr: string
   prompt: string
+  timezone?: string
   status: 'active' | 'paused' | 'error'
   lastRunAt?: number
   nextRunAt?: number
+  createdAt?: number
+  updatedAt?: number
 }
 
 interface CronRun {
   id: string
   cronId: string
+  localCronId?: string
   triggeredAt: number
   firedAt: number
   status?: 'running' | 'success' | 'failed' | 'timeout'

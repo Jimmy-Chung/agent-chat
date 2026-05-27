@@ -57,6 +57,20 @@ describe('CronStore', () => {
     expect(crons[0].status).toBe('paused')
   })
 
+  it('upsertCron keeps adapter cronId distinct from localCronId', () => {
+    useCronStore
+      .getState()
+      .upsertCron(makeCron({ cronId: 'adapter-c1', localCronId: 'local-c1', status: 'active' }))
+    useCronStore
+      .getState()
+      .upsertCron(makeCron({ cronId: 'adapter-c1', localCronId: 'local-c1b', status: 'paused' }))
+
+    const { crons } = useCronStore.getState()
+    expect(crons).toHaveLength(1)
+    expect(crons[0].cronId).toBe('adapter-c1')
+    expect(crons[0].localCronId).toBe('local-c1b')
+  })
+
   it('removeCron removes by cronId', () => {
     useCronStore.getState().upsertCron(makeCron({ cronId: 'c1' }))
     useCronStore.getState().upsertCron(makeCron({ cronId: 'c2' }))

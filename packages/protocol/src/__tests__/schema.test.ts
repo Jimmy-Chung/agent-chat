@@ -746,21 +746,32 @@ describe('Server event schemas', () => {
     const result = cronListSchema.parse({
       crons: [
         {
-          cronId: 'c1',
+          cronId: 'adapter-c1',
+          localCronId: 'local-c1',
           originTopicId: 't1',
+          originSessionId: 'sess-1',
+          runtime: 'programming',
+          providerGroup: 'codex',
           cronExpr: '0 9 * * *',
           prompt: 'Daily report',
+          timezone: 'Asia/Shanghai',
           status: 'active',
+          lastRunAt: 1699990000000,
           nextRunAt: 1700000000000,
+          createdAt: 1699980000000,
+          updatedAt: 1699990000000,
         },
       ],
     })
     expect(result.crons).toHaveLength(1)
+    expect(result.crons[0].cronId).toBe('adapter-c1')
+    expect(result.crons[0].localCronId).toBe('local-c1')
   })
 
   it('parses cron.upserted', () => {
     const result = cronUpsertedSchema.parse({
-      cronId: 'c1',
+      cronId: 'adapter-c1',
+      localCronId: 'local-c1',
       originTopicId: 't1',
       cronExpr: '0 9 * * *',
       prompt: 'Daily report',
@@ -1227,15 +1238,17 @@ describe('cron.run.completed schema', () => {
   it('parses successful run', () => {
     const result = cronRunCompletedSchema.parse({
       cronId: 'c1',
+      localCronId: 'local-c1',
       runId: 'r1',
       originTopicId: 't1',
+      originSessionId: 'sess-1',
       status: 'success',
       summary: 'Report generated',
-      duration: 5000,
+      durationMs: 5000,
       completedAt: 1700000000000,
     })
     expect(result.status).toBe('success')
-    expect(result.duration).toBe(5000)
+    expect(result.durationMs).toBe(5000)
   })
 
   it('parses failed run with null fields', () => {

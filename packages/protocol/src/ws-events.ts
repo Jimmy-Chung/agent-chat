@@ -151,29 +151,45 @@ export const cronListSchema = z.object({
   crons: z.array(
     z.object({
       cronId: z.string(),
+      localCronId: z.string().optional(),
       originTopicId: z.string(),
+      originSessionId: z.string().optional(),
+      runtime: z.string().optional(),
+      providerGroup: z.string().optional(),
       cronExpr: z.string(),
       prompt: z.string(),
+      timezone: z.string().optional(),
       status: z.enum(['active', 'paused', 'error']),
       lastRunAt: z.number().optional(),
       nextRunAt: z.number().optional(),
+      createdAt: z.number().optional(),
+      updatedAt: z.number().optional(),
     }),
   ),
 })
 
 export const cronUpsertedSchema = z.object({
   cronId: z.string(),
+  localCronId: z.string().optional(),
   originTopicId: z.string(),
+  originSessionId: z.string().optional(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   cronExpr: z.string(),
   prompt: z.string(),
+  timezone: z.string().optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 })
 
 export const cronTriggeredSchema = z.object({
   cronId: z.string(),
+  localCronId: z.string().optional(),
   originTopicId: z.string(),
+  originSessionId: z.string().optional(),
   runId: z.string(),
   firedAt: z.number(),
 })
@@ -253,11 +269,14 @@ export const sessionStatusSchema = z.object({
 
 export const cronRunCompletedSchema = z.object({
   cronId: z.string(),
+  localCronId: z.string().optional(),
   runId: z.string(),
   originTopicId: z.string(),
+  originSessionId: z.string().optional(),
   status: z.enum(['success', 'failed', 'timeout']),
   summary: z.string().nullable(),
-  duration: z.number().nullable(),
+  duration: z.number().nullable().optional(),
+  durationMs: z.number().nullable().optional(),
   completedAt: z.number(),
 })
 

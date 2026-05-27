@@ -12,15 +12,28 @@ async function findTopicByPiSessionId(sessionId: string): Promise<string | null>
   return match?.id ?? null
 }
 
-function cronJobToPayload(job: { id: string; origin_topic_id: string; cron_expr: string; prompt: string; status: string; next_run_at: number | null }) {
+function cronJobToPayload(job: {
+  id: string
+  origin_topic_id: string
+  pi_cron_id: string
+  cron_expr: string
+  prompt: string
+  status: string
+  next_run_at: number | null
+  created_at?: number
+  updated_at?: number
+}) {
   return {
-    cronId: job.id,
+    cronId: job.pi_cron_id,
+    localCronId: job.id,
     originTopicId: job.origin_topic_id,
     cronExpr: job.cron_expr,
     prompt: job.prompt,
     status: job.status,
     lastRunAt: undefined as number | undefined,
     nextRunAt: job.next_run_at ?? undefined,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
   }
 }
 
@@ -109,16 +122,16 @@ export function registerCronHandlers(
   hub.on('client:cron.pause', async (...args: unknown[]) => {
     const frame = args[1] as WSFrame
     const data = cronPauseSchema.parse(frame.d)
-    const job = await cronRepo.getCronJob(data.cronId)
+    const job = await cronRepo.getCronJobByCronId(data.cronId)
     if (!job) return
 
     try {
-      await pi.rpc('pauseCron', { cronId: job.pi_cron_id })
+      await pi.rpc('pauseCron', { cronId: data.cronId })
     } catch (err) {
       logger.warn({ err }, 'Failed to pause cron on PI')
     }
 
-    const updated = await cronRepo.updateCronJob(data.cronId, { status: 'paused' })
+    const updated = await cronRepo.updateCronJob(job.id, { status: 'paused' })
     if (updated) {
       broadcaster.broadcast('cron.upserted', cronJobToPayload(updated))
     }
@@ -127,16 +140,16 @@ export function registerCronHandlers(
   hub.on('client:cron.delete', async (...args: unknown[]) => {
     const frame = args[1] as WSFrame
     const data = cronDeleteSchema.parse(frame.d)
-    const job = await cronRepo.getCronJob(data.cronId)
+    const job = await cronRepo.getCronJobByCronId(data.cronId)
     if (!job) return
 
     try {
-      await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
+      await pi.rpc('deleteCron', { cronId: data.cronId })
     } catch (err) {
       logger.warn({ err }, 'Failed to delete cron on PI')
     }
 
-    await cronRepo.deleteCronJob(data.cronId)
+    await cronRepo.deleteCronJob(job.id)
     const jobs = await cronRepo.listCronJobs()
     broadcaster.broadcast('cron.list', { crons: jobs.map((j) => cronJobToPayload(j)) })
   })
@@ -144,28 +157,21 @@ export function registerCronHandlers(
   hub.on('client:cron.edit', async (...args: unknown[]) => {
     const frame = args[1] as WSFrame
     const data = cronEditSchema.parse(frame.d)
-    const job = await cronRepo.getCronJob(data.cronId)
+    const job = await cronRepo.getCronJobByCronId(data.cronId)
     if (!job) return
 
-    const updated = await cronRepo.updateCronJob(data.cronId, {
+    const updated = await cronRepo.updateCronJob(job.id, {
       ...(data.cronExpr ? { cron_expr: data.cronExpr } : {}),
       ...(data.prompt ? { prompt: data.prompt } : {}),
     })
 
     if (updated) {
       try {
-        const topic = await topicRepo.getTopic(job.origin_topic_id)
-        if (topic?.pi_session_id) {
-          await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
-          const result = await pi.rpc('createCron', {
-            originSessionId: topic.pi_session_id,
-            cronExpr: updated.cron_expr,
-            prompt: updated.prompt,
-          }) as { cronId: string }
-          if (result.cronId && result.cronId !== job.pi_cron_id) {
-            await cronRepo.updateCronJob(updated.id, { pi_cron_id: result.cronId })
-          }
-        }
+        await pi.rpc('updateCron', {
+          cronId: data.cronId,
+          ...(data.cronExpr ? { cronExpr: data.cronExpr } : {}),
+          ...(data.prompt ? { prompt: data.prompt } : {}),
+        })
       } catch (err) {
         logger.warn({ err }, 'Failed to sync cron edit to PI')
       }

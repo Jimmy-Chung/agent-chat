@@ -266,15 +266,28 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
   }
 
   // ─── Cron helpers ─────────────────────────────────────────────────────────
-  private cronJobToPayload(job: { id: string; origin_topic_id: string; cron_expr: string; prompt: string; status: string; next_run_at: number | null }) {
+  private cronJobToPayload(job: {
+    id: string
+    origin_topic_id: string
+    pi_cron_id: string
+    cron_expr: string
+    prompt: string
+    status: string
+    next_run_at: number | null
+    created_at?: number
+    updated_at?: number
+  }) {
     return {
-      cronId: job.id,
+      cronId: job.pi_cron_id,
+      localCronId: job.id,
       originTopicId: job.origin_topic_id,
       cronExpr: job.cron_expr,
       prompt: job.prompt,
       status: job.status,
       lastRunAt: undefined as number | undefined,
       nextRunAt: job.next_run_at ?? undefined,
+      createdAt: job.created_at,
+      updatedAt: job.updated_at,
     }
   }
 
@@ -798,17 +811,17 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
       case 'cron.pause': {
         const data = cronPauseSchema.parse(frame.d)
-        const job = await cronRepo.getCronJob(data.cronId)
+        const job = await cronRepo.getCronJobByCronId(data.cronId)
         if (!job) break
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('pauseCron', { cronId: job.pi_cron_id })
+            await pi.rpc('pauseCron', { cronId: data.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to pause cron on PI')
           }
         }
-        const updated = await cronRepo.updateCronJob(data.cronId, { status: 'paused' })
+        const updated = await cronRepo.updateCronJob(job.id, { status: 'paused' })
         if (updated) this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
         break
       }
@@ -816,34 +829,34 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       case 'cron.resume': {
         // cron.resume re-activates a paused cron — forward to PI
         const d = frame.d as { cronId: string }
-        const job = await cronRepo.getCronJob(d.cronId)
+        const job = await cronRepo.getCronJobByCronId(d.cronId)
         if (!job) break
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('resumeCron' as never, { cronId: job.pi_cron_id } as never)
+            await pi.rpc('resumeCron', { cronId: d.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to resume cron on PI')
           }
         }
-        const updated = await cronRepo.updateCronJob(d.cronId, { status: 'active' })
+        const updated = await cronRepo.updateCronJob(job.id, { status: 'active' })
         if (updated) this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
         break
       }
 
       case 'cron.delete': {
         const data = cronDeleteSchema.parse(frame.d)
-        const job = await cronRepo.getCronJob(data.cronId)
+        const job = await cronRepo.getCronJobByCronId(data.cronId)
         if (!job) break
         const pi = await this.ensurePiClient()
         if (pi) {
           try {
-            await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
+            await pi.rpc('deleteCron', { cronId: data.cronId })
           } catch (err) {
             logger.warn({ err }, 'Failed to delete cron on PI')
           }
         }
-        await cronRepo.deleteCronJob(data.cronId)
+        await cronRepo.deleteCronJob(job.id)
         const jobs = await cronRepo.listCronJobs()
         this.broadcastAll('cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
         break
@@ -851,9 +864,9 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
       case 'cron.edit': {
         const data = cronEditSchema.parse(frame.d)
-        const job = await cronRepo.getCronJob(data.cronId)
+        const job = await cronRepo.getCronJobByCronId(data.cronId)
         if (!job) break
-        const updated = await cronRepo.updateCronJob(data.cronId, {
+        const updated = await cronRepo.updateCronJob(job.id, {
           ...(data.cronExpr ? { cron_expr: data.cronExpr } : {}),
           ...(data.prompt ? { prompt: data.prompt } : {}),
         })
@@ -861,18 +874,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const pi = await this.ensurePiClient()
           if (pi) {
             try {
-              const topic = await topicRepo.getTopic(job.origin_topic_id)
-              if (topic?.pi_session_id) {
-                await pi.rpc('deleteCron', { cronId: job.pi_cron_id })
-                const result = await pi.rpc('createCron', {
-                  originSessionId: topic.pi_session_id,
-                  cronExpr: updated.cron_expr,
-                  prompt: updated.prompt,
-                }) as { cronId: string }
-                if (result.cronId && result.cronId !== job.pi_cron_id) {
-                  await cronRepo.updateCronJob(updated.id, { pi_cron_id: result.cronId })
-                }
-              }
+              await pi.rpc('updateCron', {
+                cronId: data.cronId,
+                ...(data.cronExpr ? { cronExpr: data.cronExpr } : {}),
+                ...(data.prompt ? { prompt: data.prompt } : {}),
+              })
             } catch (err) {
               logger.warn({ err }, 'Failed to sync cron edit to PI')
             }

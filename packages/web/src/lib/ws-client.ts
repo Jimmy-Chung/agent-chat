@@ -420,12 +420,19 @@ class WsClient {
           const r = c as Record<string, unknown>
           return {
             cronId: r.cronId as string,
+            localCronId: r.localCronId as string | undefined,
             originTopicId: r.originTopicId as string,
+            originSessionId: r.originSessionId as string | undefined,
+            runtime: r.runtime as string | undefined,
+            providerGroup: r.providerGroup as string | undefined,
             cronExpr: r.cronExpr as string,
             prompt: r.prompt as string,
+            timezone: r.timezone as string | undefined,
             status: r.status as 'active' | 'paused' | 'error',
             lastRunAt: r.lastRunAt as number | undefined,
             nextRunAt: r.nextRunAt as number | undefined,
+            createdAt: r.createdAt as number | undefined,
+            updatedAt: r.updatedAt as number | undefined,
           }
         })
         useCronStore.getState().setCrons(crons)
@@ -435,10 +442,19 @@ class WsClient {
       case 'cron.upserted':
         useCronStore.getState().upsertCron({
           cronId: (event.data as Record<string, unknown>).cronId as string,
+          localCronId: (event.data as Record<string, unknown>).localCronId as string | undefined,
           originTopicId: (event.data as Record<string, unknown>).originTopicId as string,
+          originSessionId: (event.data as Record<string, unknown>).originSessionId as string | undefined,
+          runtime: (event.data as Record<string, unknown>).runtime as string | undefined,
+          providerGroup: (event.data as Record<string, unknown>).providerGroup as string | undefined,
           cronExpr: (event.data as Record<string, unknown>).cronExpr as string,
           prompt: (event.data as Record<string, unknown>).prompt as string,
+          timezone: (event.data as Record<string, unknown>).timezone as string | undefined,
           status: (event.data as Record<string, unknown>).status as 'active' | 'paused' | 'error',
+          lastRunAt: (event.data as Record<string, unknown>).lastRunAt as number | undefined,
+          nextRunAt: (event.data as Record<string, unknown>).nextRunAt as number | undefined,
+          createdAt: (event.data as Record<string, unknown>).createdAt as number | undefined,
+          updatedAt: (event.data as Record<string, unknown>).updatedAt as number | undefined,
         })
         break
 
@@ -446,6 +462,7 @@ class WsClient {
         useCronStore.getState().addRun({
           id: (event.data as Record<string, unknown>).runId as string,
           cronId: (event.data as Record<string, unknown>).cronId as string,
+          localCronId: (event.data as Record<string, unknown>).localCronId as string | undefined,
           triggeredAt: (event.data as Record<string, unknown>).firedAt as number,
           firedAt: (event.data as Record<string, unknown>).firedAt as number,
         })
@@ -581,7 +598,7 @@ case 'usage.snapshot': {
         useCronStore.getState().completeRun(d.runId as string, {
           status: d.status as string,
           summary: (d.summary as string | null) ?? null,
-          duration: (d.duration as number | null) ?? null,
+          duration: ((d.durationMs as number | null | undefined) ?? (d.duration as number | null | undefined)) ?? null,
           completedAt: d.completedAt as number,
         })
         break

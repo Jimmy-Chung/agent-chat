@@ -232,7 +232,7 @@ describe('Event router — cron.run.completed', () => {
       ts: Date.now(),
       payload: {
         kind: 'cron.run.completed',
-        cronId: job.id,
+        cronId: job.pi_cron_id,
         runId: run.id,
         status: 'success',
         summary: 'Completed',
@@ -250,7 +250,8 @@ describe('Event router — cron.run.completed', () => {
     expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
     const broadcast = mockHub.getBroadcastEvents()[0]
     expect(broadcast.type).toBe('cron.run.completed')
-    expect((broadcast.data as Record<string, unknown>).cronId).toBe(job.id)
+    expect((broadcast.data as Record<string, unknown>).cronId).toBe(job.pi_cron_id)
+    expect((broadcast.data as Record<string, unknown>).localCronId).toBe(job.id)
     expect((broadcast.data as Record<string, unknown>).originTopicId).toBe(topic.id)
     expect((broadcast.data as Record<string, unknown>).status).toBe('success')
     expect((broadcast.data as Record<string, unknown>).duration).toBe(5000)
@@ -296,7 +297,7 @@ describe('Event router — cron.run.completed', () => {
       ts: Date.now(),
       payload: {
         kind: 'cron.run.completed',
-        cronId: job.id,
+        cronId: job.pi_cron_id,
         runId: 'run-timeout',
         status: 'timeout',
         summary: 'Exceeded time limit',

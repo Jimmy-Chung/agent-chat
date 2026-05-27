@@ -62,7 +62,7 @@ describe('Cron handler — event-router cron.triggered', () => {
       ts: Date.now(),
       payload: {
         kind: 'cron.triggered',
-        cronId: job.id,
+        cronId: job.pi_cron_id,
         originSessionId: 'sess-cron-1',
         runId: 'run-001',
         firedAt: 1700000000000,
@@ -80,6 +80,8 @@ describe('Cron handler — event-router cron.triggered', () => {
     expect(mockHub.broadcast).toHaveBeenCalled()
     const broadcastEvent = mockHub.getBroadcastEvents()[0]
     expect(broadcastEvent.type).toBe('cron.triggered')
+    expect((broadcastEvent.data as Record<string, unknown>).cronId).toBe('pi-cron-001')
+    expect((broadcastEvent.data as Record<string, unknown>).localCronId).toBe(job.id)
     expect((broadcastEvent.data as Record<string, unknown>).originTopicId).toBe(topic.id)
     expect((broadcastEvent.data as Record<string, unknown>).firedAt).toBe(1700000000000)
   })
@@ -125,7 +127,7 @@ describe('Cron handler — event-router cron.triggered', () => {
       ts: Date.now(),
       payload: {
         kind: 'cron.triggered',
-        cronId: job.id,
+        cronId: job.pi_cron_id,
         originSessionId: 'sess-dedup',
         runId: 'run-dup',
         firedAt: Date.now(),
@@ -227,14 +229,17 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
 
     mockPi.rpc.mockResolvedValue(undefined)
 
-    await pauseHandler({}, { d: { cronId: job.id } })
+    await pauseHandler({}, { d: { cronId: job.pi_cron_id } })
 
     const updated = await cronRepo.getCronJob(job.id)
     expect(updated!.status).toBe('paused')
+    expect(mockPi.rpc).toHaveBeenCalledWith('pauseCron', { cronId: job.pi_cron_id })
 
     expect(mockHub.broadcast).toHaveBeenCalled()
     const broadcastEvent = mockHub.getBroadcastEvents()[0]
     expect(broadcastEvent.type).toBe('cron.upserted')
+    expect((broadcastEvent.data as Record<string, unknown>).cronId).toBe(job.pi_cron_id)
+    expect((broadcastEvent.data as Record<string, unknown>).localCronId).toBe(job.id)
     expect((broadcastEvent.data as Record<string, unknown>).status).toBe('paused')
   })
 
@@ -264,9 +269,10 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
 
     mockPi.rpc.mockResolvedValue(undefined)
 
-    await deleteHandler({}, { d: { cronId: job.id } })
+    await deleteHandler({}, { d: { cronId: job.pi_cron_id } })
 
     expect(await cronRepo.getCronJob(job.id)).toBeUndefined()
+    expect(mockPi.rpc).toHaveBeenCalledWith('deleteCron', { cronId: job.pi_cron_id })
 
     const broadcastEvent = mockHub.getBroadcastEvents()[0]
     expect(broadcastEvent.type).toBe('cron.list')
@@ -296,7 +302,7 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
       prompt: 'Original',
     })
 
-    await editHandler({}, { d: { cronId: job.id, cronExpr: '0 0 * * *', prompt: 'Updated' } })
+    await editHandler({}, { d: { cronId: job.pi_cron_id, cronExpr: '0 0 * * *', prompt: 'Updated' } })
 
     const updated = await cronRepo.getCronJob(job.id)
     expect(updated!.cron_expr).toBe('0 0 * * *')
@@ -323,7 +329,7 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
     expect(mockHub.broadcast).not.toHaveBeenCalled()
   })
 
-  it('cron.edit: syncs to PI via deleteCron + createCron', async () => {
+  it('cron.edit: syncs to PI via updateCron', async () => {
     const { registerCronHandlers } = await import('../ws/handlers/cron.handler')
     const hub = {
       on: vi.fn(),
@@ -349,12 +355,15 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
       prompt: 'Before',
     })
 
-    mockPi.rpc.mockResolvedValue({ cronId: 'pi-edit-sync' })
+    mockPi.rpc.mockResolvedValue({ ok: true })
 
-    await editHandler({}, { d: { cronId: job.id, cronExpr: '0 0 * * *', prompt: 'After' } })
+    await editHandler({}, { d: { cronId: job.pi_cron_id, cronExpr: '0 0 * * *', prompt: 'After' } })
 
-    expect(mockPi.rpc).toHaveBeenCalledWith('deleteCron', expect.objectContaining({ cronId: 'pi-edit-sync' }))
-    expect(mockPi.rpc).toHaveBeenCalledWith('createCron', expect.objectContaining({ cronExpr: '0 0 * * *', prompt: 'After' }))
+    expect(mockPi.rpc).toHaveBeenCalledWith('updateCron', expect.objectContaining({
+      cronId: 'pi-edit-sync',
+      cronExpr: '0 0 * * *',
+      prompt: 'After',
+    }))
   })
 
   it('cron.edit broadcasts cron.upserted', async () => {
@@ -383,11 +392,12 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
     const editCall = hub.on.mock.calls.find((c: string[]) => c[0] === 'client:cron.edit')
     const editHandler = editCall![1]
 
-    mockPi.rpc.mockResolvedValue({ cronId: 'pi-lastrun' })
-    await editHandler({}, { d: { cronId: job.id, cronExpr: '0 0 * * *' } })
+    mockPi.rpc.mockResolvedValue({ ok: true })
+    await editHandler({}, { d: { cronId: job.pi_cron_id, cronExpr: '0 0 * * *' } })
 
     const broadcastEvent = mockHub.getBroadcastEvents()[0]
     expect(broadcastEvent.type).toBe('cron.upserted')
-    expect((broadcastEvent.data as Record<string, unknown>).cronId).toBe(job.id)
+    expect((broadcastEvent.data as Record<string, unknown>).cronId).toBe(job.pi_cron_id)
+    expect((broadcastEvent.data as Record<string, unknown>).localCronId).toBe(job.id)
   })
 })

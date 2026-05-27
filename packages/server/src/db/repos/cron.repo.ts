@@ -39,6 +39,10 @@ export async function getCronJob(id: string): Promise<CronJob | undefined> {
   return rows[0] ? toJobDomain(rows[0]) : undefined
 }
 
+export async function getCronJobByCronId(cronId: string): Promise<CronJob | undefined> {
+  return (await getCronJobByPiCronId(cronId)) ?? (await getCronJob(cronId))
+}
+
 export async function listCronJobs(): Promise<CronJob[]> {
   const rows = await getDb().select().from(cronJobs).all()
   return rows.map(toJobDomain)
@@ -74,6 +78,12 @@ export async function deleteCronJob(id: string): Promise<boolean> {
   return (meta?.rows_written ?? 0) > 0
 }
 
+export async function deleteCronJobByCronId(cronId: string): Promise<boolean> {
+  const job = await getCronJobByCronId(cronId)
+  if (!job) return false
+  return deleteCronJob(job.id)
+}
+
 export async function getCronJobByPiCronId(piCronId: string): Promise<CronJob | undefined> {
   const rows = await getDb()
     .select()
@@ -83,14 +93,29 @@ export async function getCronJobByPiCronId(piCronId: string): Promise<CronJob | 
   return rows[0] ? toJobDomain(rows[0]) : undefined
 }
 
+export async function createCronRunByCronId(input: {
+  cronId: string
+  runId?: string
+  triggeredAt?: number
+}): Promise<CronRun | undefined> {
+  const job = await getCronJobByCronId(input.cronId)
+  if (!job) return undefined
+  return createCronRun({
+    cronId: job.id,
+    runId: input.runId,
+    triggeredAt: input.triggeredAt,
+  })
+}
+
 // ─── CronRun CRUD ──────────────────────────────────────────────────
 
 export async function createCronRun(input: {
   cronId: string
+  runId?: string
   triggeredAt?: number
 }): Promise<CronRun> {
   const row = {
-    id: ulid(),
+    id: input.runId ?? ulid(),
     cronId: input.cronId,
     triggeredAt: input.triggeredAt ?? Date.now(),
     finishedAt: null,

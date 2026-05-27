@@ -150,6 +150,9 @@ export type ResolveInteractionResult = z.infer<
 // createCron
 export const createCronParamsSchema = z.object({
   originSessionId: z.string(),
+  originTopicId: z.string().optional(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   cronExpr: z.string(),
   prompt: z.string(),
   timezone: z.string().optional(),
@@ -168,12 +171,18 @@ export const listCronsParamsSchema = z.object({})
 
 const cronInfoSchema = z.object({
   cronId: z.string(),
+  originTopicId: z.string().optional(),
   originSessionId: z.string(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   cronExpr: z.string(),
   prompt: z.string(),
+  timezone: z.string().optional(),
   status: z.enum(['active', 'paused', 'error']),
   lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 })
 
 export type CronInfo = z.infer<typeof cronInfoSchema>
@@ -182,6 +191,46 @@ export const listCronsResultSchema = z.array(cronInfoSchema)
 
 export type ListCronsParams = z.infer<typeof listCronsParamsSchema>
 export type ListCronsResult = z.infer<typeof listCronsResultSchema>
+
+// listCronRuns
+export const listCronRunsParamsSchema = z.object({
+  cronId: z.string().optional(),
+})
+
+const cronRunInfoSchema = z.object({
+  runId: z.string(),
+  cronId: z.string(),
+  originTopicId: z.string().optional(),
+  originSessionId: z.string().optional(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
+  firedAt: z.number(),
+  completedAt: z.number().optional(),
+  status: z.enum(['running', 'success', 'failed', 'timeout']).optional(),
+  success: z.boolean().optional(),
+  durationMs: z.number().optional(),
+  error: z.string().optional(),
+})
+
+export type CronRunInfo = z.infer<typeof cronRunInfoSchema>
+
+export const listCronRunsResultSchema = z.array(cronRunInfoSchema)
+
+export type ListCronRunsParams = z.infer<typeof listCronRunsParamsSchema>
+export type ListCronRunsResult = z.infer<typeof listCronRunsResultSchema>
+
+// updateCron
+export const updateCronParamsSchema = z.object({
+  cronId: z.string(),
+  cronExpr: z.string().optional(),
+  prompt: z.string().optional(),
+  timezone: z.string().optional(),
+})
+
+export const updateCronResultSchema = okResultSchema
+
+export type UpdateCronParams = z.infer<typeof updateCronParamsSchema>
+export type UpdateCronResult = z.infer<typeof updateCronResultSchema>
 
 // pauseCron
 export const pauseCronParamsSchema = z.object({
@@ -427,6 +476,14 @@ export type PiRpcMethod = {
   listCrons: {
     params: ListCronsParams
     result: ListCronsResult
+  }
+  listCronRuns: {
+    params: ListCronRunsParams
+    result: ListCronRunsResult
+  }
+  updateCron: {
+    params: UpdateCronParams
+    result: UpdateCronResult
   }
   pauseCron: {
     params: PauseCronParams

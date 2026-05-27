@@ -129,17 +129,27 @@ export const agentProgressPayloadSchema = z.object({
 export const cronCreatedPayloadSchema = z.object({
   kind: z.literal('cron.created'),
   cronId: z.string(),
+  originTopicId: z.string().optional(),
   originSessionId: z.string(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   cronExpr: z.string(),
   prompt: z.string(),
+  timezone: z.string().optional(),
   status: z.enum(['active', 'paused', 'error']),
+  lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 })
 
 export const cronTriggeredPayloadSchema = z.object({
   kind: z.literal('cron.triggered'),
   cronId: z.string(),
+  originTopicId: z.string().optional(),
   originSessionId: z.string(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   runId: z.string(),
   firedAt: z.number(),
 })
@@ -182,17 +192,32 @@ export const cronRunCompletedPayloadSchema = z.object({
   kind: z.literal('cron.run.completed'),
   cronId: z.string(),
   runId: z.string(),
+  originTopicId: z.string().optional(),
+  originSessionId: z.string().optional(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
   status: z.enum(['success', 'failed', 'timeout']),
   summary: z.string().nullable(),
   duration: z.number().nullable(),
+  durationMs: z.number().optional(),
+  error: z.string().optional(),
   completedAt: z.number(),
 })
 
 export const cronUpdatedPayloadSchema = z.object({
   kind: z.literal('cron.updated'),
   cronId: z.string(),
+  originTopicId: z.string().optional(),
+  originSessionId: z.string().optional(),
+  runtime: z.string().optional(),
+  providerGroup: z.string().optional(),
+  cronExpr: z.string().optional(),
+  prompt: z.string().optional(),
+  timezone: z.string().optional(),
   status: z.enum(['active', 'paused', 'error']),
+  lastRunAt: z.number().optional(),
   nextRunAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 })
 
 export const cronDeletedPayloadSchema = z.object({

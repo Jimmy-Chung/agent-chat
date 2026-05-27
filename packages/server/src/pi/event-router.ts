@@ -197,6 +197,31 @@ async function findTopicIdBySession(sessionId: string): Promise<string | null> {
   return match?.id ?? null
 }
 
+function cronJobToPayload(job: {
+  id: string
+  origin_topic_id: string
+  pi_cron_id: string
+  cron_expr: string
+  prompt: string
+  status: string
+  next_run_at: number | null
+  created_at?: number
+  updated_at?: number
+}) {
+  return {
+    cronId: job.pi_cron_id,
+    localCronId: job.id,
+    originTopicId: job.origin_topic_id,
+    cronExpr: job.cron_expr,
+    prompt: job.prompt,
+    status: job.status,
+    lastRunAt: undefined,
+    nextRunAt: job.next_run_at ?? undefined,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
+  }
+}
+
 async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppConfig): Promise<void> {
   const payload = event.payload
   const sessionId = event.sessionId
@@ -423,7 +448,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     }
 
     case 'cron.created': {
-      const originTopicId = await findTopicIdBySession(payload.originSessionId)
+      const originTopicId = payload.originTopicId ?? await findTopicIdBySession(payload.originSessionId)
       if (!originTopicId) {
         logger.warn(
           { originSessionId: payload.originSessionId },
@@ -451,21 +476,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       }
       const job = await cronRepo.getCronJobByPiCronId(payload.cronId)
       if (job) {
-        hub.broadcast('cron.upserted', {
-          cronId: job.id,
-          originTopicId: job.origin_topic_id,
-          cronExpr: job.cron_expr,
-          prompt: job.prompt,
-          status: job.status,
-          lastRunAt: undefined,
-          nextRunAt: job.next_run_at ?? undefined,
-        })
+        hub.broadcast('cron.upserted', cronJobToPayload(job))
       }
       break
     }
 
     case 'cron.triggered': {
-      const originTopicId = await findTopicIdBySession(payload.originSessionId)
+      const originTopicId = payload.originTopicId ?? await findTopicIdBySession(payload.originSessionId)
       if (!originTopicId) {
         logger.warn(
           { originSessionId: payload.originSessionId },
@@ -473,13 +490,21 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         )
         return
       }
-      const cronRun = await cronRepo.createCronRun({
+      const cronRun = await cronRepo.createCronRunByCronId({
         cronId: payload.cronId,
+        runId: payload.runId,
         triggeredAt: payload.firedAt,
       })
+      const job = await cronRepo.getCronJobByCronId(payload.cronId)
+      if (!cronRun || !job) {
+        logger.warn({ cronId: payload.cronId }, 'cron.triggered: cron job not found')
+        return
+      }
       hub.broadcast('cron.triggered', {
         cronId: payload.cronId,
+        localCronId: job.id,
         originTopicId,
+        originSessionId: payload.originSessionId,
         runId: payload.runId || cronRun.id,
         firedAt: payload.firedAt,
       })
@@ -561,13 +586,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     }
 
     case 'cron.run.completed': {
-      const job = await cronRepo.getCronJob(payload.cronId)
+      const job = await cronRepo.getCronJobByCronId(payload.cronId)
       if (!job) {
         logger.warn({ cronId: payload.cronId }, 'cron.run.completed: cron job not found')
         return
       }
-      const runs = await cronRepo.listCronRuns(payload.cronId)
-      const runningRun = runs.find((r) => r.status === 'running')
+      const runs = await cronRepo.listCronRuns(job.id)
+      const runningRun = runs.find((r) => r.id === payload.runId) ?? runs.find((r) => r.status === 'running')
       if (runningRun) {
         await cronRepo.updateCronRun(runningRun.id, {
           status: payload.status,
@@ -576,11 +601,14 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       }
       hub.broadcast('cron.run.completed', {
         cronId: payload.cronId,
+        localCronId: job.id,
         runId: payload.runId,
         originTopicId: job.origin_topic_id,
+        originSessionId: payload.originSessionId,
         status: payload.status,
         summary: payload.summary,
         duration: payload.duration,
+        durationMs: payload.durationMs ?? payload.duration,
         completedAt: payload.completedAt,
       })
       if (config) {
@@ -590,6 +618,29 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
           config,
         ).catch(() => {})
       }
+      break
+    }
+
+    case 'cron.updated': {
+      const existing = await cronRepo.getCronJobByCronId(payload.cronId)
+      if (!existing) {
+        logger.warn({ cronId: payload.cronId }, 'cron.updated: cron job not found')
+        return
+      }
+      const updated = await cronRepo.updateCronJob(existing.id, {
+        status: payload.status,
+        ...(payload.cronExpr ? { cron_expr: payload.cronExpr } : {}),
+        ...(payload.prompt ? { prompt: payload.prompt } : {}),
+        next_run_at: payload.nextRunAt,
+      })
+      if (updated) hub.broadcast('cron.upserted', cronJobToPayload(updated))
+      break
+    }
+
+    case 'cron.deleted': {
+      await cronRepo.deleteCronJobByCronId(payload.cronId)
+      const jobs = await cronRepo.listCronJobs()
+      hub.broadcast('cron.list', { crons: jobs.map((j) => cronJobToPayload(j)) })
       break
     }
 

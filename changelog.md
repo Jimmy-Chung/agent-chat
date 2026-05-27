@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-05-27 [v1.7.18] — 定时任务 Adapter 真源联调
+
+### AIT-185: agent-chat 侧 cron 投影改造
+- 协议补齐 `updateCron` / `listCronRuns`，并扩展 cron 定义与 run history 字段，支持 `originTopicId`、`providerGroup`、`timezone`、`createdAt/updatedAt`、`durationMs` 等 adapter 真源数据
+- server 对外统一使用 adapter 生成的 `cronId`；D1 行 ID 仅作为兼容投影字段 `localCronId` 返回
+- `cron.pause` / `cron.resume` / `cron.delete` / `cron.edit` 均按 adapter `cronId` 查找投影并转发，`cron.edit` 改为调用 `updateCron`，不再 delete + create
+- PI 事件路由支持 `cron.updated` / `cron.deleted`，并用 adapter `cronId` 对齐 `cron.triggered` 与 `cron.run.completed`
+- web cron store 保留 `localCronId`，但列表去重、操作与 run 关联均以 adapter `cronId` 为准
+- 版本显示更新为 `v1.7.18`
+
+### 联调
+- 已与 `workspace-pi-adapter.jimmy-jam.com` adapter `v1.10.5` 完成联调
+- 验证 `listCrons`、`listCronRuns`、`createCron`、`updateCron`、`pauseCron`、`resumeCron`、`deleteCron`
+- 临时测试 cron 已清理，最终 `listCrons` 返回空列表
+
 ## 2026-05-27 [v1.7.17] — Codex 话题子类型显示修复
 
 ### BUG-055: 保留 topic programming spec，避免 Codex 话题回退显示 Claude Code
