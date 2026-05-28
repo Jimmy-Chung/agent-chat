@@ -14,6 +14,7 @@ import type { AppConfig } from '../config'
 import { PiClient } from '../pi/client'
 import { routePiEvents } from '../pi/event-router'
 import { logger } from '../logger'
+import { logGatewayEvent } from '../server-logs'
 import { initDb } from '../db/migrate'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
@@ -542,7 +543,22 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const piForCreate = await this.ensurePiClient()
           logger.info({ topicId: topic.id, hasPi: !!piForCreate }, 'topic.create: ensurePiClient resolved')
           if (!piForCreate) {
-            this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'No PI client available' })
+            await logGatewayEvent({
+              eventKind: 'topic.create.session_failed',
+              topicId: topic.id,
+              status: 'failed',
+              payload: {
+                code: 'NO_PI_CLIENT',
+                message: 'No PI client available',
+              },
+            })
+            this.broadcastAll('error', {
+              code: 'PI_SESSION_FAILED',
+              message: 'No PI client available',
+              details: {
+                error: 'No PI client available',
+              },
+            })
             this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
             break
           }
@@ -561,7 +577,23 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.sendTo(ws, 'session.status', { topicId: topic.id, ready: true })
         } catch (err) {
           logger.error({ err, topicId: topic.id }, 'createSession failed in topic.create')
-          this.broadcastAll('error', { code: 'PI_SESSION_FAILED', message: 'Failed to create agent session' })
+          await logGatewayEvent({
+            eventKind: 'topic.create.session_failed',
+            topicId: topic.id,
+            status: 'failed',
+            payload: {
+              code: err instanceof Error && 'code' in err ? (err as { code?: unknown }).code : undefined,
+              name: err instanceof Error ? err.name : undefined,
+              message: err instanceof Error ? err.message : String(err),
+            },
+          })
+          this.broadcastAll('error', {
+            code: 'PI_SESSION_FAILED',
+            message: 'Failed to create agent session',
+            details: {
+              error: err instanceof Error ? err.message : String(err),
+            },
+          })
           this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
         }
         break

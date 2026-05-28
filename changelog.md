@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-28 [v1.7.22] — 线上版本显示与会话创建诊断
+
+### BUG-058: 线上版本仍显示 v1.7.20，且 topic.create 会话失败缺少可查询细节
+- 修复 Sidebar 底部版本号仍硬编码为旧版本的问题，版本显示更新为 `v1.7.22`
+- server 在 `topic.create` 调用 PI adapter `createSession` 失败时写入 `topic.create.session_failed` 审计日志，记录错误 `code/name/message`
+- `PI_SESSION_FAILED` 推送错误中附带失败详情，便于线上直接确认 adapter/PI 返回的真实原因
+- 验证：`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server test -- topic-do topic-handler server-logs`、`pnpm --filter @agent-chat/server build`、`pnpm --filter @agent-chat/web test -- ws-client-dispatch`、`pnpm --filter @agent-chat/web typecheck`、`pnpm --filter @agent-chat/web build`
+
 ## 2026-05-28 [v1.7.21] — AIT-187 流式尾部截断修复
 
 ### BUG-057: message.end 越过尾部 delta 导致刷新后正文截断
