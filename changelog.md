@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-29 [v1.7.24] — Adapter URL scheme 兼容
+
+### BUG-060: Adapter socket URL 以 https:// 保存时 createSession 失败
+- protocol `buildPiWsUrl` 统一把 `https://` / `http://` socket URL 规范化为 `wss://` / `ws://`
+- 前端连接配置保存前也规范化 adapter socket URL，避免 localStorage 继续保留错误 scheme
+- 修复线上 `topic.session_create.failed` 中 `WebSocket Constructor: The url scheme...` 导致 `pi_session_id=null` 的问题
+- 版本显示更新为 `v1.7.24`
+
 ## 2026-05-28 [v1.7.23] — 会话创建失败恢复
 
 ### BUG-059: topic 已创建但 PI session 创建失败后无法自动恢复

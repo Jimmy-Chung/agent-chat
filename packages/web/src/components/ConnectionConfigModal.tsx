@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { normalizePiWsUrl } from '@agent-chat/protocol'
 
 const PI_WSS_URL_KEY = 'PI_ADAPTER_WSS_URL'
 const PI_TOKEN_KEY = 'PI_ADAPTER_TOKEN'
@@ -31,11 +32,12 @@ export function ConnectionConfigModal({
     setTestResult(null)
     try {
       // Validate URL format
-      try { new URL(wssUrl.trim()) } catch { setTestResult({ ok: false, error: '地址格式无效' }); return }
+      const normalizedWssUrl = normalizePiWsUrl(wssUrl.trim())
+      try { new URL(normalizedWssUrl) } catch { setTestResult({ ok: false, error: '地址格式无效' }); return }
 
       // Client-side WS probe — verifies host reachability + full path + token
       const wsProbeOk = await new Promise<boolean>((resolve) => {
-        const probeUrl = new URL(wssUrl.trim())
+        const probeUrl = new URL(normalizedWssUrl)
         if (piToken.trim()) probeUrl.searchParams.set('token', piToken.trim())
         let opened = false
         const ws = new WebSocket(probeUrl.toString())
@@ -56,9 +58,9 @@ export function ConnectionConfigModal({
       }
 
       setTestResult({ ok: true })
-      localStorage.setItem(PI_WSS_URL_KEY, wssUrl.trim())
+      localStorage.setItem(PI_WSS_URL_KEY, normalizedWssUrl)
       localStorage.setItem(PI_TOKEN_KEY, piToken.trim())
-      onConfirm({ wssUrl: wssUrl.trim(), piToken: piToken.trim() })
+      onConfirm({ wssUrl: normalizedWssUrl, piToken: piToken.trim() })
     } catch (err) {
       setTestResult({ ok: false, error: String(err) })
     } finally {

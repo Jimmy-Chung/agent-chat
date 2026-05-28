@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.23 |
-| 更新时间 | 2026-05-28 |
+| 当前版本 | v1.7.24 |
+| 更新时间 | 2026-05-29 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -70,12 +70,30 @@
 | BUG-057 | AIT-187 |
 | BUG-058 | — |
 | BUG-059 | — |
+| BUG-060 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-060: Adapter socket URL 以 https:// 保存时 createSession 失败
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-060 |
+| 标题 | Adapter socket URL 以 https:// 保存时 createSession 失败 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-29 |
+| 修复时间 | 2026-05-29 |
+| 修复版本 | v1.7.24 |
+| Linear | — |
+| 影响模块 | packages/protocol/src/pi-adapter.ts, packages/web/src/components/ConnectionConfigModal.tsx |
+| 描述 | 线上 `topic.session_create.failed` 显示 adapterUrl 为 `https://workspace-pi-adapter.../socket`，Worker 构造 WebSocket 时报 `WebSocket Constructor: The url scheme...`，导致 session 创建失败。 |
+| 根因 | 前端允许保存 `https://` socket URL，server 侧 `buildPiWsUrl` 未把 HTTP scheme 规范化为 WebSocket scheme。 |
+| 修复方案 | protocol URL helper 统一将 `https/http` socket URL 转为 `wss/ws`；前端保存连接配置前也做同样规范化。 |
+| 测试证据 | `pnpm --filter @agent-chat/protocol test -- pi-adapter`。 |
 
 ### BUG-059: topic 已创建但 PI session 创建失败后无法自动恢复
 

@@ -261,6 +261,7 @@ export type {
 // PI adapter constants & URL utilities
 export {
   DEFAULT_PI_ADAPTER_URL,
+  normalizePiWsUrl,
   piWsToHttp,
   piWsToHttpBase,
   buildPiWsUrl,

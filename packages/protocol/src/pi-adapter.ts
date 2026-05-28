@@ -10,14 +10,21 @@
 /** Fallback PI Adapter URL — local mock-pi. Used when no env var is set. */
 export const DEFAULT_PI_ADAPTER_URL = 'ws://127.0.0.1:7331/api/agent-chat/v1/socket'
 
+export function normalizePiWsUrl(rawUrl: string): string {
+  if (rawUrl.startsWith('https://')) return `wss://${rawUrl.slice('https://'.length)}`
+  if (rawUrl.startsWith('http://')) return `ws://${rawUrl.slice('http://'.length)}`
+  return rawUrl
+}
+
 /**
  * Convert a ws(s) PI Adapter URL to the http(s) API base (protocol + host + /api/agent-chat/v1).
  * No final path segment — callers append their own (e.g. /mcp, /adapter-status).
  */
 export function piWsToHttpBase(rawUrl: string): string {
-  const m = rawUrl.match(/^(wss?|https?):\/\/([^/?#]+)/)
+  const normalized = normalizePiWsUrl(rawUrl)
+  const m = normalized.match(/^(wss?):\/\/([^/?#]+)/)
   if (!m) throw new Error(`Invalid PI_ADAPTER_URL: ${rawUrl}`)
-  const proto = m[1] === 'wss' ? 'https:' : m[1] === 'ws' ? 'http:' : `${m[1]}:`
+  const proto = m[1] === 'wss' ? 'https:' : 'http:'
   return `${proto}//${m[2]}/api/agent-chat/v1`
 }
 
@@ -36,9 +43,10 @@ export function piWsToHttp(rawUrl: string): string {
  * Uses regex parsing to avoid `new URL()` TLD validation issues.
  */
 export function buildPiWsUrl(rawUrl: string, token?: string): string {
-  if (!token) return rawUrl
+  const normalized = normalizePiWsUrl(rawUrl)
+  if (!token) return normalized
   // Strip any existing token param before appending the new one
-  const base = rawUrl.replace(/([?&])token=[^&]*&?/, (_, lead) =>
+  const base = normalized.replace(/([?&])token=[^&]*&?/, (_, lead) =>
     lead === '?' ? '?' : '',
   )
   const cleaned = base.replace(/[?&]$/, '')
