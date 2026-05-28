@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.22 |
+| 当前版本 | v1.7.23 |
 | 更新时间 | 2026-05-28 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -69,12 +69,30 @@
 | BUG-055 | — |
 | BUG-057 | AIT-187 |
 | BUG-058 | — |
+| BUG-059 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-059: topic 已创建但 PI session 创建失败后无法自动恢复
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-059 |
+| 标题 | topic 已创建但 PI session 创建失败后无法自动恢复 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-28 |
+| 修复时间 | 2026-05-28 |
+| 修复版本 | v1.7.23 |
+| Linear | — |
+| 影响模块 | packages/server/src/ws/topic-do.ts, packages/web/src/components/layout/Sidebar.tsx |
+| 描述 | 线上 `pi ui`、`dsd` 等 topic 已写入 D1，但 `pi_session_id=null`，导致前端看到话题后会话一直不可用。 |
+| 根因 | `topic.create` 先落库并广播 topic，再调用 PI adapter `createSession`；如果这一步失败，旧逻辑只返回 `ready:false`，后续 `topic.select` 对 `pi_session_id=null` 的普通话题不会重试创建 session。 |
+| 修复方案 | 抽取共享 session gateway；`topic.create` 与 `topic.select.retry` 统一调用；选中普通 topic 且 `pi_session_id=null` 时自动重试 `createSession`；审计日志记录 started/succeeded/failed 及 adapter URL、params、错误详情。 |
+| 测试证据 | `pnpm --filter @agent-chat/server typecheck`。 |
 
 ### BUG-058: 线上版本显示旧版本，且 topic.create 会话失败缺少可查询细节
 
@@ -90,7 +108,7 @@
 | 影响模块 | packages/web/src/components/layout/Sidebar.tsx, packages/server/src/ws/topic-do.ts |
 | 描述 | 线上 Sidebar 仍显示 `v1.7.20`；创建 topic 后 adapter 会话创建失败时，前端和 server logs 只能看到通用 `PI_SESSION_FAILED`，无法直接确认 adapter/PI 返回原因。 |
 | 根因 | 前端版本号为硬编码文本，`v1.7.21` 发布时未同步更新；`topic.create` 的 `createSession` catch 分支只打 Worker logger，并未写入可查询的 D1 audit log。 |
-| 修复方案 | Sidebar 版本号更新为 `v1.7.22`；`topic.create` 会话创建失败时写入 `topic.create.session_failed` 审计日志，并在错误事件 `details.error` 中附带失败消息。 |
+| 修复方案 | Sidebar 版本号更新为 `v1.7.22`；`topic.create` 会话创建失败时写入审计日志，并在错误事件 `details.error` 中附带失败消息。 |
 | 测试证据 | `pnpm --filter @agent-chat/server typecheck`；`pnpm --filter @agent-chat/server test -- topic-do topic-handler server-logs`；`pnpm --filter @agent-chat/server build`；`pnpm --filter @agent-chat/web test -- ws-client-dispatch`；`pnpm --filter @agent-chat/web typecheck`；`pnpm --filter @agent-chat/web build`。 |
 
 ### BUG-057: message.end 越过尾部 delta 导致刷新后正文截断

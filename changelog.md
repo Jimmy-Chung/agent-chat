@@ -1,10 +1,18 @@
 # Changelog
 
+## 2026-05-28 [v1.7.23] — 会话创建失败恢复
+
+### BUG-059: topic 已创建但 PI session 创建失败后无法自动恢复
+- server 将 topic session 创建流程抽为共享 gateway，统一记录 `topic.session_create.started/succeeded/failed`
+- 失败日志补充 `trigger`、`adapterUrl`、topic 信息、createSession params 与错误 `code/name/message`
+- 选中已落库但 `pi_session_id=null` 的普通话题时自动重试 `createSession`，避免一次瞬时失败留下永久不可用话题
+- 版本显示更新为 `v1.7.23`
+
 ## 2026-05-28 [v1.7.22] — 线上版本显示与会话创建诊断
 
 ### BUG-058: 线上版本仍显示 v1.7.20，且 topic.create 会话失败缺少可查询细节
 - 修复 Sidebar 底部版本号仍硬编码为旧版本的问题，版本显示更新为 `v1.7.22`
-- server 在 `topic.create` 调用 PI adapter `createSession` 失败时写入 `topic.create.session_failed` 审计日志，记录错误 `code/name/message`
+- server 在 `topic.create` 调用 PI adapter `createSession` 失败时写入审计日志，记录错误 `code/name/message`
 - `PI_SESSION_FAILED` 推送错误中附带失败详情，便于线上直接确认 adapter/PI 返回的真实原因
 - 验证：`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server test -- topic-do topic-handler server-logs`、`pnpm --filter @agent-chat/server build`、`pnpm --filter @agent-chat/web test -- ws-client-dispatch`、`pnpm --filter @agent-chat/web typecheck`、`pnpm --filter @agent-chat/web build`
 

@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
   encodeFrame, decodeFrame, createFrame, type WSFrame,
+  type Topic,
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
   topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
@@ -47,6 +48,8 @@ interface DOEnv {
 }
 
 const HEARTBEAT_INTERVAL_MS = 30_000
+
+type SessionCreateTrigger = 'topic.create' | 'topic.select.retry'
 
 export class TopicDurableObject extends DurableObject<DOEnv> {
   private piClient: PiClient | null = null
@@ -214,6 +217,133 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       logger.info({ topicId }, 'Background session restoration succeeded')
     } catch (err) {
       logger.warn({ err, topicId }, 'Background session restoration failed')
+    }
+  }
+
+  private sessionCreateErrorPayload(err: unknown): Record<string, unknown> {
+    if (err instanceof Error) {
+      return {
+        code: 'code' in err ? (err as { code?: unknown }).code : undefined,
+        name: err.name,
+        message: err.message,
+      }
+    }
+    return { message: String(err) }
+  }
+
+  private async logSessionCreateFailure(input: {
+    trigger: SessionCreateTrigger
+    topic: Topic
+    params?: unknown
+    err?: unknown
+    code?: string
+    message?: string
+  }): Promise<void> {
+    await logGatewayEvent({
+      eventKind: 'topic.session_create.failed',
+      topicId: input.topic.id,
+      status: 'failed',
+      payload: {
+        trigger: input.trigger,
+        topicName: input.topic.name,
+        agentType: input.topic.agent_type,
+        adapterUrl: this.config?.piAdapterUrl,
+        params: input.params,
+        ...(input.err
+          ? this.sessionCreateErrorPayload(input.err)
+          : { code: input.code, message: input.message }),
+      },
+    })
+  }
+
+  private async establishTopicSession(input: {
+    ws: WebSocket
+    topic: Topic
+    trigger: SessionCreateTrigger
+    providerId?: string
+  }): Promise<boolean> {
+    const { ws, topic, trigger, providerId } = input
+    logger.info({ topicId: topic.id, trigger }, 'topic session gateway starting')
+
+    try {
+      const piForCreate = await this.ensurePiClient()
+      logger.info({ topicId: topic.id, trigger, hasPi: !!piForCreate }, 'topic session gateway resolved PI client')
+      if (!piForCreate) {
+        await this.logSessionCreateFailure({
+          trigger,
+          topic,
+          code: 'NO_PI_CLIENT',
+          message: 'No PI client available',
+        })
+        this.broadcastAll('error', {
+          code: 'PI_SESSION_FAILED',
+          message: 'No PI client available',
+          details: {
+            topicId: topic.id,
+            trigger,
+            error: 'No PI client available',
+          },
+        })
+        this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
+        return false
+      }
+
+      const params = buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0]
+      if (providerId) {
+        (params as Record<string, unknown>).providerId = providerId
+      }
+
+      await logGatewayEvent({
+        eventKind: 'topic.session_create.started',
+        topicId: topic.id,
+        status: 'started',
+        payload: {
+          trigger,
+          topicName: topic.name,
+          agentType: topic.agent_type,
+          adapterUrl: this.config?.piAdapterUrl,
+          params,
+        },
+      })
+      logger.info({ topicId: topic.id, trigger, params }, 'topic session gateway calling createSession')
+      const result = await piForCreate.createSession(params)
+      logger.info({ topicId: topic.id, trigger, sessionId: result.sessionId }, 'topic session gateway createSession succeeded')
+      const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+      if (updated) {
+        this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+      }
+      await logGatewayEvent({
+        eventKind: 'topic.session_create.succeeded',
+        topicId: topic.id,
+        sessionId: result.sessionId,
+        status: 'succeeded',
+        payload: {
+          trigger,
+          topicName: topic.name,
+          agentType: topic.agent_type,
+        },
+      })
+      this.sendTo(ws, 'session.status', { topicId: topic.id, ready: true })
+      return true
+    } catch (err) {
+      logger.error({ err, topicId: topic.id, trigger }, 'createSession failed')
+      await this.logSessionCreateFailure({
+        trigger,
+        topic,
+        params: buildSessionParams(topic),
+        err,
+      })
+      this.broadcastAll('error', {
+        code: 'PI_SESSION_FAILED',
+        message: 'Failed to create agent session',
+        details: {
+          topicId: topic.id,
+          trigger,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      })
+      this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
+      return false
     }
   }
 
@@ -459,6 +589,12 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
           if (hasSession && pi && !pi.hasSession(topic!.pi_session_id!)) {
             this.ctx.waitUntil(this.restoreSessionInBackground(d.topicId, pi))
+          } else if (topic && topic.kind === 'normal' && !hasSession) {
+            this.ctx.waitUntil(this.establishTopicSession({
+              ws,
+              topic,
+              trigger: 'topic.select.retry',
+            }))
           }
         }
 
@@ -538,64 +674,12 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
         // Session gateway: await createSession directly in the handler.
         // DO guarantees webSocketMessage handler runs to completion — no GC risk.
-        logger.info({ topicId: topic.id }, 'topic.create: starting session gateway')
-        try {
-          const piForCreate = await this.ensurePiClient()
-          logger.info({ topicId: topic.id, hasPi: !!piForCreate }, 'topic.create: ensurePiClient resolved')
-          if (!piForCreate) {
-            await logGatewayEvent({
-              eventKind: 'topic.create.session_failed',
-              topicId: topic.id,
-              status: 'failed',
-              payload: {
-                code: 'NO_PI_CLIENT',
-                message: 'No PI client available',
-              },
-            })
-            this.broadcastAll('error', {
-              code: 'PI_SESSION_FAILED',
-              message: 'No PI client available',
-              details: {
-                error: 'No PI client available',
-              },
-            })
-            this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
-            break
-          }
-          const params = buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0]
-          // AIT-152 — forward optional providerId from frontend to createSession
-          if (data.providerId) {
-            (params as Record<string, unknown>).providerId = data.providerId
-          }
-          logger.info({ topicId: topic.id, params }, 'topic.create: calling createSession')
-          const result = await piForCreate.createSession(params)
-          logger.info({ topicId: topic.id, sessionId: result.sessionId }, 'topic.create: createSession succeeded')
-          const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
-          if (updated) {
-            this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
-          }
-          this.sendTo(ws, 'session.status', { topicId: topic.id, ready: true })
-        } catch (err) {
-          logger.error({ err, topicId: topic.id }, 'createSession failed in topic.create')
-          await logGatewayEvent({
-            eventKind: 'topic.create.session_failed',
-            topicId: topic.id,
-            status: 'failed',
-            payload: {
-              code: err instanceof Error && 'code' in err ? (err as { code?: unknown }).code : undefined,
-              name: err instanceof Error ? err.name : undefined,
-              message: err instanceof Error ? err.message : String(err),
-            },
-          })
-          this.broadcastAll('error', {
-            code: 'PI_SESSION_FAILED',
-            message: 'Failed to create agent session',
-            details: {
-              error: err instanceof Error ? err.message : String(err),
-            },
-          })
-          this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })
-        }
+        await this.establishTopicSession({
+          ws,
+          topic,
+          trigger: 'topic.create',
+          providerId: data.providerId,
+        })
         break
       }
 
