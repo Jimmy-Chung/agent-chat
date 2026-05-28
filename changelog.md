@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-29 [v1.7.25] — 会话失败错误展开
+
+### BUG-061: Adapter 返回对象错误时 createSession 只显示 [object Object]
+- server 新增 `errorDetail`，统一展开 Error、RPC error、嵌套 error payload 与普通对象
+- PI RPC error reject 保留 adapter 原始错误详情，`topic.session_create.failed` 与前端 `PI_SESSION_FAILED` 不再退化成 `[object Object]`
+- PI adapter WebSocket 在 ready 前关闭时返回可读 `ws_close_<code>` 与 close reason，便于识别缺失/无效 PI token 等鉴权问题
+- 版本显示更新为 `v1.7.25`
+
 ## 2026-05-29 [v1.7.24] — Adapter URL scheme 兼容
 
 ### BUG-060: Adapter socket URL 以 https:// 保存时 createSession 失败

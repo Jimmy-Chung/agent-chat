@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import type { AppConfig } from '../config'
+import { errorDetail } from '../error-detail'
 import { logger } from '../logger'
 import { logPiEvent } from '../server-logs'
 import { buildPiWsUrl } from '@agent-chat/protocol'
@@ -16,10 +17,12 @@ import {
 
 export class PiRpcError extends Error {
   readonly code: string
-  constructor(code: string, message: string) {
+  readonly detail: unknown
+  constructor(code: string, message: string, detail?: unknown) {
     super(`RPC error: ${code} - ${message}`)
     this.name = 'PiRpcError'
     this.code = code
+    this.detail = detail
   }
 }
 
@@ -78,9 +81,11 @@ class PiSessionConn extends EventEmitter {
       const url = buildPiWsUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
       logger.info({ url: url.replace(/token=[^&]+/, 'token=***'), sessionId: this.sessionId }, 'PI session WS connecting')
       const ws = new WebSocket(url)
+      let settled = false
       ws.addEventListener('open', async () => {
         logger.info({ sessionId: this.sessionId }, 'PI session WS connected')
         await this.waitForReady()
+        settled = true
         resolve()
       })
 
@@ -121,6 +126,14 @@ class PiSessionConn extends EventEmitter {
 
       ws.addEventListener('close', (event) => {
         logger.info({ code: event.code, reason: event.reason, sessionId: this.sessionId }, 'PI session WS closed')
+        if (!settled) {
+          settled = true
+          reject(new PiRpcError(
+            `ws_close_${event.code}`,
+            event.reason || `PI adapter WebSocket closed before ready (code ${event.code})`,
+            { code: event.code, reason: event.reason },
+          ))
+        }
         // AIT-150 ④ — emit reconnecting first so UI shows transient state,
         // then disconnected. Full reconnect loop deferred to future version.
         this.emit('event', {
@@ -140,7 +153,10 @@ class PiSessionConn extends EventEmitter {
 
       ws.addEventListener('error', (err) => {
         logger.error({ err, sessionId: this.sessionId }, 'PI session WS error')
-        if (ws.readyState !== WebSocket.OPEN) reject(err)
+        if (ws.readyState !== WebSocket.OPEN && !settled) {
+          settled = true
+          reject(err)
+        }
       })
 
       this.ws = ws
@@ -247,7 +263,8 @@ class PiSessionConn extends EventEmitter {
     this.pending.delete(id)
     clearTimeout(pending.timer)
     if (error) {
-      pending.reject(new PiRpcError(error.code, error.message))
+      const detail = errorDetail(error)
+      pending.reject(new PiRpcError(String(detail.code ?? 'rpc_error'), detail.message, error))
     } else {
       pending.resolve(result)
     }

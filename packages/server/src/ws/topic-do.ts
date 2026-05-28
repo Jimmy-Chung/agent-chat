@@ -12,6 +12,7 @@ import {
   providerRpcSchema,
 } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
+import { errorDetail } from '../error-detail'
 import { PiClient } from '../pi/client'
 import { routePiEvents } from '../pi/event-router'
 import { logger } from '../logger'
@@ -221,14 +222,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
   }
 
   private sessionCreateErrorPayload(err: unknown): Record<string, unknown> {
-    if (err instanceof Error) {
-      return {
-        code: 'code' in err ? (err as { code?: unknown }).code : undefined,
-        name: err.name,
-        message: err.message,
-      }
-    }
-    return { message: String(err) }
+    return errorDetail(err) as unknown as Record<string, unknown>
   }
 
   private async logSessionCreateFailure(input: {
@@ -339,7 +333,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         details: {
           topicId: topic.id,
           trigger,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorDetail(err),
         },
       })
       this.sendTo(ws, 'session.status', { topicId: topic.id, ready: false })

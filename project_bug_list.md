@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.24 |
+| 当前版本 | v1.7.25 |
 | 更新时间 | 2026-05-29 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -71,12 +71,30 @@
 | BUG-058 | — |
 | BUG-059 | — |
 | BUG-060 | — |
+| BUG-061 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-061: Adapter 返回对象错误时 createSession 只显示 [object Object]
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-061 |
+| 标题 | Adapter 返回对象错误时 createSession 只显示 [object Object] |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-29 |
+| 修复时间 | 2026-05-29 |
+| 修复版本 | v1.7.25 |
+| Linear | — |
+| 影响模块 | packages/server/src/error-detail.ts, packages/server/src/pi/client.ts, packages/server/src/ws/topic-do.ts |
+| 描述 | 线上 `pi ui` topic 重试失败时，前端与 `topic.session_create.failed` 只显示 `message: "[object Object]"`，无法判断 adapter 返回的真实 code/message。 |
+| 根因 | server 对非 Error 对象直接 `String(err)`，且 PI RPC error 只假设 payload 一定是 `{ code, message: string }`。 |
+| 修复方案 | 增加统一错误展开工具；PI RPC reject 保留原始 detail；session 创建失败日志和前端错误 payload 输出结构化 error；WS ready 前关闭时返回 close code/reason。 |
+| 测试证据 | `pnpm --filter @agent-chat/server test -- error-detail pi-client server-logs`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server build`。 |
 
 ### BUG-060: Adapter socket URL 以 https:// 保存时 createSession 失败
 
