@@ -89,7 +89,8 @@ async function sendPushToAll(payload: PushPayload, config: AppConfig): Promise<v
   )
 }
 
-const lastSeqBySession = new Map<string, number>()
+const seenSeqBySession = new Map<string, Set<number>>()
+const MAX_SEEN_SEQ_PER_SESSION = 2048
 // Track current assistant messageId per session so error events can inject error text
 const currentAssistantBySession = new Map<string, string>()
 // Serialize events per session to prevent out-of-order broadcasts
@@ -106,6 +107,21 @@ interface PendingTurn {
   startedAt: number
 }
 const pendingTurnsByTopic = new Map<string, PendingTurn>()
+interface StreamDisconnectFinalizer {
+  timer: ReturnType<typeof setTimeout>
+  sessionId: string
+  startedAt: number
+}
+const streamDisconnectFinalizersByTopic = new Map<string, StreamDisconnectFinalizer>()
+
+export const DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS = 90_000
+
+function resolveStreamDisconnectFinalizeTimeout(): number {
+  const raw = typeof process !== 'undefined' ? process.env?.STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS : undefined
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
+  if (Number.isFinite(parsed) && parsed > 0) return parsed
+  return DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS
+}
 
 export function startPendingTurnWatchdog(
   topicId: string,
@@ -141,23 +157,92 @@ export function clearPendingTurnWatchdog(topicId: string): void {
   pendingTurnsByTopic.delete(topicId)
 }
 
+export function startStreamDisconnectFinalizer(
+  topicId: string,
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+  timeoutMs = resolveStreamDisconnectFinalizeTimeout(),
+): void {
+  clearStreamDisconnectFinalizer(topicId)
+  const timer = setTimeout(() => {
+    streamDisconnectFinalizersByTopic.delete(topicId)
+    void finalizeStreamingMessagesAfterDisconnect(topicId, sessionId, broadcaster, timeoutMs)
+  }, timeoutMs)
+  streamDisconnectFinalizersByTopic.set(topicId, {
+    timer,
+    sessionId,
+    startedAt: Date.now(),
+  })
+}
+
+export function clearStreamDisconnectFinalizer(topicId: string): void {
+  const pending = streamDisconnectFinalizersByTopic.get(topicId)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  streamDisconnectFinalizersByTopic.delete(topicId)
+}
+
+async function finalizeStreamingMessagesAfterDisconnect(
+  topicId: string,
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+  timeoutMs: number,
+): Promise<void> {
+  try {
+    await messageRepo.flushParts()
+  } catch (err) {
+    logger.warn({ err, topicId, sessionId }, 'Failed to flush pending parts before disconnect finalize')
+  }
+
+  const messages = await messageRepo.listMessagesByTopic(topicId)
+  const streamingMessages = messages.filter((message) => message.status === 'streaming')
+  if (streamingMessages.length === 0) return
+
+  const now = Date.now()
+  logger.warn(
+    { topicId, sessionId, timeoutMs, messageIds: streamingMessages.map((message) => message.id) },
+    'Finalizing streaming messages after PI session disconnect timeout',
+  )
+  for (const message of streamingMessages) {
+    await messageRepo.updateMessage(message.id, {
+      status: 'aborted',
+      finished_at: now,
+      stop_reason: 'aborted',
+    })
+    broadcaster.broadcast('message.end', {
+      topicId,
+      messageId: message.id,
+      stopReason: 'aborted',
+    })
+  }
+  broadcaster.broadcast('agent.status', { topicId, state: 'idle' })
+}
+
 export function routePiEvents(
   pi: PiClient,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
 ): void {
   pi.on('session.recreated', ({ sessionId }: { sessionId: string }) => {
-    lastSeqBySession.delete(sessionId)
+    seenSeqBySession.delete(sessionId)
   })
 
   pi.on('event', (event: PIEvent) => {
-    const lastSeq = lastSeqBySession.get(event.sessionId) ?? 0
     // AIT-150 ② — session.health events carry seq=0 and must not be filtered by
     // seq dedup; they are control-plane signals emitted on connect/disconnect.
     const isHealth = event.payload.kind === 'session.health'
-    if (!isHealth && event.seq <= lastSeq) return
     if (!isHealth) {
-      lastSeqBySession.set(event.sessionId, event.seq)
+      let seenSeq = seenSeqBySession.get(event.sessionId)
+      if (!seenSeq) {
+        seenSeq = new Set<number>()
+        seenSeqBySession.set(event.sessionId, seenSeq)
+      }
+      if (seenSeq.has(event.seq)) return
+      seenSeq.add(event.seq)
+      if (seenSeq.size > MAX_SEEN_SEQ_PER_SESSION) {
+        const oldest = seenSeq.values().next().value as number | undefined
+        if (oldest !== undefined) seenSeq.delete(oldest)
+      }
     }
 
     logger.info(
@@ -236,6 +321,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
   switch (payload.kind) {
     case 'message.start': {
       if (!topicId) return
+      clearStreamDisconnectFinalizer(topicId)
       let msg = await messageRepo.getMessage(payload.messageId)
       if (!msg) {
         msg = await messageRepo.createMessage({
@@ -279,6 +365,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'message.end': {
       if (!topicId) return
+      clearStreamDisconnectFinalizer(topicId)
       await messageRepo.flushParts()
 
       // If the SDK returned an error, inject the error text as a text part before finalizing
@@ -434,6 +521,9 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'agent.status': {
       if (!topicId) return
+      if (payload.state === 'idle') {
+        clearStreamDisconnectFinalizer(topicId)
+      }
       hub.broadcast('agent.status', { topicId, ...mapAgentState(payload.state) })
       break
     }
@@ -580,6 +670,14 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'session.health': {
       if (!topicId) return
+      if (payload.state === 'connected') {
+        clearStreamDisconnectFinalizer(topicId)
+      } else if (payload.state === 'disconnected') {
+        const messages = await messageRepo.listMessagesByTopic(topicId)
+        if (messages.some((message) => message.status === 'streaming')) {
+          startStreamDisconnectFinalizer(topicId, sessionId, hub)
+        }
+      }
       hub.broadcast('session.health', {
         topicId,
         state: payload.state,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-28 [v1.7.21] — AIT-187 流式尾部截断修复
+
+### BUG-057: message.end 越过尾部 delta 导致刷新后正文截断
+- server PI 事件去重从 session 级 max seq 改为 per-session seen seq 集合，允许较小 seq 的 late delta 在未见过时继续处理
+- session 断连后对仍处于 `streaming` 的消息启动延迟 finalizer，超时后收口为 `aborted`，避免 DB 永久 streaming
+- web 端收到 `message.end` 后若又收到 late text/thinking delta，会从已持久化 part 续写并更新最终 snapshot
+- 与 adapter 侧确认最终成因：adapter 旧链路允许 `message.end` 越过仍在合并/限速队列的尾部 `message.delta`，agent-chat 旧 max-seq 去重进一步丢弃 late delta
+- 17:34 `das.` 真实样本验证修复后 adapter sent、agent-chat received、D1/history 对齐，D1 为 `done/end_turn`
+- 验证：`pnpm --filter @agent-chat/server test -- pi-event-router`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server build`、`pnpm --filter @agent-chat/web test -- ws-client-dispatch`、`pnpm --filter @agent-chat/web typecheck`、`pnpm --filter @agent-chat/web build`
+- 版本显示更新为 `v1.7.21`
+
 ## 2026-05-28 [v1.7.20] — 线上日志查询修复
 
 ### BUG-056: server logs 持久化与 Pages 转发

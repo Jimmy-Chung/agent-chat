@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.20 |
+| 当前版本 | v1.7.21 |
 | 更新时间 | 2026-05-28 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -67,12 +67,30 @@
 | BUG-053 | — |
 | BUG-054 | — |
 | BUG-055 | — |
+| BUG-057 | AIT-187 |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-057: message.end 越过尾部 delta 导致刷新后正文截断
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-057 |
+| 标题 | message.end 越过尾部 delta 导致刷新后正文截断 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-28 |
+| 修复时间 | 2026-05-28 |
+| 修复版本 | v1.7.21 |
+| Linear | AIT-187 |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/web/src/lib/ws-client.ts |
+| 描述 | 线上 `das.` 话题中 assistant 流式输出后，刷新历史可能出现正文截断，严重时只剩 thinking。 |
+| 根因 | adapter 旧链路允许 `message.end` 越过仍在 `DeltaMerger` / rate-limit queue 中的尾部 `message.delta`；agent-chat 旧 session 级 max-seq 去重在先处理较大 `message.end seq` 后，会丢弃后到的较小 seq delta。 |
+| 修复方案 | server PI 事件去重改为 per-session seen seq 集合；断连后为 streaming 消息增加延迟 finalizer；web 端允许 `message.end` 后的 late text/thinking delta 从已持久化 part 续写并更新最终 snapshot。 |
+| 测试证据 | `pnpm --filter @agent-chat/server test -- pi-event-router`；`pnpm --filter @agent-chat/server typecheck`；`pnpm --filter @agent-chat/server build`；`pnpm --filter @agent-chat/web test -- ws-client-dispatch`；`pnpm --filter @agent-chat/web typecheck`；`pnpm --filter @agent-chat/web build`。 |
 
 ### BUG-055: Codex Programming 话题创建后 header 显示为 Claude Code
 

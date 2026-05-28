@@ -7,7 +7,12 @@ import * as pushRepo from '../db/repos/push-subscription.repo'
 import type { AppConfig } from '../config'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
-import { routePiEvents, mapAgentState } from '../pi/event-router'
+import {
+  clearStreamDisconnectFinalizer,
+  DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS,
+  routePiEvents,
+  mapAgentState,
+} from '../pi/event-router'
 
 function createMockHub() {
   const broadcastEvents: ServerEvent[] = []
@@ -138,6 +143,95 @@ describe('Event router — session.health', () => {
     const msg = await messageRepo.getMessage('msg-stream-disc')
     expect(msg?.status).toBe('streaming')
     expect(msg?.stop_reason).toBeNull()
+    clearStreamDisconnectFinalizer(topic.id)
+  })
+
+  it('finalizes streaming messages after session.health disconnected timeout', async () => {
+    vi.useFakeTimers()
+    let topicId: string | null = null
+    try {
+      const topic = await topicRepo.createTopic({ name: 'Streaming Disconnect Timeout Topic', kind: 'normal', agentType: 'general' })
+      topicId = topic.id
+      await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-stream-timeout' })
+
+      mockPi.emit('event', {
+        seq: 1,
+        sessionId: 'sess-stream-timeout',
+        ts: Date.now(),
+        payload: { kind: 'message.start', messageId: 'msg-stream-timeout', role: 'assistant' },
+      } satisfies PIEvent)
+      await vi.advanceTimersByTimeAsync(1)
+      mockHub.clearBroadcastEvents()
+
+      mockPi.emit('event', {
+        seq: 0,
+        sessionId: 'sess-stream-timeout',
+        ts: Date.now(),
+        payload: { kind: 'session.health', state: 'disconnected', piSessionId: 'sess-stream-timeout' },
+      } satisfies PIEvent)
+      await vi.advanceTimersByTimeAsync(DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS - 1)
+
+      expect(mockHub.getBroadcastEvents().map((e) => e.type)).toEqual(['session.health'])
+      expect((await messageRepo.getMessage('msg-stream-timeout'))?.status).toBe('streaming')
+
+      await vi.advanceTimersByTimeAsync(1)
+      await Promise.resolve()
+
+      const events = mockHub.getBroadcastEvents()
+      expect(events.map((e) => e.type)).toEqual(['session.health', 'message.end', 'agent.status'])
+      const end = events.find((e) => e.type === 'message.end')!
+      expect((end.data as Record<string, unknown>).messageId).toBe('msg-stream-timeout')
+      expect((end.data as Record<string, unknown>).stopReason).toBe('aborted')
+      const idle = events.find((e) => e.type === 'agent.status')!
+      expect((idle.data as Record<string, unknown>).state).toBe('idle')
+      const msg = await messageRepo.getMessage('msg-stream-timeout')
+      expect(msg?.status).toBe('aborted')
+      expect(msg?.stop_reason).toBe('aborted')
+    } finally {
+      if (topicId) clearStreamDisconnectFinalizer(topicId)
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels disconnected finalize when session reconnects before timeout', async () => {
+    vi.useFakeTimers()
+    let topicId: string | null = null
+    try {
+      const topic = await topicRepo.createTopic({ name: 'Streaming Reconnect Topic', kind: 'normal', agentType: 'general' })
+      topicId = topic.id
+      await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-stream-reconnect' })
+
+      mockPi.emit('event', {
+        seq: 1,
+        sessionId: 'sess-stream-reconnect',
+        ts: Date.now(),
+        payload: { kind: 'message.start', messageId: 'msg-stream-reconnect', role: 'assistant' },
+      } satisfies PIEvent)
+      await vi.advanceTimersByTimeAsync(1)
+      mockHub.clearBroadcastEvents()
+
+      mockPi.emit('event', {
+        seq: 0,
+        sessionId: 'sess-stream-reconnect',
+        ts: Date.now(),
+        payload: { kind: 'session.health', state: 'disconnected', piSessionId: 'sess-stream-reconnect' },
+      } satisfies PIEvent)
+      await vi.advanceTimersByTimeAsync(10_000)
+      mockPi.emit('event', {
+        seq: 0,
+        sessionId: 'sess-stream-reconnect',
+        ts: Date.now(),
+        payload: { kind: 'session.health', state: 'connected', piSessionId: 'sess-stream-reconnect' },
+      } satisfies PIEvent)
+
+      await vi.advanceTimersByTimeAsync(DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS)
+
+      expect(mockHub.getBroadcastEvents().map((e) => e.type)).toEqual(['session.health', 'session.health'])
+      expect((await messageRepo.getMessage('msg-stream-reconnect'))?.status).toBe('streaming')
+    } finally {
+      if (topicId) clearStreamDisconnectFinalizer(topicId)
+      vi.useRealTimers()
+    }
   })
 
   it('ignores session.health for unknown session', async () => {
@@ -194,6 +288,48 @@ describe('Event router — session.health', () => {
     await new Promise((r) => setTimeout(r, 50))
 
     expect(mockHub.broadcast).toHaveBeenCalledTimes(2)
+  })
+
+  it('routes out-of-order non-health events while still deduplicating repeated seq', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Out Of Order Delta', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-ooo-delta' })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-ooo-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId: 'msg-ooo-delta', role: 'assistant' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    mockPi.emit('event', {
+      seq: 3,
+      sessionId: 'sess-ooo-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId: 'msg-ooo-delta', stopReason: 'end_turn' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    const lateDelta = {
+      seq: 2,
+      sessionId: 'sess-ooo-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.delta', messageId: 'msg-ooo-delta', part: { kind: 'text', content: 'tail' } },
+    } satisfies PIEvent
+    mockPi.emit('event', lateDelta)
+    mockPi.emit('event', lateDelta)
+    await new Promise((r) => setTimeout(r, 50))
+    await messageRepo.flushParts()
+
+    const events = mockHub.getBroadcastEvents()
+    expect(events.map((e) => e.type)).toContain('message.end')
+    const deltas = events.filter((e) => e.type === 'message.delta')
+    expect(deltas).toHaveLength(1)
+    expect((deltas[0].data as { messageId: string }).messageId).toBe('msg-ooo-delta')
+
+    const parts = await messageRepo.getMessageParts('msg-ooo-delta')
+    expect(parts).toHaveLength(1)
+    expect(parts[0].content_json).toBe(JSON.stringify({ kind: 'text', content: 'tail' }))
   })
 })
 

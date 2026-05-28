@@ -44,6 +44,29 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
     useMessageStore.getState().appendDelta(messageId, content)
   }
 
+  function simulateWsTextDelta(messageId: string, content: string) {
+    const store = useMessageStore.getState()
+    const hadStreamingText = useMessageStore.getState().streamingText[messageId] !== undefined
+    if (!hadStreamingText) {
+      const existingText = store.getPartContent(messageId, 'text')
+      store.setStreamingText(messageId, existingText)
+    }
+    store.appendDelta(messageId, content)
+    const nextText = `${useMessageStore.getState().streamingText[messageId] ?? ''}`
+    store.upsertSnapshotPart(
+      messageId,
+      'text',
+      JSON.stringify({ content: nextText }),
+      `${messageId}-text`,
+    )
+    const status = Object.values(useMessageStore.getState().byTopic)
+      .flat()
+      .find((entry) => entry.id === messageId)?.status
+    if (!hadStreamingText && status && status !== 'streaming') {
+      store.endStreaming(messageId)
+    }
+  }
+
   function simulateMessageEnd(messageId: string, stopReason: string) {
     const store = useMessageStore.getState()
     if (store.streamingText[messageId] !== undefined) {
@@ -59,6 +82,16 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
       }
       store.endStreaming(messageId)
     }
+    store.updateMessage(messageId, {
+      status: stopReason === 'aborted' ? 'aborted' : 'done',
+      finished_at: Date.now(),
+      stop_reason: stopReason,
+    })
+  }
+
+  function simulateWsMessageEnd(messageId: string, stopReason: string) {
+    const store = useMessageStore.getState()
+    store.endStreaming(messageId)
     store.updateMessage(messageId, {
       status: stopReason === 'aborted' ? 'aborted' : 'done',
       finished_at: Date.now(),
@@ -100,6 +133,22 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
     const parts = state.partsByMessage['msg1']
     expect(parts).toHaveLength(1)
     expect(JSON.parse(parts![0].content_json)).toBe('Hello World!')
+  })
+
+  it('AIT-187: message.end 后到达的 late text delta 仍更新最终快照', () => {
+    simulateMessageStart('topic1', 'msg1')
+    simulateWsTextDelta('msg1', 'Hello ')
+    simulateWsMessageEnd('msg1', 'end_turn')
+
+    expect(useMessageStore.getState().streamingText['msg1']).toBeUndefined()
+
+    simulateWsTextDelta('msg1', 'tail')
+
+    const state = useMessageStore.getState()
+    const msg = state.byTopic['topic1']?.[0]
+    expect(msg!.status).toBe('done')
+    expect(state.streamingText['msg1']).toBeUndefined()
+    expect(JSON.parse(state.partsByMessage['msg1'][0].content_json)).toEqual({ content: 'Hello tail' })
   })
 
   it('C5: message.end stopReason=aborted 设置 aborted 状态', () => {

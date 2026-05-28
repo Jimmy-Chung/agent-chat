@@ -48,6 +48,21 @@ export function rawTopicToTopic(raw: Record<string, unknown>): import('@agent-ch
   }
 }
 
+function getMessageStatus(messageId: string): string | undefined {
+  const { byTopic } = useMessageStore.getState()
+  for (const messages of Object.values(byTopic)) {
+    const message = messages.find((entry) => entry.id === messageId)
+    if (message) return message.status
+  }
+}
+
+function clearFinishedStreamingScratch(messageId: string): void {
+  const status = getMessageStatus(messageId)
+  if (status && status !== 'streaming') {
+    useMessageStore.getState().endStreaming(messageId)
+  }
+}
+
 class WsClient {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -239,6 +254,7 @@ class WsClient {
       case 'message.delta': {
         const part = event.data.part
         if (part.kind === 'text') {
+          const hadStreamingText = useMessageStore.getState().streamingText[event.data.messageId] !== undefined
           if (useMessageStore.getState().streamingText[event.data.messageId] === undefined) {
             const existingText = messageStore.getPartContent(event.data.messageId, 'text')
             messageStore.setStreamingText(event.data.messageId, existingText)
@@ -251,8 +267,10 @@ class WsClient {
             JSON.stringify({ content: nextText }),
             `${event.data.messageId}-text`,
           )
+          if (!hadStreamingText) clearFinishedStreamingScratch(event.data.messageId)
         }
         if (part.kind === 'thinking') {
+          const hadStreamingThinking = useMessageStore.getState().streamingThinking[event.data.messageId] !== undefined
           if (useMessageStore.getState().streamingThinking[event.data.messageId] === undefined) {
             const existingThinking = messageStore.getPartContent(event.data.messageId, 'thinking')
             messageStore.setStreamingThinking(event.data.messageId, existingThinking)
@@ -265,6 +283,7 @@ class WsClient {
             JSON.stringify({ content: nextThinking }),
             `${event.data.messageId}-thinking`,
           )
+          if (!hadStreamingThinking) clearFinishedStreamingScratch(event.data.messageId)
         }
         if (part.kind === 'tool_input') {
           messageStore.appendToolInputDelta(event.data.messageId, part.toolUseId, part.partial)
