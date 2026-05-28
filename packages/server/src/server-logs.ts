@@ -17,6 +17,18 @@ export interface ServerLogEntry {
   payloadPreview: string
 }
 
+export interface GatewayLogInput {
+  eventKind: string
+  topicId?: string
+  sessionId?: string
+  messageId?: string
+  clientMessageId?: string
+  turnId?: string
+  attempt?: number
+  status?: string
+  payload?: unknown
+}
+
 const MAX_PREVIEW_CHARS = 400
 
 function normalizePayloadPreview(payload: unknown): string {
@@ -66,17 +78,7 @@ export async function logPiEvent(
   }
 }
 
-export async function logGatewayEvent(input: {
-  eventKind: string
-  topicId?: string
-  sessionId?: string
-  messageId?: string
-  clientMessageId?: string
-  turnId?: string
-  attempt?: number
-  status?: string
-  payload?: unknown
-}) {
+export async function logGatewayEvent(input: GatewayLogInput) {
   const entry: ServerLogEntry = {
     ts: Date.now(),
     source: 'gateway',

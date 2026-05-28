@@ -12,6 +12,7 @@ import {
   buildArtifactAccessUrl,
   createArtifactTokenWithSecret,
 } from '../r2/artifact-access'
+import type { GatewayLogInput } from '../server-logs'
 
 export interface MessageDeliveryBroadcaster {
   broadcast(type: string, data: unknown): void
@@ -196,7 +197,7 @@ async function attemptDelivery(
     // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        void logGatewayEvent({
+        await writeGatewayLog({
           eventKind: 'sendUserMessage.dispatch',
           topicId: input.topicId,
           sessionId,
@@ -247,7 +248,7 @@ async function attemptDelivery(
           input.broadcaster,
           resolveTurnWatchdogTimeout(),
         )
-        void logGatewayEvent({
+        await writeGatewayLog({
           eventKind: 'sendUserMessage.ack',
           topicId: input.topicId,
           sessionId,
@@ -263,7 +264,7 @@ async function attemptDelivery(
         return true
       } catch (rpcErr) {
         if (rpcErr instanceof PiRpcError && rpcErr.code === 'session_busy' && attempt < 2) {
-          void logGatewayEvent({
+          await writeGatewayLog({
             eventKind: 'sendUserMessage.session_busy',
             topicId: input.topicId,
             sessionId,
@@ -298,7 +299,7 @@ async function attemptDelivery(
       },
       'sendUserMessage RPC failed',
     )
-    void logGatewayEvent({
+    await writeGatewayLog({
       eventKind: 'sendUserMessage.failed',
       topicId: input.topicId,
       sessionId,
@@ -331,7 +332,7 @@ async function ensureDeliverableSession(
   try {
     await pi.reconnectSession(sessionId)
     logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected for delivery')
-    void logGatewayEvent({
+    await writeGatewayLog({
       eventKind: 'session.reconnect',
       topicId: topic.id,
       sessionId,
@@ -342,7 +343,7 @@ async function ensureDeliverableSession(
   } catch (err) {
     const code = err instanceof PiRpcError ? err.code : undefined
     logger.warn({ err, code, topicId: topic.id, sessionId }, 'reconnectSession failed in ensureDeliverableSession')
-    void logGatewayEvent({
+    await writeGatewayLog({
       eventKind: 'session.reconnect_failed',
       topicId: topic.id,
       sessionId,
@@ -359,7 +360,7 @@ async function ensureDeliverableSession(
   try {
     logger.info({ topicId: topic.id, sessionId }, 'attempting recreateSession after reconnect failure')
     const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
-    void logGatewayEvent({
+    await writeGatewayLog({
       eventKind: 'session.recreate',
       topicId: topic.id,
       sessionId,
@@ -375,7 +376,7 @@ async function ensureDeliverableSession(
       try {
         await pi.reconnectSession(sessionId)
         logger.info({ topicId: topic.id, sessionId }, 'PI session reconnected after session_exists fallback')
-        void logGatewayEvent({
+        await writeGatewayLog({
           eventKind: 'session.reconnect',
           topicId: topic.id,
           sessionId,
@@ -385,7 +386,7 @@ async function ensureDeliverableSession(
         return sessionId
       } catch (retryErr) {
         logger.warn({ err: retryErr, topicId: topic.id, sessionId }, 'retry reconnectSession also failed')
-        void logGatewayEvent({
+        await writeGatewayLog({
           eventKind: 'session.reconnect_failed',
           topicId: topic.id,
           sessionId,
@@ -399,7 +400,7 @@ async function ensureDeliverableSession(
       }
     }
     logger.warn({ err: recreateErr, topicId: topic.id, sessionId }, 'recreateSession failed in ensureDeliverableSession')
-    void logGatewayEvent({
+    await writeGatewayLog({
       eventKind: 'session.recreate_failed',
       topicId: topic.id,
       sessionId,
@@ -435,6 +436,14 @@ async function handleRetryFailure(
   await messageRepo.updateMessage(msg.id, { status: 'needs_retry', retry_count: retryCount })
   broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'needs_retry', retryCount, msg.max_retries)
   return 'retryable'
+}
+
+async function writeGatewayLog(input: GatewayLogInput): Promise<void> {
+  try {
+    await logGatewayEvent(input)
+  } catch (err) {
+    logger.warn({ err, eventKind: input.eventKind }, 'Failed to write gateway event log')
+  }
 }
 
 async function buildMentionedArtifactRefs(

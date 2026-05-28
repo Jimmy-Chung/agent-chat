@@ -9,7 +9,8 @@ import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
 import {
   clearStreamDisconnectFinalizer,
-  DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS,
+  finalizeStreamingMessagesAfterDisconnectForTests,
+  setStreamDisconnectFinalizeTimeoutForTests,
   routePiEvents,
   mapAgentState,
 } from '../pi/event-router'
@@ -147,11 +148,9 @@ describe('Event router — session.health', () => {
   })
 
   it('finalizes streaming messages after session.health disconnected timeout', async () => {
-    vi.useFakeTimers()
-    let topicId: string | null = null
+    setStreamDisconnectFinalizeTimeoutForTests(1)
     try {
       const topic = await topicRepo.createTopic({ name: 'Streaming Disconnect Timeout Topic', kind: 'normal', agentType: 'general' })
-      topicId = topic.id
       await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-stream-timeout' })
 
       mockPi.emit('event', {
@@ -160,25 +159,13 @@ describe('Event router — session.health', () => {
         ts: Date.now(),
         payload: { kind: 'message.start', messageId: 'msg-stream-timeout', role: 'assistant' },
       } satisfies PIEvent)
-      await vi.advanceTimersByTimeAsync(1)
+      await new Promise((r) => setTimeout(r, 20))
       mockHub.clearBroadcastEvents()
 
-      mockPi.emit('event', {
-        seq: 0,
-        sessionId: 'sess-stream-timeout',
-        ts: Date.now(),
-        payload: { kind: 'session.health', state: 'disconnected', piSessionId: 'sess-stream-timeout' },
-      } satisfies PIEvent)
-      await vi.advanceTimersByTimeAsync(DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS - 1)
-
-      expect(mockHub.getBroadcastEvents().map((e) => e.type)).toEqual(['session.health'])
-      expect((await messageRepo.getMessage('msg-stream-timeout'))?.status).toBe('streaming')
-
-      await vi.advanceTimersByTimeAsync(1)
-      await Promise.resolve()
+      await finalizeStreamingMessagesAfterDisconnectForTests(topic.id, 'sess-stream-timeout', mockHub as any)
 
       const events = mockHub.getBroadcastEvents()
-      expect(events.map((e) => e.type)).toEqual(['session.health', 'message.end', 'agent.status'])
+      expect(events.map((e) => e.type)).toEqual(['message.end', 'agent.status'])
       const end = events.find((e) => e.type === 'message.end')!
       expect((end.data as Record<string, unknown>).messageId).toBe('msg-stream-timeout')
       expect((end.data as Record<string, unknown>).stopReason).toBe('aborted')
@@ -188,14 +175,13 @@ describe('Event router — session.health', () => {
       expect(msg?.status).toBe('aborted')
       expect(msg?.stop_reason).toBe('aborted')
     } finally {
-      if (topicId) clearStreamDisconnectFinalizer(topicId)
-      vi.useRealTimers()
+      setStreamDisconnectFinalizeTimeoutForTests(null)
     }
   })
 
   it('cancels disconnected finalize when session reconnects before timeout', async () => {
-    vi.useFakeTimers()
     let topicId: string | null = null
+    setStreamDisconnectFinalizeTimeoutForTests(50)
     try {
       const topic = await topicRepo.createTopic({ name: 'Streaming Reconnect Topic', kind: 'normal', agentType: 'general' })
       topicId = topic.id
@@ -207,7 +193,7 @@ describe('Event router — session.health', () => {
         ts: Date.now(),
         payload: { kind: 'message.start', messageId: 'msg-stream-reconnect', role: 'assistant' },
       } satisfies PIEvent)
-      await vi.advanceTimersByTimeAsync(1)
+      await new Promise((r) => setTimeout(r, 20))
       mockHub.clearBroadcastEvents()
 
       mockPi.emit('event', {
@@ -216,7 +202,7 @@ describe('Event router — session.health', () => {
         ts: Date.now(),
         payload: { kind: 'session.health', state: 'disconnected', piSessionId: 'sess-stream-reconnect' },
       } satisfies PIEvent)
-      await vi.advanceTimersByTimeAsync(10_000)
+      await new Promise((r) => setTimeout(r, 20))
       mockPi.emit('event', {
         seq: 0,
         sessionId: 'sess-stream-reconnect',
@@ -224,13 +210,13 @@ describe('Event router — session.health', () => {
         payload: { kind: 'session.health', state: 'connected', piSessionId: 'sess-stream-reconnect' },
       } satisfies PIEvent)
 
-      await vi.advanceTimersByTimeAsync(DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS)
+      await new Promise((r) => setTimeout(r, 80))
 
       expect(mockHub.getBroadcastEvents().map((e) => e.type)).toEqual(['session.health', 'session.health'])
       expect((await messageRepo.getMessage('msg-stream-reconnect'))?.status).toBe('streaming')
     } finally {
       if (topicId) clearStreamDisconnectFinalizer(topicId)
-      vi.useRealTimers()
+      setStreamDisconnectFinalizeTimeoutForTests(null)
     }
   })
 

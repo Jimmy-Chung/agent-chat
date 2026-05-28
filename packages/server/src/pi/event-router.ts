@@ -113,10 +113,17 @@ interface StreamDisconnectFinalizer {
   startedAt: number
 }
 const streamDisconnectFinalizersByTopic = new Map<string, StreamDisconnectFinalizer>()
+const streamDisconnectFinalizePromisesByTopic = new Map<string, Promise<void>>()
 
 export const DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS = 90_000
+let streamDisconnectFinalizeTimeoutOverrideMs: number | null = null
+
+export function setStreamDisconnectFinalizeTimeoutForTests(timeoutMs: number | null): void {
+  streamDisconnectFinalizeTimeoutOverrideMs = timeoutMs
+}
 
 function resolveStreamDisconnectFinalizeTimeout(): number {
+  if (streamDisconnectFinalizeTimeoutOverrideMs !== null) return streamDisconnectFinalizeTimeoutOverrideMs
   const raw = typeof process !== 'undefined' ? process.env?.STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS : undefined
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN
   if (Number.isFinite(parsed) && parsed > 0) return parsed
@@ -166,7 +173,14 @@ export function startStreamDisconnectFinalizer(
   clearStreamDisconnectFinalizer(topicId)
   const timer = setTimeout(() => {
     streamDisconnectFinalizersByTopic.delete(topicId)
-    void finalizeStreamingMessagesAfterDisconnect(topicId, sessionId, broadcaster, timeoutMs)
+    const promise = finalizeStreamingMessagesAfterDisconnect(topicId, sessionId, broadcaster, timeoutMs)
+      .catch((err) => {
+        logger.error({ err, topicId, sessionId }, 'Failed to finalize streaming messages after PI disconnect')
+      })
+      .finally(() => {
+        streamDisconnectFinalizePromisesByTopic.delete(topicId)
+      })
+    streamDisconnectFinalizePromisesByTopic.set(topicId, promise)
   }, timeoutMs)
   streamDisconnectFinalizersByTopic.set(topicId, {
     timer,
@@ -180,6 +194,23 @@ export function clearStreamDisconnectFinalizer(topicId: string): void {
   if (!pending) return
   clearTimeout(pending.timer)
   streamDisconnectFinalizersByTopic.delete(topicId)
+}
+
+export async function waitForStreamDisconnectFinalizer(topicId: string): Promise<void> {
+  await streamDisconnectFinalizePromisesByTopic.get(topicId)
+}
+
+export async function finalizeStreamingMessagesAfterDisconnectForTests(
+  topicId: string,
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+): Promise<void> {
+  await finalizeStreamingMessagesAfterDisconnect(
+    topicId,
+    sessionId,
+    broadcaster,
+    streamDisconnectFinalizeTimeoutOverrideMs ?? DEFAULT_STREAM_DISCONNECT_FINALIZE_TIMEOUT_MS,
+  )
 }
 
 async function finalizeStreamingMessagesAfterDisconnect(

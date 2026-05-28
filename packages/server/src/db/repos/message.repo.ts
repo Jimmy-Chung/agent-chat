@@ -211,6 +211,15 @@ export function flushParts(): Promise<void> {
   return flushLock
 }
 
+export function discardPendingPartFlushForTests(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  pendingParts.clear()
+  flushLock = Promise.resolve()
+}
+
 async function _doFlushParts(): Promise<void> {
   if (flushTimer) {
     clearTimeout(flushTimer)
