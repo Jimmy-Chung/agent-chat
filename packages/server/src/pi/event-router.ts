@@ -93,8 +93,16 @@ const seenSeqBySession = new Map<string, Set<number>>()
 const MAX_SEEN_SEQ_PER_SESSION = 2048
 // Track current assistant messageId per session so error events can inject error text
 const currentAssistantBySession = new Map<string, string>()
-// Serialize events per session to prevent out-of-order broadcasts
+// Serialize routed events per session once they have been put back into seq order.
 const sessionQueues = new Map<string, Promise<void>>()
+const sessionReorderBuffers = new Map<string, SessionReorderBuffer>()
+const PI_EVENT_REORDER_WINDOW_MS = 150
+
+interface SessionReorderBuffer {
+  pending: Map<number, PIEvent>
+  nextSeq: number | null
+  timer: ReturnType<typeof setTimeout> | null
+}
 
 // BUG-040 ④ — Turn watchdog: after sendUserMessage RPC is ack'd, give the adapter
 // a budget to start producing the next assistant turn. If no PI event arrives for
@@ -256,6 +264,9 @@ export function routePiEvents(
 ): void {
   pi.on('session.recreated', ({ sessionId }: { sessionId: string }) => {
     seenSeqBySession.delete(sessionId)
+    const buffer = sessionReorderBuffers.get(sessionId)
+    if (buffer?.timer) clearTimeout(buffer.timer)
+    sessionReorderBuffers.delete(sessionId)
   })
 
   pi.on('event', (event: PIEvent) => {
@@ -300,11 +311,113 @@ export function routePiEvents(
       )
     }
 
-    const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
-    sessionQueues.set(event.sessionId, prev.then(() => routeEvent(event, broadcaster, config)).catch((err) => {
-      logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
-    }))
+    if (isHealth) {
+      enqueueRouteEvent(event, broadcaster, config)
+      return
+    }
+
+    enqueueReorderedEvent(event, broadcaster, config)
   })
+}
+
+function enqueueRouteEvent(
+  event: PIEvent,
+  broadcaster: EventBroadcaster,
+  config?: AppConfig,
+): void {
+  const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
+  const next = prev.then(() => routeEvent(event, broadcaster, config)).catch((err) => {
+    logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
+  })
+  sessionQueues.set(event.sessionId, next)
+}
+
+function enqueueReorderedEvent(
+  event: PIEvent,
+  broadcaster: EventBroadcaster,
+  config?: AppConfig,
+): void {
+  let buffer = sessionReorderBuffers.get(event.sessionId)
+  if (!buffer) {
+    buffer = {
+      pending: new Map<number, PIEvent>(),
+      nextSeq: event.seq === 1 || event.payload.kind === 'message.start' ? event.seq : null,
+      timer: null,
+    }
+    sessionReorderBuffers.set(event.sessionId, buffer)
+  }
+
+  buffer.pending.set(event.seq, event)
+  drainReorderBuffer(event.sessionId, broadcaster, config)
+}
+
+function drainReorderBuffer(
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+  config?: AppConfig,
+): void {
+  const buffer = sessionReorderBuffers.get(sessionId)
+  if (!buffer) return
+
+  if (buffer.timer) {
+    clearTimeout(buffer.timer)
+    buffer.timer = null
+  }
+
+  if (buffer.nextSeq === null) {
+    const minSeq = minPendingSeq(buffer)
+    if (minSeq === null) return
+    if (minSeq !== 1) {
+      scheduleReorderGapFlush(sessionId, broadcaster, config)
+      return
+    }
+    buffer.nextSeq = minSeq
+  }
+
+  while (buffer.nextSeq !== null) {
+    const next = buffer.pending.get(buffer.nextSeq)
+    if (!next) break
+    buffer.pending.delete(buffer.nextSeq)
+    enqueueRouteEvent(next, broadcaster, config)
+    buffer.nextSeq += 1
+  }
+
+  if (buffer.pending.size === 0) return
+  scheduleReorderGapFlush(sessionId, broadcaster, config)
+}
+
+function scheduleReorderGapFlush(
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+  config?: AppConfig,
+): void {
+  const buffer = sessionReorderBuffers.get(sessionId)
+  if (!buffer || buffer.timer) return
+
+  buffer.timer = setTimeout(() => {
+    const current = sessionReorderBuffers.get(sessionId)
+    if (!current) return
+    current.timer = null
+
+    const minSeq = minPendingSeq(current)
+    if (minSeq === null) return
+    if (current.nextSeq === null || minSeq > current.nextSeq) {
+      logger.warn(
+        { sessionId, expectedSeq: current.nextSeq, nextAvailableSeq: minSeq },
+        'PI event seq gap timed out; routing next available event',
+      )
+      current.nextSeq = minSeq
+    }
+    drainReorderBuffer(sessionId, broadcaster, config)
+  }, PI_EVENT_REORDER_WINDOW_MS)
+}
+
+function minPendingSeq(buffer: SessionReorderBuffer): number | null {
+  let min: number | null = null
+  for (const seq of buffer.pending.keys()) {
+    if (min === null || seq < min) min = seq
+  }
+  return min
 }
 
 async function findTopicIdBySession(sessionId: string): Promise<string | null> {

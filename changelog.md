@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-05-29 [v1.7.26] — 流式 delta 顺序修复
+
+### BUG-062: 流式 delta 乱序导致 assistant 文本语序错乱
+- server PI event router 增加 session 级短窗口 seq reorder queue，非 health 事件按 `seq` 顺序落库和广播
+- 防止 `message.end` 越过前面的 `message.delta`，避免刷新后文本按到达顺序错拼
+- 补充线上 `das.` 场景回归测试，乱序重放后落库为 `好的，先放一放，需要的时候再继续。`
+- 版本显示更新为 `v1.7.26`
+
 ## 2026-05-29 [v1.7.25] — 会话失败错误展开
 
 ### BUG-061: Adapter 返回对象错误时 createSession 只显示 [object Object]

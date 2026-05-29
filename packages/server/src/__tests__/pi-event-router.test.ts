@@ -276,7 +276,7 @@ describe('Event router — session.health', () => {
     expect(mockHub.broadcast).toHaveBeenCalledTimes(2)
   })
 
-  it('routes out-of-order non-health events while still deduplicating repeated seq', async () => {
+  it('reorders out-of-order non-health events by seq while still deduplicating repeated seq', async () => {
     const topic = await topicRepo.createTopic({ name: 'Out Of Order Delta', kind: 'normal', agentType: 'general' })
     await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-ooo-delta' })
 
@@ -308,7 +308,14 @@ describe('Event router — session.health', () => {
     await messageRepo.flushParts()
 
     const events = mockHub.getBroadcastEvents()
-    expect(events.map((e) => e.type)).toContain('message.end')
+    expect(events.map((e) => e.type)).toEqual([
+      'message.start',
+      'agent.status',
+      'message.delta',
+      'agent.status',
+      'message.end',
+      'agent.status',
+    ])
     const deltas = events.filter((e) => e.type === 'message.delta')
     expect(deltas).toHaveLength(1)
     expect((deltas[0].data as { messageId: string }).messageId).toBe('msg-ooo-delta')
@@ -316,6 +323,59 @@ describe('Event router — session.health', () => {
     const parts = await messageRepo.getMessageParts('msg-ooo-delta')
     expect(parts).toHaveLength(1)
     expect(parts[0].content_json).toBe(JSON.stringify({ kind: 'text', content: 'tail' }))
+  })
+
+  it('persists streaming text in seq order when adapter delivery is interleaved', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Das Delta Order', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-das-delta' })
+
+    const event = (seq: number, content: string): PIEvent => ({
+      seq,
+      sessionId: 'sess-das-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.delta', messageId: 'msg-das-delta', part: { kind: 'text', content } },
+    })
+
+    mockPi.emit('event', {
+      seq: 191,
+      sessionId: 'sess-das-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId: 'msg-das-delta', role: 'assistant' },
+    } satisfies PIEvent)
+    mockPi.emit('event', event(194, '先放'))
+    mockPi.emit('event', event(192, '好的，'))
+    mockPi.emit('event', event(195, '一'))
+    mockPi.emit('event', event(198, '放，需要'))
+    mockPi.emit('event', event(200, '的时候再'))
+    mockPi.emit('event', event(202, '继续。'))
+    mockPi.emit('event', {
+      seq: 203,
+      sessionId: 'sess-das-delta',
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId: 'msg-das-delta', stopReason: 'end_turn' },
+    } satisfies PIEvent)
+
+    await new Promise((r) => setTimeout(r, 900))
+    await messageRepo.flushParts()
+
+    const parts = await messageRepo.getMessageParts('msg-das-delta')
+    expect(parts).toHaveLength(1)
+    expect(parts[0].content_json).toBe(JSON.stringify({
+      kind: 'text',
+      content: '好的，先放一放，需要的时候再继续。',
+    }))
+
+    const textDeltas = mockHub.getBroadcastEvents()
+      .filter((e) => e.type === 'message.delta')
+      .map((e) => (e.data as { part: { content?: string } }).part.content)
+    expect(textDeltas).toEqual([
+      '好的，',
+      '先放',
+      '一',
+      '放，需要',
+      '的时候再',
+      '继续。',
+    ])
   })
 })
 

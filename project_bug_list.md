@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.25 |
+| 当前版本 | v1.7.26 |
 | 更新时间 | 2026-05-29 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -72,12 +72,30 @@
 | BUG-059 | — |
 | BUG-060 | — |
 | BUG-061 | — |
+| BUG-062 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-062: 流式 delta 乱序导致 assistant 文本语序错乱
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-062 |
+| 标题 | 流式 delta 乱序导致 assistant 文本语序错乱 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-29 |
+| 修复时间 | 2026-05-29 |
+| 修复版本 | v1.7.26 |
+| Linear | — |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/server/src/db/repos/message.repo.ts |
+| 描述 | 线上话题 `das.` 中用户发送 `先不用吧` 后，assistant 最后一条回复落库为 `先放好的，一放，需要的时候再继续。`，语序明显错误。 |
+| 根因 | Adapter/Worker 日志显示同一 assistant 消息的 `message.delta` 带有递增 `seq`，但到达 agent-chat server 时发生乱序；server 只按 WebSocket 到达顺序调用 `bufferPartDelta` 拼接文本，未按 `seq` 重排，导致较晚内容插入到较早内容前面。 |
+| 修复方案 | server PI event router 按 session 增加短窗口 seq reorder queue，非 health 事件按 `seq` 顺序串行落库和广播；`message.end` 不再越过前面的 delta；补回归测试覆盖 `das.` 这类乱序文本重放。 |
+| 测试证据 | `pnpm --filter @agent-chat/server test -- pi-event-router`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server build`。 |
 
 ### BUG-061: Adapter 返回对象错误时 createSession 只显示 [object Object]
 
