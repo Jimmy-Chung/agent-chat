@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-05-29 [v1.7.27] — PI 话题创建与审批交互修复
+
+### BUG-063: seq reorder buffer 导致迟到低 seq 事件永久卡住，审批弹窗不显示
+- server PI event router 的 gap flush 改为处理迟到低 seq 事件，避免 `message.start` 永久滞留在 reorder buffer
+- web 端 orphan interaction 渲染兜底：有 `messageId` 但本地消息尚未出现时，也能在消息列表底部展示审批/选择卡
+- 补充回归测试覆盖高 seq `interaction.request` 先到、低 seq `message.start` 后到的场景
+
+### BUG-064: 创建 PI 话题时未按 PI Provider 分组传递 providerId
+- 普通话题创建按当前 Provider tab 选择 active providerId，切到 PI 分组时会传 PI Provider，不再误取 Claude/Codex 分组的 active provider
+- 编程话题继续按 extension 选择 Claude Code / Codex 对应分组 provider
+- 版本显示更新为 `v1.7.27`
+
 ## 2026-05-29 [v1.7.26] — 流式 delta 顺序修复
 
 ### BUG-062: 流式 delta 乱序导致 assistant 文本语序错乱

@@ -18,7 +18,7 @@ import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
 import { getWorkspaceDirMatches, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
-import { getActiveProviderIdForExtension } from '@/lib/provider-selection'
+import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
 
@@ -481,7 +481,7 @@ export function Sidebar() {
 
     const activeProviderId = newTopicAgent === 'programming'
       ? getActiveProviderIdForExtension(providerConfigs, extension)
-      : providerConfigs.find((c) => c.isActive)?.id
+      : getActiveProviderIdForGroup(providerConfigs, activeProviderTab)
 
     getWsClient().send({
       type: 'topic.create',
@@ -748,14 +748,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.26</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.7.27</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.26</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.7.27</span>
             </Tooltip>
           </div>
         </div>

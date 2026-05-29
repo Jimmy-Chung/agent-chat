@@ -96,7 +96,7 @@ const currentAssistantBySession = new Map<string, string>()
 // Serialize routed events per session once they have been put back into seq order.
 const sessionQueues = new Map<string, Promise<void>>()
 const sessionReorderBuffers = new Map<string, SessionReorderBuffer>()
-const PI_EVENT_REORDER_WINDOW_MS = 150
+let piEventReorderWindowMs = 150
 
 interface SessionReorderBuffer {
   pending: Map<number, PIEvent>
@@ -128,6 +128,10 @@ let streamDisconnectFinalizeTimeoutOverrideMs: number | null = null
 
 export function setStreamDisconnectFinalizeTimeoutForTests(timeoutMs: number | null): void {
   streamDisconnectFinalizeTimeoutOverrideMs = timeoutMs
+}
+
+export function setPiEventReorderWindowForTests(ms: number): void {
+  piEventReorderWindowMs = ms
 }
 
 function resolveStreamDisconnectFinalizeTimeout(): number {
@@ -401,7 +405,7 @@ function scheduleReorderGapFlush(
 
     const minSeq = minPendingSeq(current)
     if (minSeq === null) return
-    if (current.nextSeq === null || minSeq > current.nextSeq) {
+    if (current.nextSeq === null || minSeq !== current.nextSeq) {
       logger.warn(
         { sessionId, expectedSeq: current.nextSeq, nextAvailableSeq: minSeq },
         'PI event seq gap timed out; routing next available event',
@@ -409,7 +413,7 @@ function scheduleReorderGapFlush(
       current.nextSeq = minSeq
     }
     drainReorderBuffer(sessionId, broadcaster, config)
-  }, PI_EVENT_REORDER_WINDOW_MS)
+  }, piEventReorderWindowMs)
 }
 
 function minPendingSeq(buffer: SessionReorderBuffer): number | null {

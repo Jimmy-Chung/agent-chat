@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getActiveProviderIdForExtension } from '@/lib/provider-selection'
+import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
 import type { ProviderConfig } from '@/stores/ws-store'
 
 describe('getActiveProviderIdForExtension', () => {
@@ -18,5 +18,13 @@ describe('getActiveProviderIdForExtension', () => {
     expect(getActiveProviderIdForExtension([
       { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
     ], 'codex')).toBeUndefined()
+  })
+
+  it('selects the active provider from the requested general topic group', () => {
+    expect(getActiveProviderIdForGroup([
+      { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
+      { id: 'codex-active', name: 'Codex', provider: 'openai', group: 'codex', isActive: true },
+      { id: 'pi-active', name: 'PI', provider: 'pi', group: 'pi-agent', isActive: true },
+    ], 'pi-agent')).toBe('pi-active')
   })
 })

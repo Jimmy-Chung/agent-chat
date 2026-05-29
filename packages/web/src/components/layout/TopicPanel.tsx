@@ -151,10 +151,15 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
     return map
   }, [interactions])
 
-  // Interactions without messageId — render standalone at bottom of message list
+  // Interactions without messageId, or whose message doesn't exist locally — render standalone at bottom of message list
   const orphanInteractions = useMemo(() => {
+    const topicMessageIds = new Set((byTopic[activeTopic.id] ?? []).map((m) => m.id))
     return Object.values(interactions)
-      .filter((inter) => !inter.messageId && inter.topicId === activeTopic.id)
+      .filter((inter) => {
+        if (inter.topicId !== activeTopic.id) return false
+        if (!inter.messageId) return true
+        return !topicMessageIds.has(inter.messageId)
+      })
       .map((inter) => ({
         interactionId: inter.interactionId,
         interactionKind: inter.interactionKind as 'approval' | 'choice',
@@ -164,7 +169,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         response: inter.response,
         defaultTimeoutMs: inter.defaultTimeoutMs,
       }))
-  }, [interactions, activeTopic.id])
+  }, [interactions, activeTopic.id, byTopic])
 
   if (activeTopic.kind === 'system_artifact_pool') {
     return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar} toggleMobileInspector={toggleMobileInspector}><ArtifactPoolView /></SystemTopicLayout>

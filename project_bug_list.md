@@ -2,7 +2,7 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.26 |
+| 当前版本 | v1.7.27 |
 | 更新时间 | 2026-05-29 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
@@ -73,6 +73,8 @@
 | BUG-060 | — |
 | BUG-061 | — |
 | BUG-062 | — |
+| BUG-063 | — |
+| BUG-064 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
@@ -96,6 +98,40 @@
 | 根因 | Adapter/Worker 日志显示同一 assistant 消息的 `message.delta` 带有递增 `seq`，但到达 agent-chat server 时发生乱序；server 只按 WebSocket 到达顺序调用 `bufferPartDelta` 拼接文本，未按 `seq` 重排，导致较晚内容插入到较早内容前面。 |
 | 修复方案 | server PI event router 按 session 增加短窗口 seq reorder queue，非 health 事件按 `seq` 顺序串行落库和广播；`message.end` 不再越过前面的 delta；补回归测试覆盖 `das.` 这类乱序文本重放。 |
 | 测试证据 | `pnpm --filter @agent-chat/server test -- pi-event-router`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server build`。 |
+
+### BUG-063: seq reorder buffer 导致迟到低 seq 事件永久卡住，审批弹窗不显示
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-063 |
+| 标题 | seq reorder buffer 导致迟到低 seq 事件永久卡住，审批弹窗不显示 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-29 |
+| 修复时间 | 2026-05-29 |
+| 修复版本 | v1.7.27 |
+| Linear | — |
+| 影响模块 | packages/server/src/pi/event-router.ts, packages/web/src/components/layout/TopicPanel.tsx |
+| 描述 | 在 programming 普通模式（permissionMode=default）下，正常应弹出的审批弹窗（interaction.request）不会显示。 |
+| 根因 | BUG-062 引入的 seq reorder buffer 的 gap flush 逻辑有缺陷：`if (minSeq > current.nextSeq)` 只处理未到达的高 seq 事件，未处理迟到低 seq 事件。当 `message.start`（低 seq）晚于 `interaction.request`（高 seq）超过 150ms 到达时，gap flush 已将 nextSeq 推高至较高 seq，迟到的 `message.start` 因 `minSeq < nextSeq` 不满足条件而永久卡在 buffer。客户端无法匹配 messageId，交互卡既不渲染为 inline approval 也不渲染为 orphan interaction。修复方案：gap flush 条件改为 `minSeq !== current.nextSeq`；客户端 orphanInteractions 也兜底 messageId 无对应消息的交互。 |
+| 修复方案 | gap flush 条件改为 `minSeq !== current.nextSeq`；客户端 orphanInteractions 兜底 messageId 无对应消息的交互。 |
+| 测试证据 | `pnpm --filter @agent-chat/server test -- pi-event-router`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/server build`、`pnpm --filter @agent-chat/web typecheck`。 |
+
+### BUG-064: 创建 PI 话题时未按 PI Provider 分组传递 providerId
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-064 |
+| 标题 | 创建 PI 话题时未按 PI Provider 分组传递 providerId |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-29 |
+| 修复时间 | 2026-05-29 |
+| 修复版本 | v1.7.27 |
+| Linear | — |
+| 影响模块 | packages/web/src/components/layout/Sidebar.tsx, packages/web/src/lib/provider-selection.ts |
+| 描述 | 在侧边栏切到 PI Provider 分组后创建普通话题，创建请求仍可能使用其它分组的 active providerId，导致创建 PI 话题失败或落到错误 Provider。 |
+| 根因 | `Sidebar.tsx` 创建普通话题时使用 `providerConfigs.find((c) => c.isActive)?.id`，没有按当前选中的 Provider tab 过滤；当 Claude/Codex/PI 多分组同时存在 active provider 时，会取到列表中的第一个 active provider。 |
+| 修复方案 | 新增 `getActiveProviderIdForGroup`，普通话题创建按当前 `activeProviderTab` 选择 providerId；编程话题继续按 extension 选择对应分组 providerId。 |
+| 测试证据 | `pnpm --filter @agent-chat/web test -- provider-selection`、`pnpm --filter @agent-chat/web typecheck`。 |
 
 ### BUG-061: Adapter 返回对象错误时 createSession 只显示 [object Object]
 

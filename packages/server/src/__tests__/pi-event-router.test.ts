@@ -11,6 +11,7 @@ import {
   clearStreamDisconnectFinalizer,
   finalizeStreamingMessagesAfterDisconnectForTests,
   setStreamDisconnectFinalizeTimeoutForTests,
+  setPiEventReorderWindowForTests,
   routePiEvents,
   mapAgentState,
 } from '../pi/event-router'
@@ -376,6 +377,61 @@ describe('Event router — session.health', () => {
       '的时候再',
       '继续。',
     ])
+  })
+
+  it('drains late-arriving low-seq event that missed the initial drain window', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Late Seq Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-late-seq' })
+
+    setPiEventReorderWindowForTests(20)
+
+    // Simulate: interaction.request (high seq) arrives first, alone
+    mockPi.emit('event', {
+      seq: 103,
+      sessionId: 'sess-late-seq',
+      ts: Date.now(),
+      payload: {
+        kind: 'interaction.request',
+        interactionId: 'int-late-1',
+        messageId: 'msg-late',
+        interactionKind: 'approval',
+        prompt: 'Allow running rm -rf /?',
+      },
+    } satisfies PIEvent)
+
+    // Wait for the gap flush to fire (20ms window + buffer)
+    await new Promise((r) => setTimeout(r, 50))
+
+    // message.start (low seq) arrives LATE — after the buffer already processed seq 103
+    mockPi.emit('event', {
+      seq: 100,
+      sessionId: 'sess-late-seq',
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId: 'msg-late', role: 'assistant' },
+    } satisfies PIEvent)
+    mockPi.emit('event', {
+      seq: 101,
+      sessionId: 'sess-late-seq',
+      ts: Date.now(),
+      payload: { kind: 'message.delta', messageId: 'msg-late', part: { kind: 'text', content: 'I need approval.' } },
+    } satisfies PIEvent)
+
+    // Wait for the next gap flush to process the late events
+    await new Promise((r) => setTimeout(r, 50))
+
+    setPiEventReorderWindowForTests(150)
+
+    const events = mockHub.getBroadcastEvents()
+    const broadcastKinds = events.map((e) => e.type)
+    // message.start must arrive (the late event) AND interaction.request must arrive
+    expect(broadcastKinds).toContain('message.start')
+    expect(broadcastKinds).toContain('interaction.request')
+    expect(broadcastKinds).toContain('message.delta')
+
+    // Verify interaction.request carries correct data
+    const irEvent = events.find((e) => e.type === 'interaction.request')
+    expect(irEvent).toBeDefined()
+    expect((irEvent!.data as Record<string, unknown>).interactionKind).toBe('approval')
   })
 })
 
