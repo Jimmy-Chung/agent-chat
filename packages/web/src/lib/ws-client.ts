@@ -480,15 +480,31 @@ class WsClient {
         })
         break
 
-      case 'cron.triggered':
+      case 'cron.triggered': {
+        const data = event.data as Record<string, unknown>
+        const originTopicActive = data.originTopicActive as boolean
+
         useCronStore.getState().addRun({
-          id: (event.data as Record<string, unknown>).runId as string,
-          cronId: (event.data as Record<string, unknown>).cronId as string,
-          localCronId: (event.data as Record<string, unknown>).localCronId as string | undefined,
-          triggeredAt: (event.data as Record<string, unknown>).firedAt as number,
-          firedAt: (event.data as Record<string, unknown>).firedAt as number,
+          id: data.runId as string,
+          cronId: data.cronId as string,
+          localCronId: data.localCronId as string | undefined,
+          triggeredAt: data.firedAt as number,
+          firedAt: data.firedAt as number,
         })
+
+        // AIT-194 — show global toast when cron fires for a deleted/archived topic.
+        if (originTopicActive === false) {
+          import('@/stores/toast-store').then(({ useToastStore }) => {
+            useToastStore.getState().pushToast({
+              tone: 'warning',
+              title: '定时任务执行',
+              description: `关联话题已不存在（${data.cronId || '未知任务'}）`,
+              durationMs: 8000,
+            })
+          })
+        }
         break
+      }
 
       case 'sop_template.list': {
         const templates = (event.data as { templates: unknown[] }).templates.map((t) => {
@@ -752,6 +768,7 @@ export interface McpListResult {
 }
 
 const pendingMcpRequests = new Map<string, { resolve: (v: McpListResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+const MCP_COMMAND_TIMEOUT_MS = 45_000
 
 export async function sendMcpCommand(params: {
   action: 'add' | 'remove' | 'list' | 'get'
@@ -771,7 +788,7 @@ export async function sendMcpCommand(params: {
       const timer = setTimeout(() => {
         pendingMcpRequests.delete(requestId)
         reject(new Error('MCP command timeout'))
-      }, 15_000)
+      }, MCP_COMMAND_TIMEOUT_MS)
 
       pendingMcpRequests.set(requestId, { resolve, reject, timer })
 
@@ -796,11 +813,16 @@ export async function sendMcpCommand(params: {
   }
 
   // HTTP fallback
-  const res = await fetch('/api/mcp', {
+  const qs = typeof window !== 'undefined' ? getAdapterQs() : ''
+  const wssUrl = qs ? new URLSearchParams(qs).get('wssUrl') : ''
+  if (!wssUrl) {
+    throw new Error('PI adapter is not connected; please retry after reconnecting')
+  }
+  const res = await fetch(`/api/mcp?${qs}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(MCP_COMMAND_TIMEOUT_MS),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')

@@ -155,6 +155,7 @@ export const cronTriggeredPayloadSchema = z.object({
   providerGroup: z.string().optional(),
   runId: z.string(),
   firedAt: z.number(),
+  prompt: z.string(),
 })
 
 export const usageDeltaPayloadSchema = z.object({

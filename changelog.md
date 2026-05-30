@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-31 [v1.7.29] — cron.triggered 无 session 场景全局分发
+
+### AIT-195: cron.triggered 无 session 场景的全局分发
+- 协议层 `cronTriggeredPayloadSchema` 新增 `prompt` 字段，`cronTriggeredSchema` 新增 `originTopicActive` 字段
+- Server event-router: `cron.triggered` 无 `originTopicId` 时不再丢弃事件，改为从 cron job DB 回退查找
+- 始终广播 `cron.triggered`（含 topic 存活标识）；topic 存活时自动 `createSession` + `sendUserMessage` 执行 cron
+- 前端 ws-client: 收到 `originTopicActive=false` 的 `cron.triggered` 时 push warning Toast 通知用户
+- 版本显示更新为 `v1.7.29`
+
 ## 2026-05-30 [v1.7.28] — 定时任务弱话题关联与通知分流
 
 ### BUG-066: 定时任务强依赖创建话题导致删除后不可持续通知

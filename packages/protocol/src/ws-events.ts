@@ -196,6 +196,7 @@ export const cronTriggeredSchema = z.object({
   originSessionId: z.string().optional(),
   runId: z.string(),
   firedAt: z.number(),
+  originTopicActive: z.boolean(),
 })
 
 export const artifactAddedSchema = artifactSchema

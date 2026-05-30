@@ -281,6 +281,7 @@ describe('PIEvent — positive parsing', () => {
         originSessionId: 'sess-1',
         runId: 'run-1',
         firedAt: 1700000000000,
+        prompt: 'test prompt',
       },
     })
     expect(event.payload.kind).toBe('cron.triggered')
@@ -1129,6 +1130,7 @@ describe('Individual payload schemas', () => {
       originSessionId: 's1',
       runId: 'r1',
       firedAt: 1700000000000,
+      prompt: 'test prompt',
     })
     expect(result.firedAt).toBe(1700000000000)
   })
