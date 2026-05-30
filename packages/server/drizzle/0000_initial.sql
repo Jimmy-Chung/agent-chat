@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS message_artifact_refs (
 
 CREATE TABLE IF NOT EXISTS cron_jobs (
   id TEXT PRIMARY KEY,
-  origin_topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  origin_topic_id TEXT,
   pi_cron_id TEXT NOT NULL,
   cron_expr TEXT NOT NULL,
   prompt TEXT NOT NULL,

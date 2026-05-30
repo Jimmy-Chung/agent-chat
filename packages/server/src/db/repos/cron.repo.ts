@@ -7,7 +7,7 @@ import { ulid } from '../../lib/ulid'
 // ─── CronJob CRUD ──────────────────────────────────────────────────
 
 export async function createCronJob(input: {
-  originTopicId: string
+  originTopicId: string | null
   piCronId: string
   cronExpr: string
   prompt: string
@@ -164,7 +164,7 @@ export async function listCronRuns(cronId: string): Promise<CronRun[]> {
 function toJobDomain(row: Record<string, unknown>): CronJob {
   return {
     id: row.id as string,
-    origin_topic_id: row.originTopicId as string,
+    origin_topic_id: (row.originTopicId as string) || null,
     pi_cron_id: row.piCronId as string,
     cron_expr: row.cronExpr as string,
     prompt: row.prompt as string,

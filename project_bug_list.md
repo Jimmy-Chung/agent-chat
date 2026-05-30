@@ -2,8 +2,8 @@
 
 | 项目 | 值 |
 |---|---|
-| 当前版本 | v1.7.27 |
-| 更新时间 | 2026-05-29 |
+| 当前版本 | v1.7.28 |
+| 更新时间 | 2026-05-30 |
 
 > 版本说明：顶部版本表示当前大版本线。`v1.2.x` 的补丁修复记录保留在“v1.2.x 修复过程记录”中；`v1.3.0` 发布相关 bug 直接记录在本清单中。
 
@@ -75,12 +75,30 @@
 | BUG-062 | — |
 | BUG-063 | — |
 | BUG-064 | — |
+| BUG-066 | — |
 
 > 备注：BUG-039 暂未在 Linear 单独建单（v1.6.0 内随 release 一并交付），待后续补建后填入 Linear ID。
 
 ---
 
 ## 未完成
+
+### BUG-066: 定时任务强依赖创建话题导致删除后不可持续通知
+
+| 字段 | 值 |
+|---|---|
+| ID | BUG-066 |
+| 标题 | 定时任务强依赖创建话题导致删除后不可持续通知 |
+| 状态 | 已修复 |
+| 发现时间 | 2026-05-30 |
+| 修复时间 | 2026-05-30 |
+| 修复版本 | v1.7.28 |
+| Linear | — |
+| 影响模块 | packages/server/src/db/schema.ts, packages/server/src/db/migrate.ts, packages/server/src/pi/event-router.ts, packages/server/src/ws/topic-do.ts, packages/server/src/ws/handlers/topic.handler.ts, packages/web/src/lib/ws-client.ts |
+| 描述 | 定时任务虽在话题中创建，但不应强依赖该话题生命周期。当前 cron_jobs 对 topics 有级联外键，删除/归档话题后任务通知路径与执行可见性不符合预期。 |
+| 根因 | cron_jobs.origin_topic_id 使用 topics 外键并带 cascade；topic.delete 还会断开 PI session；cron.run.completed 只更新 cron store 和 Web Push，没有按活跃话题决定话题内通知或全局 Toast。 |
+| 修复方案 | 去掉 cron_jobs 对 topics 的强外键并补迁移；删除话题不再销毁 PI session；cron 完成时始终 Web Push，原话题可用则写入 cron 角色消息，前端在原话题非活跃或已删除时弹全局 Toast。 |
+| 测试证据 | `pnpm --filter @agent-chat/server test -- pi-event-router topic-handler cron.repo`、`pnpm --filter @agent-chat/server typecheck`、`pnpm --filter @agent-chat/web typecheck`、`pnpm --filter @agent-chat/web test -- cron-store ws-client-dispatch`、`pnpm --filter @agent-chat/protocol test -- schema`。 |
 
 ### BUG-062: 流式 delta 乱序导致 assistant 文本语序错乱
 

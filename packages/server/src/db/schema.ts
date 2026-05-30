@@ -133,9 +133,7 @@ export const messageArtifactRefs = sqliteTable(
 
 export const cronJobs = sqliteTable('cron_jobs', {
   id: text('id').primaryKey(),
-  originTopicId: text('origin_topic_id')
-    .notNull()
-    .references(() => topics.id, { onDelete: 'cascade' }),
+  originTopicId: text('origin_topic_id'),
   piCronId: text('pi_cron_id').notNull(),
   cronExpr: text('cron_expr').notNull(),
   prompt: text('prompt').notNull(),

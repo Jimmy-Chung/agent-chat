@@ -354,7 +354,7 @@ describe('Topic handler — topic.delete', () => {
     expect(deletedEvent).toBeDefined()
   })
 
-  it('disconnects PI session when deleting topic with pi_session_id', async () => {
+  it('keeps PI session available when deleting topic with pi_session_id', async () => {
     const deleteCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.delete')
     const deleteHandler = deleteCall![1]
 
@@ -367,7 +367,7 @@ describe('Topic handler — topic.delete', () => {
 
     await deleteHandler({}, { d: { id: topic.id, artifactStrategy: 'delete' } })
 
-    expect(mockPi.disconnectSession).toHaveBeenCalledWith('sess-to-disconnect')
+    expect(mockPi.disconnectSession).not.toHaveBeenCalled()
   })
 })
 

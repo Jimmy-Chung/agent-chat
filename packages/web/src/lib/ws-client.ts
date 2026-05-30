@@ -14,6 +14,7 @@ import { useTopicStore } from '@/stores/topic-store'
 import { useMessageStore } from '@/stores/message-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useCronStore } from '@/stores/cron-store'
+import { useToastStore } from '@/stores/toast-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
 import { getServerBase, getWsUrl } from '@/lib/server-url'
 
@@ -440,7 +441,7 @@ class WsClient {
           return {
             cronId: r.cronId as string,
             localCronId: r.localCronId as string | undefined,
-            originTopicId: r.originTopicId as string,
+            originTopicId: (r.originTopicId as string | null) ?? null,
             originSessionId: r.originSessionId as string | undefined,
             runtime: r.runtime as string | undefined,
             providerGroup: r.providerGroup as string | undefined,
@@ -463,7 +464,7 @@ class WsClient {
         useCronStore.getState().upsertCron({
           cronId: (event.data as Record<string, unknown>).cronId as string,
           localCronId: (event.data as Record<string, unknown>).localCronId as string | undefined,
-          originTopicId: (event.data as Record<string, unknown>).originTopicId as string,
+          originTopicId: ((event.data as Record<string, unknown>).originTopicId as string | null) ?? null,
           originSessionId: (event.data as Record<string, unknown>).originSessionId as string | undefined,
           runtime: (event.data as Record<string, unknown>).runtime as string | undefined,
           providerGroup: (event.data as Record<string, unknown>).providerGroup as string | undefined,
@@ -616,12 +617,38 @@ case 'usage.snapshot': {
 
       case 'cron.run.completed': {
         const d = event.data as Record<string, unknown>
+        const originTopicId = (d.originTopicId as string | null) ?? null
+        const originTopicAvailable = d.originTopicAvailable !== false && Boolean(originTopicId)
         useCronStore.getState().completeRun(d.runId as string, {
           status: d.status as string,
           summary: (d.summary as string | null) ?? null,
           duration: ((d.durationMs as number | null | undefined) ?? (d.duration as number | null | undefined)) ?? null,
           completedAt: d.completedAt as number,
         })
+        const activeTopicId = useTopicStore.getState().activeTopicId
+        if (!originTopicAvailable || activeTopicId !== originTopicId) {
+          const status = d.status as 'success' | 'failed' | 'timeout'
+          const title = status === 'success'
+            ? '定时任务已完成'
+            : status === 'timeout'
+              ? '定时任务超时'
+              : '定时任务失败'
+          const description = ((d.summary as string | null) ?? '').trim()
+          useToastStore.getState().pushToast({
+            id: `cron-run-${d.runId as string}`,
+            tone: status === 'success' ? 'success' : 'warning',
+            title,
+            description: description || (originTopicAvailable ? '结果已发送到创建该任务的话题。' : '创建该任务的话题已删除。'),
+            ...(originTopicAvailable && originTopicId
+              ? {
+                  action: {
+                    label: '查看',
+                    onClick: () => useTopicStore.getState().selectTopic(originTopicId),
+                  },
+                }
+              : {}),
+          })
+        }
         break
       }
 
