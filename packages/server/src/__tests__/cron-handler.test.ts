@@ -75,6 +75,7 @@ describe('Cron handler — event-router cron.triggered', () => {
         originSessionId: 'sess-cron-1',
         runId: 'run-001',
         firedAt: 1700000000000,
+        prompt: 'Hourly',
       },
     }
 
@@ -95,7 +96,7 @@ describe('Cron handler — event-router cron.triggered', () => {
     expect((broadcastEvent.data as Record<string, unknown>).firedAt).toBe(1700000000000)
   })
 
-  it('should ignore cron.triggered if origin session not found', async () => {
+  it('should not broadcast cron.triggered if cron job not found in DB', async () => {
     const event: PIEvent = {
       seq: 1,
       sessionId: 'unknown-session',
@@ -106,6 +107,7 @@ describe('Cron handler — event-router cron.triggered', () => {
         originSessionId: 'unknown-session',
         runId: 'run-001',
         firedAt: Date.now(),
+        prompt: 'test',
       },
     }
 
@@ -140,6 +142,7 @@ describe('Cron handler — event-router cron.triggered', () => {
         originSessionId: 'sess-dedup',
         runId: 'run-dup',
         firedAt: Date.now(),
+        prompt: 'Dedup test',
       },
     }
 

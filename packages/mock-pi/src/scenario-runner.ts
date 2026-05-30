@@ -123,6 +123,7 @@ export function createScenarioRunner(): ScenarioRunner {
         originSessionId: sessionId,
         runId,
         firedAt: Date.now(),
+        prompt: 'mock cron prompt',
       },
     }
     const triggeredFrame = createFrame('event', triggeredEvent, undefined, seq)
