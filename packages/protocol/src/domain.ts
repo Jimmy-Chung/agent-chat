@@ -98,7 +98,7 @@ export interface Artifact {
 
 export interface CronJob {
   id: string
-  origin_topic_id: string
+  origin_topic_id: string | null
   pi_cron_id: string
   cron_expr: string
   prompt: string

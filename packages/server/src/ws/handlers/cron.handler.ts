@@ -22,7 +22,7 @@ async function findTopicByPiSessionId(
 
 function cronJobToPayload(job: {
   id: string
-  origin_topic_id: string
+  origin_topic_id: string | null
   pi_cron_id: string
   cron_expr: string
   prompt: string

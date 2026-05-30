@@ -154,7 +154,7 @@ export const cronListSchema = z.object({
     z.object({
       cronId: z.string(),
       localCronId: z.string().optional(),
-      originTopicId: z.string(),
+      originTopicId: z.string().nullable(),
       originSessionId: z.string().optional(),
       runtime: z.string().optional(),
       providerGroup: z.string().optional(),
@@ -174,7 +174,7 @@ export const cronListSchema = z.object({
 export const cronUpsertedSchema = z.object({
   cronId: z.string(),
   localCronId: z.string().optional(),
-  originTopicId: z.string(),
+  originTopicId: z.string().nullable(),
   originSessionId: z.string().optional(),
   runtime: z.string().optional(),
   providerGroup: z.string().optional(),
@@ -192,7 +192,7 @@ export const cronUpsertedSchema = z.object({
 export const cronTriggeredSchema = z.object({
   cronId: z.string(),
   localCronId: z.string().optional(),
-  originTopicId: z.string(),
+  originTopicId: z.string().nullable(),
   originSessionId: z.string().optional(),
   runId: z.string(),
   firedAt: z.number(),
@@ -275,7 +275,8 @@ export const cronRunCompletedSchema = z.object({
   cronId: z.string(),
   localCronId: z.string().optional(),
   runId: z.string(),
-  originTopicId: z.string(),
+  originTopicId: z.string().nullable(),
+  originTopicAvailable: z.boolean().optional(),
   originSessionId: z.string().optional(),
   status: z.enum(['success', 'failed', 'timeout']),
   summary: z.string().nullable(),

@@ -44,6 +44,66 @@ export interface PushPayload {
   url?: string
 }
 
+function cronCompletionTitle(status: 'success' | 'failed' | 'timeout'): string {
+  if (status === 'success') return '定时任务完成'
+  if (status === 'timeout') return '定时任务超时'
+  return '定时任务失败'
+}
+
+function cronCompletionBody(summary: string | null | undefined, prompt: string): string {
+  return (summary?.trim() || prompt).slice(0, 120)
+}
+
+async function appendCronCompletionMessage(input: {
+  topicId: string
+  runId: string
+  status: 'success' | 'failed' | 'timeout'
+  summary: string | null
+  prompt: string
+  completedAt: number
+  hub: EventBroadcaster
+}): Promise<string | null> {
+  const topic = await topicRepo.getTopic(input.topicId)
+  if (!topic || topic.archived) return null
+
+  const title = cronCompletionTitle(input.status)
+  const body = cronCompletionBody(input.summary, input.prompt)
+  const content = `${title}：${body}`
+  const msg = await messageRepo.createMessage({
+    topicId: input.topicId,
+    role: 'cron',
+    status: 'done',
+    cronRunId: input.runId,
+  })
+  await messageRepo.createMessagePart({
+    messageId: msg.id,
+    kind: 'text',
+    contentJson: JSON.stringify({ content }),
+  })
+  await messageRepo.updateMessage(msg.id, {
+    status: 'done',
+    finished_at: input.completedAt,
+    stop_reason: input.status,
+  })
+  input.hub.broadcast('message.start', {
+    topicId: input.topicId,
+    messageId: msg.id,
+    role: 'cron',
+    status: 'done',
+  })
+  input.hub.broadcast('message.delta', {
+    topicId: input.topicId,
+    messageId: msg.id,
+    part: { kind: 'text', content },
+  })
+  input.hub.broadcast('message.end', {
+    topicId: input.topicId,
+    messageId: msg.id,
+    stopReason: 'end_turn',
+  })
+  return msg.id
+}
+
 async function sendPushToAll(payload: PushPayload, config: AppConfig): Promise<void> {
   if (!config.vapidPublicKey || !config.vapidPrivateKey) return
   const subs = await pushRepo.listSubscriptions()
@@ -432,7 +492,7 @@ async function findTopicIdBySession(sessionId: string): Promise<string | null> {
 
 function cronJobToPayload(job: {
   id: string
-  origin_topic_id: string
+  origin_topic_id: string | null
   pi_cron_id: string
   cron_expr: string
   prompt: string
@@ -841,12 +901,27 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         logger.warn({ cronId: payload.cronId }, 'cron.run.completed: cron job not found')
         return
       }
+      const originTopic = job.origin_topic_id ? await topicRepo.getTopic(job.origin_topic_id) : undefined
+      const originTopicAvailable = Boolean(originTopic && !originTopic.archived)
       const runs = await cronRepo.listCronRuns(job.id)
       const runningRun = runs.find((r) => r.id === payload.runId) ?? runs.find((r) => r.status === 'running')
+      let resultMessageId: string | null = null
+      if (job.origin_topic_id) {
+        resultMessageId = await appendCronCompletionMessage({
+          topicId: job.origin_topic_id,
+          runId: payload.runId,
+          status: payload.status,
+          summary: payload.summary,
+          prompt: job.prompt,
+          completedAt: payload.completedAt,
+          hub,
+        })
+      }
       if (runningRun) {
         await cronRepo.updateCronRun(runningRun.id, {
           status: payload.status,
           finished_at: payload.completedAt,
+          ...(resultMessageId ? { result_message_id: resultMessageId } : {}),
         })
       }
       hub.broadcast('cron.run.completed', {
@@ -854,6 +929,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         localCronId: job.id,
         runId: payload.runId,
         originTopicId: job.origin_topic_id,
+        originTopicAvailable,
         originSessionId: payload.originSessionId,
         status: payload.status,
         summary: payload.summary,
@@ -862,9 +938,13 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         completedAt: payload.completedAt,
       })
       if (config) {
-        const statusLabel = payload.status === 'success' ? '完成' : '失败'
         sendPushToAll(
-          { title: `定时任务${statusLabel}`, body: payload.summary?.slice(0, 120) ?? job.prompt.slice(0, 120), tag: `cron-${payload.cronId}`, url: `/?topic=${job.origin_topic_id}` },
+          {
+            title: cronCompletionTitle(payload.status),
+            body: cronCompletionBody(payload.summary, job.prompt),
+            tag: `cron-${payload.cronId}`,
+            url: originTopicAvailable && job.origin_topic_id ? `/?topic=${job.origin_topic_id}` : '/',
+          },
           config,
         ).catch(() => {})
       }

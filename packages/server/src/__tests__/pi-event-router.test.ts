@@ -485,12 +485,24 @@ describe('Event router — cron.run.completed', () => {
     const updatedRun = (await cronRepo.listCronRuns(job.id))[0]
     expect(updatedRun.status).toBe('success')
 
-    expect(mockHub.broadcast).toHaveBeenCalledTimes(1)
-    const broadcast = mockHub.getBroadcastEvents()[0]
+    const messageStart = mockHub.getBroadcastEvents().find((e) => e.type === 'message.start')
+    expect(messageStart).toBeDefined()
+    expect((messageStart!.data as Record<string, unknown>).topicId).toBe(topic.id)
+    expect((messageStart!.data as Record<string, unknown>).role).toBe('cron')
+
+    const messages = await messageRepo.listMessagesByTopic(topic.id)
+    const cronMessage = messages.find((m) => m.role === 'cron')
+    expect(cronMessage).toBeDefined()
+    expect(cronMessage!.cron_run_id).toBe(run.id)
+    const parts = await messageRepo.getMessageParts(cronMessage!.id)
+    expect(JSON.parse(parts[0].content_json)).toEqual({ content: '定时任务完成：Completed' })
+
+    const broadcast = mockHub.getBroadcastEvents().find((e) => e.type === 'cron.run.completed')!
     expect(broadcast.type).toBe('cron.run.completed')
     expect((broadcast.data as Record<string, unknown>).cronId).toBe(job.pi_cron_id)
     expect((broadcast.data as Record<string, unknown>).localCronId).toBe(job.id)
     expect((broadcast.data as Record<string, unknown>).originTopicId).toBe(topic.id)
+    expect((broadcast.data as Record<string, unknown>).originTopicAvailable).toBe(true)
     expect((broadcast.data as Record<string, unknown>).status).toBe('success')
     expect((broadcast.data as Record<string, unknown>).duration).toBe(5000)
   })
@@ -547,9 +559,46 @@ describe('Event router — cron.run.completed', () => {
     mockPi.emit('event', event)
     await new Promise((r) => setTimeout(r, 50))
 
-    const broadcast = mockHub.getBroadcastEvents()[0]
+    const broadcast = mockHub.getBroadcastEvents().find((e) => e.type === 'cron.run.completed')!
     expect(broadcast.type).toBe('cron.run.completed')
     expect((broadcast.data as Record<string, unknown>).status).toBe('timeout')
+  })
+
+  it('broadcasts global-only completion when origin topic is archived', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Archived Cron Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-archived-cron' })
+    const job = await cronRepo.createCronJob({
+      originTopicId: topic.id,
+      piCronId: 'pi-archived',
+      cronExpr: '0 * * * *',
+      prompt: 'Archived topic task',
+    })
+    const run = await cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
+    await topicRepo.deleteTopic(topic.id)
+
+    const event: PIEvent = {
+      seq: 1,
+      sessionId: 'sess-archived-cron',
+      ts: Date.now(),
+      payload: {
+        kind: 'cron.run.completed',
+        cronId: job.pi_cron_id,
+        runId: run.id,
+        status: 'success',
+        summary: 'Done after archive',
+        duration: 1000,
+        completedAt: 1700000001000,
+      },
+    }
+
+    mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(mockHub.getBroadcastEvents().some((e) => e.type === 'message.start')).toBe(false)
+    const broadcast = mockHub.getBroadcastEvents().find((e) => e.type === 'cron.run.completed')!
+    expect((broadcast.data as Record<string, unknown>).originTopicId).toBe(topic.id)
+    expect((broadcast.data as Record<string, unknown>).originTopicAvailable).toBe(false)
+    expect((await cronRepo.listCronRuns(job.id))[0].status).toBe('success')
   })
 })
 

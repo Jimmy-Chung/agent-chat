@@ -115,9 +115,6 @@ export function registerTopicHandlers(
     await topicRepo.deleteTopic(data.id)
     broadcaster.broadcast('topic.deleted', { id: data.id })
 
-    if (topic.pi_session_id) {
-      pi.disconnectSession(topic.pi_session_id)
-    }
   })
 
   hub.on('client:topic.rename', async (...args: unknown[]) => {

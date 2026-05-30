@@ -393,7 +393,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
   // ─── Cron helpers ─────────────────────────────────────────────────────────
   private cronJobToPayload(job: {
     id: string
-    origin_topic_id: string
+    origin_topic_id: string | null
     pi_cron_id: string
     cron_expr: string
     prompt: string
@@ -704,15 +704,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
         await topicRepo.deleteTopic(data.id)
         this.broadcastAll('topic.deleted', { id: data.id })
-        if (topic.pi_session_id) {
-          const pi = await this.ensurePiClient()
-          try {
-            await pi?.rpc('destroySession', { sessionId: topic.pi_session_id })
-          } catch (err) {
-            logger.warn({ err, sessionId: topic.pi_session_id }, 'Failed to destroy PI session while deleting topic')
-          }
-          pi?.disconnectSession(topic.pi_session_id)
-        }
         break
       }
 

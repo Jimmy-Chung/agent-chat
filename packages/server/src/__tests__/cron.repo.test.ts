@@ -122,6 +122,26 @@ describe('CronRepo', () => {
     expect(found).toBeUndefined()
   })
 
+  it('keeps cron jobs when the origin topic is archived', async () => {
+    const topic = await topicRepo.createTopic({
+      name: 'Cron Origin Archive',
+      kind: 'normal',
+      agentType: 'general',
+    })
+    const job = await cronRepo.createCronJob({
+      originTopicId: topic.id,
+      piCronId: 'pi-cron-archive-origin',
+      cronExpr: '0 * * * *',
+      prompt: 'Survive topic archive',
+    })
+
+    await topicRepo.deleteTopic(topic.id)
+
+    const found = await cronRepo.getCronJob(job.id)
+    expect(found).toBeDefined()
+    expect(found!.origin_topic_id).toBe(topic.id)
+  })
+
   it('should return false when deleting non-existent cron job', async () => {
     const result = await cronRepo.deleteCronJob('nonexistent')
     expect(result).toBe(false)

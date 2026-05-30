@@ -782,8 +782,8 @@ function CronAdminView() {
   const filteredCrons = crons.filter((cron) => {
     if (filter !== 'all' && cron.status !== filter) return false
     if (!normalizedQuery) return true
-    const topicName = topics.find((t) => t.id === cron.originTopicId)?.name ?? ''
-    const haystack = [cron.prompt, cron.cronExpr, cron.originTopicId, topicName, ...(cron.tags ?? [])]
+    const topicName = cron.originTopicId ? topics.find((t) => t.id === cron.originTopicId)?.name ?? '' : ''
+    const haystack = [cron.prompt, cron.cronExpr, cron.originTopicId ?? '', topicName, ...(cron.tags ?? [])]
       .join(' ')
       .toLowerCase()
     return haystack.includes(normalizedQuery)
@@ -844,7 +844,7 @@ function CronAdminView() {
         const latestRun = runs
           .filter((run) => run.cronId === c.cronId)
           .sort((a, b) => (b.completedAt ?? b.firedAt) - (a.completedAt ?? a.firedAt))[0]
-        const topic = topics.find((t) => t.id === c.originTopicId)
+        const topic = c.originTopicId ? topics.find((t) => t.id === c.originTopicId) : undefined
         const errorSummary = c.status === 'error' ? latestRun?.summary ?? '最近一次执行失败，请检查话题上下文与 Agent 输出。' : null
 
         return (
@@ -861,7 +861,7 @@ function CronAdminView() {
                 <div className="truncate text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{c.prompt}</div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: 'var(--fg-dim)' }}>
                   <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,255,255,.06)', border: '1px solid var(--hairline)' }}>
-                    {topic?.name ?? c.originTopicId}
+                    {topic?.name ?? (c.originTopicId ? '原话题已删除' : '无原话题')}
                   </span>
                   <span style={{ fontFamily: 'var(--font-mono)' }}>{c.cronExpr}</span>
                   {c.tags?.map((tag) => (

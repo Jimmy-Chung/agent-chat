@@ -4,7 +4,7 @@ import { immer } from 'zustand/middleware/immer'
 interface CronJob {
   cronId: string
   localCronId?: string
-  originTopicId: string
+  originTopicId: string | null
   originSessionId?: string
   runtime?: string
   providerGroup?: string
