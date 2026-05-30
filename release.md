@@ -41,8 +41,7 @@ protocol: BREAKING ...  # 协议层破坏性变更
 ### 2. 更新文档
 
 - [ ] `changelog.md` — 添加版本条目,列出 FEAT/BUG
-- [ ] `project_feature_list.md` — 本版本 FEAT 状态改为「已回归」
-- [ ] `project_bug_list.md` — 本版本 BUG 状态改为「已修复」
+- [ ] Linear — 本版本 issue 状态更新为 Done
 
 ### 3. 合并到 master
 
