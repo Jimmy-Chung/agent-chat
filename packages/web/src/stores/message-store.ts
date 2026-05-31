@@ -155,7 +155,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
 
         const parts = s.partsByMessage[messageId]
         const existingIndex = parts.findIndex(
-          (part) => part.id === stableId || part.kind === kind,
+          (part) => part.id === stableId,
         )
 
         if (existingIndex >= 0) {

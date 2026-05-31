@@ -342,3 +342,90 @@ describe('BUG-040 ⑤ — agent.status idle 强制收口 streaming 残留', () =
     expect(stuck?.status).toBe('aborted')
   })
 })
+
+describe('tool-card loading — 多工具消息不互相覆盖（#3 回归）', () => {
+  beforeEach(() => {
+    useMessageStore.setState({
+      byTopic: {},
+      partsByMessage: {},
+      loading: false,
+      streamingText: {},
+      streamingThinking: {},
+      streamingToolInputs: {},
+      streamingTopicId: null,
+      streamingMessageId: null,
+      todosByTopic: {},
+      planByTopic: {},
+      agentStatusByTopic: {},
+      usageByMessage: {},
+      interactions: {},
+    })
+  })
+
+  // Mirror ws-client.ts stableId conventions for tool parts.
+  function toolCall(messageId: string, toolUseId: string, name: string) {
+    useMessageStore.getState().upsertSnapshotPart(
+      messageId,
+      'tool_use',
+      JSON.stringify({ toolUseId, name, input: {} }),
+      `tool-${toolUseId}`,
+    )
+  }
+  function toolResult(messageId: string, toolUseId: string, output: unknown) {
+    useMessageStore.getState().upsertSnapshotPart(
+      messageId,
+      'tool_result',
+      JSON.stringify({ toolUseId, output, isError: false }),
+      `tool-result-${toolUseId}`,
+    )
+  }
+
+  // Replicates TopicPanel's toolResults map: keyed by content.toolUseId, not part id.
+  function buildToolResults(messageId: string): Record<string, { toolUseId: string }> {
+    const map: Record<string, { toolUseId: string }> = {}
+    for (const part of useMessageStore.getState().partsByMessage[messageId] ?? []) {
+      if (part.kind === 'tool_result') {
+        const d = JSON.parse(part.content_json) as { toolUseId: string }
+        map[d.toolUseId] = { toolUseId: d.toolUseId }
+      }
+    }
+    return map
+  }
+  // A tool_use card spins while no matching result exists (MessageBubble isRunning={!result}).
+  function isRunning(messageId: string, toolUseId: string): boolean {
+    return buildToolResults(messageId)[toolUseId] === undefined
+  }
+
+  it('两个工具调用各自保留独立 part，不被同 kind 覆盖', () => {
+    // Edit 文件常见序列：Read + Edit，kind 均为 tool_use / tool_result
+    toolCall('msg1', 'A', 'Read')
+    toolResult('msg1', 'A', 'file contents')
+    toolCall('msg1', 'B', 'Edit')
+    toolResult('msg1', 'B', 'edit applied')
+
+    const parts = useMessageStore.getState().partsByMessage['msg1']
+    const toolUses = parts.filter((p) => p.kind === 'tool_use')
+    const toolResults = parts.filter((p) => p.kind === 'tool_result')
+    expect(toolUses).toHaveLength(2)
+    expect(toolResults).toHaveLength(2)
+    // 两张卡片都能匹配到自己的结果 → 都不转圈
+    expect(isRunning('msg1', 'A')).toBe(false)
+    expect(isRunning('msg1', 'B')).toBe(false)
+  })
+
+  it('结果迟到的工具卡片在结果到达前转圈、到达后收口（不会永久 loading）', () => {
+    // 卡死复现序列：callA → resultA → callB，B 的结果稍后才到
+    toolCall('msg1', 'A', 'Read')
+    toolResult('msg1', 'A', 'file contents')
+    toolCall('msg1', 'B', 'Edit')
+
+    // A 已完成，B 仍在运行（正确的中间态，而非被 A 的结果错配）
+    expect(isRunning('msg1', 'A')).toBe(false)
+    expect(isRunning('msg1', 'B')).toBe(true)
+
+    // B 的结果到达后，B 收口 —— 文件写完不再永久 loading
+    toolResult('msg1', 'B', 'edit applied')
+    expect(isRunning('msg1', 'B')).toBe(false)
+    expect(useMessageStore.getState().partsByMessage['msg1'].filter((p) => p.kind === 'tool_use')).toHaveLength(2)
+  })
+})

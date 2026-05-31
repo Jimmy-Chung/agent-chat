@@ -41,6 +41,8 @@ export interface Topic {
   general_spec_json: string | null
   sop_template_id: string | null
   current_model: string | null
+  /** Provider this topic is bound to at creation time. Immutable per topic. */
+  current_provider_id: string | null
   history_frozen_at: number | null
   plan_mode: boolean
   created_at: number

@@ -37,6 +37,7 @@ export const topics = sqliteTable('topics', {
   generalSpecJson: text('general_spec_json'),
   sopTemplateId: text('sop_template_id'),
   currentModel: text('current_model'),
+  currentProviderId: text('current_provider_id'),
   historyFrozenAt: integer('history_frozen_at'),
   planMode: integer('plan_mode', { mode: 'boolean' }).default(false).notNull(),
   createdAt: integer('created_at').notNull(),

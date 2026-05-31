@@ -658,6 +658,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           programmingSpecJson: data.programming ? JSON.stringify(data.programming) : null,
           generalSpecJson,
           sopTemplateId: data.sopTemplateId,
+          currentProviderId: data.providerId ?? null,
         })
 
         // Broadcast topic immediately so sidebar shows it, then establish session.

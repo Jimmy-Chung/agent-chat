@@ -25,6 +25,7 @@ export async function createTopic(input: {
   generalSpecJson?: string | null
   sopTemplateId?: string | null
   currentModel?: string | null
+  currentProviderId?: string | null
 }): Promise<Topic> {
   const now = Date.now()
   const row = {
@@ -37,6 +38,7 @@ export async function createTopic(input: {
     generalSpecJson: input.generalSpecJson ?? null,
     sopTemplateId: input.sopTemplateId ?? null,
     currentModel: input.currentModel ?? null,
+    currentProviderId: input.currentProviderId ?? null,
     historyFrozenAt: null,
     planMode: false,
     createdAt: now,
@@ -96,6 +98,7 @@ const topicKeyMap: Record<string, string> = {
   pi_session_id: 'piSessionId',
   agent_type: 'agentType',
   current_model: 'currentModel',
+  current_provider_id: 'currentProviderId',
   history_frozen_at: 'historyFrozenAt',
   programming_spec_json: 'programmingSpecJson',
   general_spec_json: 'generalSpecJson',
@@ -111,6 +114,7 @@ export async function updateTopic(
       | 'pi_session_id'
       | 'agent_type'
       | 'current_model'
+      | 'current_provider_id'
       | 'history_frozen_at'
       | 'programming_spec_json'
       | 'general_spec_json'
@@ -172,6 +176,7 @@ export async function upsertSystemTopic(
     generalSpecJson: null,
     sopTemplateId: null,
     currentModel: null,
+    currentProviderId: null,
     historyFrozenAt: null,
     planMode: false,
     createdAt: now,
@@ -193,6 +198,7 @@ function toDomain(row: Record<string, unknown>): Topic {
     general_spec_json: (row.generalSpecJson as string) || null,
     sop_template_id: (row.sopTemplateId as string) || null,
     current_model: (row.currentModel as string) || null,
+    current_provider_id: (row.currentProviderId as string) || null,
     history_frozen_at: (row.historyFrozenAt as number) || null,
     plan_mode: Boolean(row.planMode),
     created_at: row.createdAt as number,

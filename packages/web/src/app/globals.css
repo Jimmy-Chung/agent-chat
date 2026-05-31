@@ -184,6 +184,7 @@ code, pre {
 .message-bubble-shell {
   position: relative;
   max-width: 100%;
+  overflow-x: auto;
 }
 
 .message-edge-timestamp {

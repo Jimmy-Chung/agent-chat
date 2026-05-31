@@ -29,6 +29,17 @@ const SCENARIO_TIMEOUT_MS = parseEnvInt('SCENARIO_TIMEOUT_MS', 600_000)
 const CONNECT_TIMEOUT_MS = parseEnvInt('CONNECT_TIMEOUT_MS', 10_000)
 const SERVER_WS = process.env.SERVER_WS_URL || 'ws://127.0.0.1:8787/ws'
 const AUTH_TOKEN = process.env.AGENT_CHAT_TOKEN || 'test-token'
+// Optional: route the server at an explicit PI adapter (else server uses its default).
+const PI_WSS = process.env.PI_ADAPTER_URL || ''
+const PI_TOKEN = process.env.PI_ADAPTER_TOKEN || ''
+
+function buildServerWsUrl(): string {
+  const url = new URL(SERVER_WS)
+  url.searchParams.set('token', AUTH_TOKEN)
+  if (PI_WSS) url.searchParams.set('piWssUrl', PI_WSS)
+  if (PI_TOKEN) url.searchParams.set('piToken', PI_TOKEN)
+  return url.toString()
+}
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -55,7 +66,7 @@ async function runScenario(scenario: { id: string; title: string; prompts: strin
   const turns: TurnResult[] = []
   let wsDisconnects = 0; let phase = 'connect'
   const scenarioStart = Date.now()
-  const wsUrl = `${SERVER_WS}?token=${encodeURIComponent(AUTH_TOKEN)}`
+  const wsUrl = buildServerWsUrl()
 
   console.log(`\n━━━ ${scenario.title} (${scenario.id}) ━━━`)
 
