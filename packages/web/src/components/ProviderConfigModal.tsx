@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useWsStore } from '@/stores/ws-store'
-import type { ProviderConfig } from '@/stores/ws-store'
+import { useWsStore, MODEL_ALIASES, type ModelAlias } from '@/stores/ws-store'
+import type { ProviderConfig, ModelMapping } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { sendProviderRpc } from '@/lib/ws-client'
+import { buildModelMappingPayload } from '@/lib/model-mapping'
 
 type ViewMode = 'list' | 'add' | 'edit'
 
@@ -67,6 +68,10 @@ export function ProviderConfigModal({
   const [formModels, setFormModels] = useState<string[]>([])
   const [lockedModels, setLockedModels] = useState<string[]>([])
   const [modelInput, setModelInput] = useState('')
+  // claude-code 别名→真实模型映射（opus/sonnet/haiku）
+  const [formModelMapping, setFormModelMapping] = useState<Record<ModelAlias, string>>({
+    opus: '', sonnet: '', haiku: '',
+  })
   const [showApiKey, setShowApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -114,6 +119,7 @@ export function ProviderConfigModal({
     setFormModels([])
     setLockedModels([])
     setModelInput('')
+    setFormModelMapping({ opus: '', sonnet: '', haiku: '' })
     setShowApiKey(false)
     setError('')
   }
@@ -129,6 +135,11 @@ export function ProviderConfigModal({
     // isDefault providers: lock built-in models so they can't be removed
     setLockedModels(cfg.isDefault ? (cfg.models ?? []) : [])
     setModelInput('')
+    setFormModelMapping({
+      opus: cfg.modelMapping?.opus ?? '',
+      sonnet: cfg.modelMapping?.sonnet ?? '',
+      haiku: cfg.modelMapping?.haiku ?? '',
+    })
     setShowApiKey(false)
     setError('')
   }
@@ -144,7 +155,13 @@ export function ProviderConfigModal({
     if (!formName.trim()) { setError('名称不能为空'); return }
     if (!formGroup) { setError('请选择分组'); return }
     if (view === 'add' && !formApiKey.trim()) { setError('API Key 不能为空'); return }
-    if (formModels.length === 0) { setError('至少需要一个模型'); return }
+
+    // claude-code 的模型固定为别名 opus/sonnet/haiku（下拉选项），真实模型走 modelMapping；
+    // 其它分组沿用自由录入的 models。
+    const isClaudeCode = formGroup === 'claude-code'
+    const models = isClaudeCode ? [...MODEL_ALIASES] : formModels
+    if (!isClaudeCode && models.length === 0) { setError('至少需要一个模型'); return }
+    const mapping = isClaudeCode ? buildModelMappingPayload(formModelMapping) : {}
 
     setSaving(true)
     setError('')
@@ -154,9 +171,10 @@ export function ProviderConfigModal({
           name: formName.trim(),
           provider: formName.trim(),
           apiKey: formApiKey.trim(),
-          models: formModels,
+          models,
           group: formGroup,
           ...(formBaseUrl.trim() ? { baseUrl: formBaseUrl.trim() } : {}),
+          ...(isClaudeCode ? { modelMapping: mapping } : {}),
         })
       } else if (editingId) {
         const params: Record<string, unknown> = {}
@@ -164,9 +182,11 @@ export function ProviderConfigModal({
         if (formName.trim()) params.name = formName.trim()
         if (formName.trim()) params.provider = formName.trim()
         if (formApiKey.trim()) params.apiKey = formApiKey.trim()
-        params.models = formModels
+        params.models = models
         if (formGroup) params.group = formGroup
         if (formBaseUrl.trim()) params.baseUrl = formBaseUrl.trim()
+        // 传入即覆盖；空对象清除全部别名映射（契约 AIT-200）
+        if (isClaudeCode) params.modelMapping = mapping
         await sendProviderRpc('updateProviderConfig', params)
       }
       await fetchConfigs()
@@ -447,20 +467,23 @@ export function ProviderConfigModal({
                                   </div>
                                   {cfg.models && cfg.models.length > 0 && (
                                     <div className="mt-1.5 flex flex-wrap gap-1">
-                                      {cfg.models.map((m) => (
-                                        <span
-                                          key={m}
-                                          className="inline-block rounded-md px-1.5 py-px text-[10.5px]"
-                                          style={{
-                                            background: 'rgba(10,132,255,0.10)',
-                                            color: '#7CB6FF',
-                                            border: '1px solid rgba(10,132,255,0.26)',
-                                            fontFamily: 'var(--font-mono)',
-                                          }}
-                                        >
-                                          {m}
-                                        </span>
-                                      ))}
+                                      {cfg.models.map((m) => {
+                                        const real = cfg.modelMapping?.[m as keyof ModelMapping]
+                                        return (
+                                          <span
+                                            key={m}
+                                            className="inline-block rounded-md px-1.5 py-px text-[10.5px]"
+                                            style={{
+                                              background: 'rgba(10,132,255,0.10)',
+                                              color: '#7CB6FF',
+                                              border: '1px solid rgba(10,132,255,0.26)',
+                                              fontFamily: 'var(--font-mono)',
+                                            }}
+                                          >
+                                            {real ? `${m} → ${real}` : m}
+                                          </span>
+                                        )
+                                      })}
                                     </div>
                                   )}
                                 </div>
@@ -689,7 +712,39 @@ export function ProviderConfigModal({
                 </div>
               </div>
 
-              {/* Model Tags */}
+              {/* claude-code: 别名→真实模型映射；其它分组：自由录入模型列表 */}
+              {formGroup === 'claude-code' ? (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10.5px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--fg-regular)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+                  模型别名映射
+                  <span className="ml-auto text-[10px] font-medium normal-case tracking-normal" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>留空=官方默认</span>
+                </label>
+                <div className="flex flex-col gap-1.5 rounded-lg p-2" style={{ background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)' }}>
+                  {MODEL_ALIASES.map((alias) => (
+                    <div key={alias} className="flex items-center gap-2">
+                      <span
+                        className="inline-flex items-center justify-center rounded-md text-[11px] shrink-0"
+                        style={{ width: 64, height: 26, background: 'rgba(10,132,255,.14)', border: '1px solid rgba(10,132,255,.32)', color: '#7CB6FF', fontFamily: 'var(--font-mono)' }}
+                      >
+                        {alias}
+                      </span>
+                      <span style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>→</span>
+                      <input
+                        type="text"
+                        value={formModelMapping[alias]}
+                        onChange={(e) => setFormModelMapping((prev) => ({ ...prev, [alias]: e.target.value }))}
+                        placeholder="真实模型，如 glm-4.6（留空用官方）"
+                        className="flex-1 bg-transparent outline-none rounded-md px-2"
+                        style={{ height: 26, color: 'var(--fg-code)', fontSize: 12, fontFamily: 'var(--font-mono)', border: '1px solid var(--hairline)' }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10.5px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', letterSpacing: 0, lineHeight: 1.45 }}>
+                  话题内下拉用别名 <code style={{ fontFamily: 'inherit', background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4, color: 'var(--fg-code)' }}>opus/sonnet/haiku</code>；配了映射则显示「别名 → 真实模型」，传给 adapter 的仍是别名。
+                </p>
+              </div>
+              ) : (
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10.5px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--fg-regular)', letterSpacing: '0.02em', textTransform: 'uppercase' }}>
                   模型列表 <span style={{ color: 'var(--state-danger, #FF453A)' }}>*</span>
@@ -758,6 +813,7 @@ export function ProviderConfigModal({
                   使用 <code style={{ fontFamily: 'inherit', background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4, color: 'var(--fg-code)' }}>↑↓</code> 调整顺序；第一个为该 Provider 默认模型。
                 </p>
               </div>
+              )}
             </div>
           )}
         </div>

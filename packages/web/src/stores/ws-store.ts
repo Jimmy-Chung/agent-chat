@@ -6,6 +6,16 @@ import type { ClientEvent } from '@agent-chat/protocol'
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
+/** claude-code 别名 → 真实模型映射（AIT-201 / 契约 AIT-200）。 */
+export interface ModelMapping {
+  opus?: string
+  sonnet?: string
+  haiku?: string
+}
+
+export const MODEL_ALIASES = ['opus', 'sonnet', 'haiku'] as const
+export type ModelAlias = (typeof MODEL_ALIASES)[number]
+
 export interface ProviderConfig {
   id: string
   name: string
@@ -13,8 +23,12 @@ export interface ProviderConfig {
   apiKey?: string
   baseUrl?: string
   models?: string[]
+  /** 别名→真实模型；仅 claude-code 第三方 provider 配了 ANTHROPIC_DEFAULT_*_MODEL 时返回。 */
+  modelMapping?: ModelMapping
   isActive?: boolean
   isDefault?: boolean
+  /** 内置默认 provider，不可编辑/删除。 */
+  builtin?: boolean
   group?: string
 }
 

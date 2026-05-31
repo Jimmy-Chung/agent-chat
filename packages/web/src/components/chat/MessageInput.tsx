@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
 import { getWsClient } from '@/lib/ws-client'
+import { buildModelOptions } from '@/lib/model-mapping'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore, type PendingMessage } from '@/stores/message-store'
 import { useTopicStore } from '@/stores/topic-store'
@@ -102,9 +103,18 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const currentModel = activeTopic?.current_model
 
   const providerConfigs = useWsStore((s) => s.providerConfigs)
-  // Derive available models from all providers (active provider's models, or all models union)
-  const activeProvider = providerConfigs.find((c) => c.isActive)
-  const availableModels = activeProvider?.models ?? providerConfigs.flatMap((c) => c.models ?? [])
+  // Models are scoped to the provider this topic was created with (bound at creation,
+  // immutable per topic). Legacy topics created before provider binding have no
+  // current_provider_id — fall back to the globally-active provider's models so they
+  // aren't left without a selector.
+  const boundProvider = activeTopic?.current_provider_id
+    ? providerConfigs.find((c) => c.id === activeTopic.current_provider_id)
+    : undefined
+  const fallbackProvider = providerConfigs.find((c) => c.isActive)
+  const modelProvider = boundProvider ?? (activeTopic?.current_provider_id ? undefined : fallbackProvider)
+  const availableModels = modelProvider?.models ?? []
+  // claude-code 别名映射：下拉展示「opus → glm5.1」，但 value 仍传别名（adapter 内部解析）。
+  const modelOptions = buildModelOptions(availableModels, modelProvider?.modelMapping)
 
   const [selectedModel, setSelectedModel] = useState<string>(currentModel ?? '')
 
@@ -742,7 +752,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             <ProviderModelSelect
               label="Model"
               value={selectedModel}
-              options={availableModels.map((m) => ({ value: m, label: m }))}
+              options={modelOptions}
               loading={false}
               onChange={handleModelChange}
             />
