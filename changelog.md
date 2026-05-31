@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-05-31 [v1.7.30] — provider 话题级绑定 + 别名模型映射 + 工具卡片修复
+
+### AIT-214: provider 话题级绑定
+- `topics` 表新增 `current_provider_id`（additive migration `0008`），建话题时落库
+- 协议 `Topic` / `topicSchema` 新增 `current_provider_id`（nullable，向后兼容）
+- 话题内模型下拉改为按"本话题绑定 provider"取数；切换 active provider 只影响新建话题，不再让已开话题下拉撒谎
+
+### AIT-201: provider 别名模型下拉 + modelMapping 录入/展示
+- claude-code 分组下拉用别名 `opus/sonnet/haiku`；provider 编辑表单可录入「别名→真实模型」映射并提交 adapter
+- 配了映射的话题选框展示「opus → glm5.1」，透传给 adapter 的仍是别名（由 adapter 经 `ANTHROPIC_DEFAULT_*_MODEL` 解析）
+- 服务端/协议层零改动（`/providers` 透明代理已覆盖 `modelMapping` 双向透传）
+
+### AIT-213: 工具卡片 edit 文件后永久 loading
+- `upsertSnapshotPart` 去重从 `id || kind` 收紧为严格按 `id`，修复同一消息多工具调用互相覆盖导致 `toolResults` 错位、卡片永久转圈
+- 附：消息气泡宽内容溢出修复（`overflow-x:auto` + `min-w-0`）
+
+### 测试 / 工具
+- 协议变更门禁：R-006 链路压测 20/20 PASS、R-007 分层验证 l1-2/l2/l3 全过（均对真实 adapter）
+- `link-stress` 支持经 env 指定真实 adapter（对齐 link-verify）
+- 版本显示更新为 `v1.7.30`
+
 ## 2026-05-31 [v1.7.29] — cron.triggered 无 session 场景全局分发
 
 ### AIT-195: cron.triggered 无 session 场景的全局分发
