@@ -15,6 +15,7 @@ const topicSchema = z.object({
   agent_type: z.enum(['programming', 'general']),
   pi_session_id: z.string().nullable(),
   current_model: z.string().nullable(),
+  current_provider_id: z.string().nullable().optional().default(null),
   history_frozen_at: z.number().nullable(),
   plan_mode: z.boolean().optional().default(false),
   created_at: z.number(),

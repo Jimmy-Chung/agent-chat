@@ -41,6 +41,7 @@ export function rawTopicToTopic(raw: Record<string, unknown>): import('@agent-ch
     general_spec_json: (raw.general_spec_json as string) ?? null,
     sop_template_id: null,
     current_model: (raw.current_model as string) ?? null,
+    current_provider_id: (raw.current_provider_id as string) ?? null,
     history_frozen_at: (raw.history_frozen_at as number) ?? null,
     plan_mode: Boolean(raw.plan_mode),
     created_at: raw.created_at as number,

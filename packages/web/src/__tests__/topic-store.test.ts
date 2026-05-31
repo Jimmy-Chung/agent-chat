@@ -21,6 +21,7 @@ function makeTopic(overrides: Partial<Topic> = {}): Topic {
     general_spec_json: null,
     sop_template_id: null,
     current_model: null,
+    current_provider_id: null,
     history_frozen_at: null,
     plan_mode: false,
     created_at: Date.now(),
