@@ -128,7 +128,7 @@ export function MessageBubble({
         setTouchTimeVisible(false)
       }}
     >
-      <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`flex max-w-[80%] min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {/* Cron indicator */}
         {cronTriggered && !isUser && (
           <CronIndicator
