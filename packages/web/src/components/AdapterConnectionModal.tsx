@@ -71,24 +71,32 @@ function StatusRow({ label, value, tone }: { label: string; value: string; tone?
   )
 }
 
-export function PairingRecoveryPanel({ onClose }: { onClose?: () => void }) {
+export function PairingRecoveryPanel({
+  onClose,
+  showRefreshHint = false,
+}: {
+  onClose?: () => void
+  showRefreshHint?: boolean
+}) {
   const isMobile = useIsMobile()
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div
-        style={{
-          borderRadius: 12,
-          border: '1px solid rgba(255,159,10,0.28)',
-          background: 'rgba(255,159,10,0.09)',
-          color: 'var(--fg-regular)',
-          padding: '12px 13px',
-          fontSize: 13,
-          lineHeight: 1.65,
-        }}
-      >
-        请刷新二维码后，扫码/上传后再试。
-      </div>
+      {showRefreshHint ? (
+        <div
+          style={{
+            borderRadius: 12,
+            border: '1px solid rgba(255,159,10,0.28)',
+            background: 'rgba(255,159,10,0.09)',
+            color: 'var(--fg-regular)',
+            padding: '12px 13px',
+            fontSize: 13,
+            lineHeight: 1.65,
+          }}
+        >
+          请刷新二维码后，扫码/上传后再试。
+        </div>
+      ) : null}
 
       {isMobile ? (
         <div
@@ -102,7 +110,7 @@ export function PairingRecoveryPanel({ onClose }: { onClose?: () => void }) {
             lineHeight: 1.65,
           }}
         >
-          移动端请使用系统相机扫描 PI UI 上的新二维码，完成验证码后返回 agent-chat。
+          扫描 Helm 二维码以完成配对流程。
         </div>
       ) : (
         <PairingScanCard onClose={onClose} />
@@ -112,6 +120,8 @@ export function PairingRecoveryPanel({ onClose }: { onClose?: () => void }) {
 }
 
 export function PairingRequiredScreen() {
+  const isMobile = useIsMobile()
+
   return (
     <div
       className="flex h-dvh w-full items-center justify-center px-4"
@@ -127,13 +137,13 @@ export function PairingRequiredScreen() {
       >
         <div style={{ marginBottom: 16 }}>
           <h1 style={{ color: 'var(--fg-strong)', fontSize: 18, fontWeight: 650, marginBottom: 6 }}>
-            连接 PI Adapter
+            连接到 Helm
           </h1>
           <p style={{ color: 'var(--fg-dim)', fontSize: 13, lineHeight: 1.6 }}>
-            先在 PI UI 刷新二维码，再完成设备配对。
+            {isMobile ? '扫描 Helm 二维码以完成配对流程。' : '上传 Helm 的配对二维码以完成配对流程。'}
           </p>
         </div>
-        <PairingRecoveryPanel />
+        {isMobile ? null : <PairingRecoveryPanel />}
       </div>
     </div>
   )
@@ -238,7 +248,7 @@ export function AdapterConnectionModal({
 
           {!healthy ? (
             <div style={{ marginTop: 18 }}>
-              <PairingRecoveryPanel onClose={onClose} />
+              <PairingRecoveryPanel onClose={onClose} showRefreshHint />
             </div>
           ) : null}
         </div>
