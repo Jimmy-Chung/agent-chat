@@ -20,6 +20,7 @@ function makeConfig(): AppConfig {
     vapidPublicKey: '',
     vapidPrivateKey: '',
     vapidSubject: 'mailto:test@example.com',
+    webBaseUrl: '',
   }
 }
 

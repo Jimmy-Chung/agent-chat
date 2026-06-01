@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-01 [v1.8.0] — 设备配对（首版 / 预览）
+
+### AIT-216: 设备配对 server API + 凭证签发 + /pair 前端
+- 新增云端配对 API：`/api/agent-chat/v1/pairing/*`（create/claim/desktop-status/verify/cancel）+ `/devices/token`（deviceCredential→短期 RS256 JWT）+ `/.well-known/jwks.json`
+- D1 migration `0009`：`pairing_sessions` / `devices` / `signing_keys`（签名密钥首用自动生成持久化）
+- 安全：desktopPollToken 只回 adapter，verificationCode 一次性/限频/过期，撤销在 mint 处兜底，JWT 绑定 `aud=adapterInstanceId`
+- 前端 `/pair` 页（验证码流程）+ 桌面「上传二维码图片 / 粘贴链接」入口；连接弹窗并列「扫码配对」，原手动 WSS+token 连接保留不变
+- 契约见 AIT-208「讨论结论」（agent-chat ↔ agent-adapter）
+
+> ⚠️ 预览：配对握手→拿凭证→换 JWT→落地已可用；**paired 设备用 JWT 直连 adapter WSS 的实时数据连接**为后续切片，本版配对入口尚不能真正建立会话。
+
 ## 2026-05-31 [v1.7.30] — provider 话题级绑定 + 别名模型映射 + 工具卡片修复
 
 ### AIT-214: provider 话题级绑定

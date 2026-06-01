@@ -10,6 +10,7 @@ import { getD1 } from './db/migrate'
 import { handleArtifactAccessRequest } from './r2/artifact-access'
 import { createPushRoutes } from './routes/push'
 import { getLogs, clearLogs } from './server-logs'
+import { createPairingRoutes } from './pairing/routes'
 import { piWsToHttpBase } from '@agent-chat/protocol'
 
 let initialized = false
@@ -30,6 +31,9 @@ async function initialize(env: Env) {
 
 const app = new Hono()
 app.use('*', cors())
+
+// Device pairing API (AIT-216): /api/agent-chat/v1/pairing, /devices/token, /.well-known/jwks.json
+app.route('/', createPairingRoutes(() => appConfig))
 
 app.get('/healthz', async (c) => {
   try {

@@ -21,6 +21,7 @@ const config = {
   vapidPublicKey: '',
   vapidPrivateKey: '',
   vapidSubject: '',
+  webBaseUrl: '',
 }
 
 function makeContext(pendingUploads: PendingUploadStore) {

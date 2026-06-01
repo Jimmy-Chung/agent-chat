@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { normalizePiWsUrl } from '@agent-chat/protocol'
+import { PairingScanCard } from './PairingScanCard'
 
 const PI_WSS_URL_KEY = 'PI_ADAPTER_WSS_URL'
 const PI_TOKEN_KEY = 'PI_ADAPTER_TOKEN'
@@ -24,6 +25,7 @@ export function ConnectionConfigModal({
   const [piToken, setPiToken] = useState(initialToken)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [showScan, setShowScan] = useState(false)
 
   const canSubmit = wssUrl.trim() && piToken.trim() && !testing
 
@@ -151,6 +153,19 @@ export function ConnectionConfigModal({
             {testResult.ok ? '连接验证成功' : `连接失败：${testResult.error}`}
           </div>
         )}
+
+        {/* 扫码配对入口（AIT-216）— 与手动配置并列 */}
+        <div className="space-y-2 pt-1" style={{ borderTop: '1px solid var(--hairline)' }}>
+          <button
+            type="button"
+            onClick={() => setShowScan((v) => !v)}
+            className="text-xs font-medium"
+            style={{ color: 'var(--role-user)' }}
+          >
+            {showScan ? '收起扫码配对' : '或：扫码配对新设备 ▾'}
+          </button>
+          {showScan && <PairingScanCard onClose={onClose} />}
+        </div>
 
         <div className="flex items-center justify-between pt-1">
           <span className="text-[10px]" style={{ color: 'var(--fg-dim)' }}>ESC 取消</span>

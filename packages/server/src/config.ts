@@ -14,6 +14,8 @@ export interface Env {
   VAPID_PUBLIC_KEY?: string
   VAPID_PRIVATE_KEY?: string
   VAPID_SUBJECT?: string
+  /** Public base URL of the agent-chat web app (for pairing `/pair` links). */
+  AGENT_CHAT_WEB_URL?: string
 }
 
 export interface AppConfig {
@@ -33,6 +35,7 @@ export interface AppConfig {
   vapidPublicKey: string
   vapidPrivateKey: string
   vapidSubject: string
+  webBaseUrl: string
 }
 
 export function createConfig(env: Env): AppConfig {
@@ -53,5 +56,6 @@ export function createConfig(env: Env): AppConfig {
     vapidPublicKey: env.VAPID_PUBLIC_KEY || '',
     vapidPrivateKey: env.VAPID_PRIVATE_KEY || '',
     vapidSubject: env.VAPID_SUBJECT || 'mailto:admin@example.com',
+    webBaseUrl: env.AGENT_CHAT_WEB_URL || '',
   }
 }
