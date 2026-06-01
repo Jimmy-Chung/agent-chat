@@ -200,6 +200,8 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
     return c.json({
       status: 'paired',
       deviceCredential, // long-lived; held by web, exchanged at /devices/token
+      adapterInstanceId: session.adapter_instance_id,
+      adapterWssUrl: session.adapter_wss_url,
       pairedDevice: {
         id: device.id,
         name: device.name,
