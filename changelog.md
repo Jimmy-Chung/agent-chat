@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-02 [v1.8.6] — fix: 左下角 Agent 连接入口改为扫码配对路径
+
+### AIT-216
+- 左下角 Agent 状态入口不再打开手动 PI Adapter 配置；链路正常时展示连接状态、Adapter 地址、版本和设备配对信息。
+- 链路异常时展示“请刷新二维码后，扫码/上传后再试”；PC 端提供上传二维码 / 粘贴配对链接，移动端提示使用系统相机扫码。
+- 缺少 adapter 配置时默认进入扫码配对提示；手动 WSS + token 配置保留为 `NEXT_PUBLIC_ENABLE_PI_DEBUG_CONFIG=1` 的 debug 入口。
+- 版本显示更新为 `v1.8.6`。
+
 ## 2026-06-01 [v1.8.5] — fix: 配对 JWT 场景 provider HTTP 鉴权
 
 ### AIT-216

@@ -13,7 +13,8 @@ import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
-import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
+import { PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
+import { AdapterConnectionModal } from '@/components/AdapterConnectionModal'
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
@@ -314,7 +315,7 @@ export function Sidebar() {
   const [permissionTier, setPermissionTier] = useState<PermissionTier>('normal')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
-  const [showConnConfig, setShowConnConfig] = useState(false)
+  const [showConnectionModal, setShowConnectionModal] = useState(false)
   const [showProviderConfig, setShowProviderConfig] = useState(false)
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const templates = useSopTemplateStore((s) => s.templates)
@@ -739,7 +740,7 @@ export function Sidebar() {
           <PiStatusBadge
             wsStatus={wsStatus}
             adapterLink={adapterLink}
-            onClick={() => setShowConnConfig(true)}
+            onClick={() => setShowConnectionModal(true)}
           />
           <NotificationBell />
           <div className="ml-auto">
@@ -748,14 +749,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.8.5</span></div>
+                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.8.6</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.8.5</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.8.6</span>
             </Tooltip>
           </div>
         </div>
@@ -788,16 +789,13 @@ export function Sidebar() {
           )
         : null}
 
-      {showConnConfig && typeof document !== 'undefined'
+      {showConnectionModal && typeof document !== 'undefined'
         ? createPortal(
-            <ConnectionConfigModal
-              initialWssUrl={typeof window !== 'undefined' ? localStorage.getItem(PI_WSS_URL_KEY) ?? '' : ''}
-              initialToken={typeof window !== 'undefined' ? localStorage.getItem(PI_TOKEN_KEY) ?? '' : ''}
-              onConfirm={(config) => {
-                setShowConnConfig(false)
-                window.dispatchEvent(new CustomEvent('agent-chat:pi-config-changed', { detail: config }))
-              }}
-              onClose={() => setShowConnConfig(false)}
+            <AdapterConnectionModal
+              wsStatus={wsStatus}
+              adapterLink={adapterLink}
+              adapterVersion={adapterVersion}
+              onClose={() => setShowConnectionModal(false)}
             />,
             document.body,
           )
@@ -1311,7 +1309,7 @@ function PiStatusBadge({ wsStatus, adapterLink, onClick }: {
         : { bg: 'rgba(255,255,255,0.08)', fg: 'var(--fg-dim)', border: '1px solid var(--hairline)', dot: 'var(--fg-dim)', shadow: 'none' }
   return (
     <Tag
-      {...(onClick ? { onClick, title: '点击配置 PI Adapter 连接' } : {})}
+      {...(onClick ? { onClick, title: state.tone === 'ok' ? '查看 Agent 连接状态' : '重新配对 Agent' } : {})}
       className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${interactive}`}
       style={{
         height: 22,
