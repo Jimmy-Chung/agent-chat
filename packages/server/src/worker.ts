@@ -146,6 +146,20 @@ function piAdapterHeaders(piToken: string): Record<string, string> {
   return piToken ? { Authorization: `Bearer ${piToken}` } : {}
 }
 
+function piAdapterAuthToken(wssUrl: string, piToken: string): string {
+  if (piToken) return piToken
+  try {
+    const url = new URL(wssUrl)
+    return url.searchParams.get('access_token') || url.searchParams.get('token') || ''
+  } catch {
+    return ''
+  }
+}
+
+function piAdapterHeadersFromConfig(wssUrl: string, piToken: string): Record<string, string> {
+  return piAdapterHeaders(piAdapterAuthToken(wssUrl, piToken))
+}
+
 function checkAgentChatToken(authHeader: string | undefined): boolean {
   if (!appConfig?.token) return true
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
@@ -173,7 +187,7 @@ app.get('/api/agent-chat/v1/providers', async (c) => {
   const group = c.req.query('group')
   if (group) qs.set('group', group)
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers?${qs}`, {
-    headers: piAdapterHeaders(piToken),
+    headers: piAdapterHeadersFromConfig(wssUrl, piToken),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
   return adapterResponse(res)
@@ -185,7 +199,7 @@ app.get('/api/agent-chat/v1/workspace', async (c) => {
   const piToken = c.req.query('piToken') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/workspace`, {
-    headers: piAdapterHeaders(piToken),
+    headers: piAdapterHeadersFromConfig(wssUrl, piToken),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
   return adapterResponse(res)
@@ -199,7 +213,7 @@ app.post('/api/agent-chat/v1/providers', async (c) => {
   const body = await c.req.json()
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...piAdapterHeaders(piToken) },
+    headers: { 'Content-Type': 'application/json', ...piAdapterHeadersFromConfig(wssUrl, piToken) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
@@ -215,7 +229,7 @@ app.patch('/api/agent-chat/v1/providers/:id', async (c) => {
   const body = await c.req.json()
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers/${id}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...piAdapterHeaders(piToken) },
+    headers: { 'Content-Type': 'application/json', ...piAdapterHeadersFromConfig(wssUrl, piToken) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
@@ -230,7 +244,7 @@ app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
   const id = c.req.param('id')
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers/${id}`, {
     method: 'DELETE',
-    headers: piAdapterHeaders(piToken),
+    headers: piAdapterHeadersFromConfig(wssUrl, piToken),
     signal: AbortSignal.timeout(PI_PROXY_TIMEOUT_MS),
   })
   return adapterResponse(res)

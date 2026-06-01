@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-01 [v1.8.5] — fix: 配对 JWT 场景 provider HTTP 鉴权
+
+### AIT-216
+- Server provider/workspace HTTP proxy 在 `PI_ADAPTER_TOKEN` 为空时，从配对写入的 adapter WSS URL 中提取 `access_token` / `token`，并转为发往 adapter 的 `Authorization: Bearer ...`。
+- 修复扫码配对后 WS 已连接但 provider 列表 401 `auth_invalid` 的问题。
+- 版本显示更新为 `v1.8.5`。
+
 ## 2026-06-01 [v1.8.4] — fix: 桌面二维码图片识别增强
 
 ### AIT-216

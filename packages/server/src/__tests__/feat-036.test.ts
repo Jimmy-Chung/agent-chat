@@ -153,6 +153,29 @@ describe('FEAT-036: provider proxy endpoint', () => {
     restore()
   })
 
+  it('uses access_token from paired adapter WSS URL when piToken is empty', async () => {
+    const restore = mockHealthz(
+      new Response(JSON.stringify([{ id: 'provider-1' }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const wssUrl = encodeURIComponent('wss://pi.example.com/api/agent-chat/v1/socket?access_token=device-jwt')
+    const res = await fetch(
+      `/api/agent-chat/v1/providers?wssUrl=${wssUrl}&group=universal`,
+      { headers: { Authorization: 'Bearer test-token' } },
+    )
+
+    expect(res.status).toBe(200)
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    const calledInit = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(calledUrl).toBe('https://pi.example.com/api/agent-chat/v1/providers?group=universal')
+    expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer device-jwt')
+
+    restore()
+  })
+
   it('passes through non-JSON adapter errors instead of returning proxy 500', async () => {
     const restore = mockHealthz(
       new Response('error code: 1033', {
