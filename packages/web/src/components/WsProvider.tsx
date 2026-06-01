@@ -240,14 +240,15 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     setStep('main')
   }, [])
 
-  // /pair 走自己的配对流程，绕过 auth / pi-config 门。
-  if (isPairRoute) return <>{children}</>
-
   if (!mounted) return null
 
+  // 平台 token（VerifyPlatform）—— 扫码与直接访问都要。
   if (step === 'auth') {
     return <AuthForm onSuccess={handleAuthSuccess} />
   }
+
+  // 扫码（/pair）：平台 token 验过后进设备验证码页（VerifyDevice），跳过 pi-adapter 配置。
+  if (isPairRoute) return <>{children}</>
 
   if (step === 'pi-config') {
     return (

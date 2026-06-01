@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import {
   parsePairingParams,
   claimSession,
@@ -17,7 +17,6 @@ type Phase = 'loading' | 'code' | 'verifying' | 'success' | 'error'
 
 // Rough first-version UI (AIT-216 D-3). Visual polish待设计图.
 function PairInner() {
-  const router = useRouter()
   const params = useSearchParams()
   const [phase, setPhase] = useState<Phase>('loading')
   const [errorCode, setErrorCode] = useState('')
@@ -130,7 +129,7 @@ function PairInner() {
           <>
             <p style={{ color: 'var(--state-ok,#30D158)', fontSize: 14, marginBottom: 16 }}>✓ 配对成功，已绑定该电脑</p>
             <button
-              onClick={() => router.push('/')}
+              onClick={() => { window.location.assign('/') }}
               style={{ width: '100%', height: 42, borderRadius: 10, fontWeight: 600, background: 'var(--glass-2,rgba(255,255,255,.08))', color: '#fff', border: '1px solid var(--hairline,rgba(255,255,255,.14))' }}
             >
               进入

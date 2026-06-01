@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-01 [v1.8.3] — fix: 配对流程对齐（平台 token → 设备验证码 → 进主页）
+
+### AIT-216
+- 修正 v1.8.2 的过度绕过：扫码 `/pair` **仍走平台 token（VerifyPlatform）**，只在 token 验过后**跳过 pi-adapter 配置**、直接进设备验证码页（与「网页直接访问 → pi-adapter 配置」并列）。有 token 则跳过平台 token 直达验证码。
+- 配对成功后整页跳转 `/`（`window.location`），让 WsProvider 重新读取 localStorage（平台 token + 配对写入的连接配置）→ 直接进主页连接，不再卡在 pi-adapter 配置弹窗。
+- 连带消除了「配对完又弹 AuthForm」的第二堵墙：`/ws` 用平台 token、adapter 用设备 JWT，各就各位，server 无需额外改动。
+
 ## 2026-06-01 [v1.8.2] — fix: /pair 不再被「输 token / 配 adapter」全局门拦截
 
 ### AIT-216
