@@ -1,9 +1,19 @@
-import { describe, it, expect } from 'vitest'
-import { parsePairingParams, parsePairingUrl, buildAdapterWsUrl } from '../lib/pairing'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { parsePairingParams, parsePairingUrl, buildAdapterWsUrl, applyPairedConnection } from '../lib/pairing'
 
 const WS = 'wss://adapter.example.com/api/agent-chat/v1/socket'
 
 describe('AIT-216 pairing client helpers', () => {
+  beforeEach(() => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => { store.set(k, String(v)) },
+      removeItem: (k: string) => { store.delete(k) },
+      clear: () => store.clear(),
+    })
+  })
+
   it('parsePairingParams reads session/nonce/ws', () => {
     const p = parsePairingParams(`session=ps_1&nonce=abc&ws=${encodeURIComponent(WS)}`)
     expect(p).toEqual({ session: 'ps_1', nonce: 'abc', ws: WS })
@@ -32,5 +42,11 @@ describe('AIT-216 pairing client helpers', () => {
     const out = buildAdapterWsUrl(WS, 'jwt.abc.def')
     expect(out).toBe(`${WS}?access_token=jwt.abc.def`)
     expect(new URL(out).searchParams.get('access_token')).toBe('jwt.abc.def')
+  })
+
+  it('applyPairedConnection points the app adapter URL at the paired adapter (JWT embedded, token cleared)', () => {
+    applyPairedConnection(WS, 'jwt.xyz')
+    expect(localStorage.getItem('PI_ADAPTER_WSS_URL')).toBe(`${WS}?access_token=jwt.xyz`)
+    expect(localStorage.getItem('PI_ADAPTER_TOKEN')).toBe('')
   })
 })
