@@ -7,6 +7,7 @@ import { getServerBase, getWsUrl } from '@/lib/server-url'
 import { useWsStore } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
+import { PairingRequiredScreen } from './AdapterConnectionModal'
 
 interface AgentChatErrorDetail {
   code?: string
@@ -251,13 +252,16 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   if (isPairRoute) return <>{children}</>
 
   if (step === 'pi-config') {
-    return (
+    const debugConfigEnabled = process.env.NEXT_PUBLIC_ENABLE_PI_DEBUG_CONFIG === '1'
+    return debugConfigEnabled ? (
       <ConnectionConfigModal
         initialWssUrl={piConfig?.wssUrl ?? ''}
         initialToken={piConfig?.piToken ?? ''}
         onConfirm={handlePiConfigConfirm}
         onClose={() => {}}
       />
+    ) : (
+      <PairingRequiredScreen />
     )
   }
 
