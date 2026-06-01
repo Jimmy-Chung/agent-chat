@@ -123,3 +123,19 @@ export function loadPairedDevice(): PairedDevice | null {
 export function clearPairedDevice(): void {
   try { localStorage.removeItem(PAIRED_KEY) } catch { /* ignore */ }
 }
+
+// Connection keys shared with ConnectionConfigModal / ws-client.
+const PI_WSS_URL_KEY = 'PI_ADAPTER_WSS_URL'
+const PI_TOKEN_KEY = 'PI_ADAPTER_TOKEN'
+
+/**
+ * Point the app's adapter connection at the paired adapter, carrying the JWT
+ * as `?access_token=` on the adapter WSS URL (server connects to it as-is).
+ * 首版：JWT 直接嵌入 URL；过期刷新留作后续优化。
+ */
+export function applyPairedConnection(adapterWssUrl: string, accessToken: string): void {
+  try {
+    localStorage.setItem(PI_WSS_URL_KEY, buildAdapterWsUrl(adapterWssUrl, accessToken))
+    localStorage.setItem(PI_TOKEN_KEY, '')
+  } catch { /* ignore */ }
+}

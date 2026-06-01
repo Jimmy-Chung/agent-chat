@@ -7,7 +7,7 @@ import {
   claimSession,
   verifyCode,
   exchangeToken,
-  buildAdapterWsUrl,
+  applyPairedConnection,
   savePairedDevice,
   detectPlatform,
   PairingError,
@@ -53,8 +53,8 @@ function PairInner() {
         adapterWssUrl: v.adapterWssUrl,
         pairedAt: v.pairedDevice.pairedAt,
       })
-      // Connection URL the app will use to reach the adapter directly.
-      void buildAdapterWsUrl(v.adapterWssUrl, accessToken)
+      // Point the app at the paired adapter (JWT as ?access_token=, server connects through).
+      applyPairedConnection(v.adapterWssUrl, accessToken)
       setPhase('success')
     } catch (e: unknown) {
       if (e instanceof PairingError && e.code === 'invalid_code') {

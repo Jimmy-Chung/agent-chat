@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 [v1.8.1] — 设备配对：配对后接入连接链路
+
+### AIT-216 切片 5（先跑通）
+- 配对成功后 `applyPairedConnection` 把 adapter 地址 + JWT 写入 `PI_ADAPTER_WSS_URL`（`?access_token=<JWT>`）、清空 piToken
+- 走现有 `浏览器 → server → adapter` 链路：server 原样把带 `access_token` 的 URL 连到 adapter，adapter 握手时验签（零 server 改动）
+
+> ⚠️ 仍待优化：JWT 5min 过期后的**断线重连刷新**（重连前用 deviceCredential 换新 JWT）未做；端到端联调需 adapter 侧 WSS 实际接收 `?access_token=` 并验签放行。
+
 ## 2026-06-01 [v1.8.0] — 设备配对（首版 / 预览）
 
 ### AIT-216: 设备配对 server API + 凭证签发 + /pair 前端
