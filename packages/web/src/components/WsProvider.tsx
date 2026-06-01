@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { usePathname } from 'next/navigation'
 import { getWsClient, type PiConfig } from '@/lib/ws-client'
 import { getServerBase, getWsUrl } from '@/lib/server-url'
 import { useWsStore } from '@/stores/ws-store'
@@ -129,6 +130,9 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const [piConfig, setPiConfig] = useState<PiConfig | null>(null)
   const status = useWsStore((s) => s.status)
   const unauthorized = useWsStore((s) => s.unauthorized)
+  // 扫码配对页是独立路径，不走「输 token / 配 adapter」的全局门。
+  const pathname = usePathname()
+  const isPairRoute = (pathname ?? '').startsWith('/pair')
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -147,13 +151,13 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (step !== 'main' || !piConfig) return
+    if (isPairRoute || step !== 'main' || !piConfig) return
     const client = getWsClient()
     client.connect(piConfig)
     return () => {
       client.disconnect()
     }
-  }, [step, piConfig])
+  }, [step, piConfig, isPairRoute])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -235,6 +239,9 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     setPiConfig(config)
     setStep('main')
   }, [])
+
+  // /pair 走自己的配对流程，绕过 auth / pi-config 门。
+  if (isPairRoute) return <>{children}</>
 
   if (!mounted) return null
 
