@@ -252,6 +252,65 @@ export async function runMigrations() {
     }
   }
 
+  // Run 0009: device pairing (AIT-216) — pairing sessions, devices, signing keys
+  {
+    const hash = '0009_device_pairing'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      await d1.prepare(`
+        CREATE TABLE IF NOT EXISTS pairing_sessions (
+          id TEXT PRIMARY KEY,
+          adapter_instance_id TEXT NOT NULL,
+          adapter_wss_url TEXT NOT NULL,
+          display_name TEXT,
+          status TEXT NOT NULL,
+          nonce TEXT NOT NULL,
+          desktop_poll_token_hash TEXT NOT NULL,
+          device_hint TEXT,
+          verification_code TEXT,
+          code_expires_at INTEGER,
+          code_attempts INTEGER NOT NULL DEFAULT 0,
+          paired_device_id TEXT,
+          expires_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      `).run()
+      await d1.prepare(`
+        CREATE TABLE IF NOT EXISTS devices (
+          id TEXT PRIMARY KEY,
+          adapter_instance_id TEXT NOT NULL,
+          name TEXT,
+          platform TEXT,
+          credential_hash TEXT NOT NULL,
+          scopes TEXT,
+          revoked INTEGER NOT NULL DEFAULT 0,
+          pairing_session_id TEXT,
+          created_at INTEGER NOT NULL
+        )
+      `).run()
+      try { await d1.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_credential_hash ON devices (credential_hash)`).run() } catch { /* index may exist */ }
+      await d1.prepare(`
+        CREATE TABLE IF NOT EXISTS signing_keys (
+          kid TEXT PRIMARY KEY,
+          public_jwk TEXT NOT NULL,
+          private_jwk TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL
+        )
+      `).run()
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0009_device_pairing')
+    }
+  }
+
   // Create FTS5 virtual table (porter tokenizer not available in D1, use unicode61)
   try {
     await d1
