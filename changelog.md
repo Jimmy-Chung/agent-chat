@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-01 [v1.8.2] — fix: /pair 不再被「输 token / 配 adapter」全局门拦截
+
+### AIT-216
+- `WsProvider` 是包裹所有页面的全局门（无 token → 输 Token；无 adapter 配置 → ConnectionConfigModal），导致扫码打开 `/pair` 的新设备被挡在配对页之前
+- 修复：`/pair` 路由跳过该门，直接渲染配对页（配对端点本就免鉴权），且不触发主连接
+
+> ⚠️ 已知后续墙：配对成功跳 `/` 后，设备仍无 `AGENT_CHAT_TOKEN`，会再遇 AuthForm —— 需 server `/ws` 接受设备 JWT 作鉴权（slice 5 server 侧待做）。
+
 ## 2026-06-01 [v1.8.1] — 设备配对：配对后接入连接链路
 
 ### AIT-216 切片 5（先跑通）
