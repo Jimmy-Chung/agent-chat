@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-03 [v1.9.0] — feat: 应用更名 Helm + 舵轮 logo
+
+### 品牌
+- 应用正式更名为 **Helm**（接管 PI / Claude Code / Codex 等 CLI agent 的统一 GUI）。
+- 新增舵轮 logo（`HelmLogo` 组件）：6 辐条 + 外圈 + 6 根粗握把 + 中心 hub + 顶部金色焦点；配套 `helm.` 字标。
+- 左侧栏头像、空态、登录页全部替换为舵轮 mark + `helm.` 字标，替换原 “AC / agent-chat” 标识。
+- 新增 `public/icon.svg`（蓝色 squircle + 白色舵轮，maskable）作为 favicon / PWA 图标；`manifest.webmanifest` 与页面 metadata 更名为 Helm。
+- 版本显示更新为 `v1.9.0`。
+
 ## 2026-06-02 [v1.8.7] — fix: Helm 配对入口文案与异常提示分流
 
 ### AIT-216
