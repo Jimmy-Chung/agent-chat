@@ -11,6 +11,7 @@ import { useToastStore } from '@/stores/toast-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { HelmLogo, HelmWordmark } from '@/components/ui/HelmLogo'
 import { getWsClient } from '@/lib/ws-client'
 import { requestPushPermission } from '@/components/PushSetup'
 import { PI_WSS_URL_KEY, PI_TOKEN_KEY } from '@/components/ConnectionConfigModal'
@@ -530,16 +531,17 @@ export function Sidebar() {
           style={{ borderBottom: '1px solid var(--hairline)' }}
         >
           <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
             style={{
-              background: 'linear-gradient(135deg, #4f5bd5, #962fbf 60%, #d62976)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)',
+              background: 'radial-gradient(130% 120% at 30% 18%, #3AA0FF 0%, #0A84FF 42%, #0050C8 100%)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -4px 12px rgba(0,40,110,0.5), 0 2px 6px rgba(0,0,0,0.3)',
+              color: '#fff',
             }}
           >
-            AC
+            <HelmLogo size={17} accentColor="#FFD98A" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,30,90,0.45))' }} />
           </div>
-          <span className="flex-1 text-[13.5px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.01em' }}>
-            agent-chat
+          <span className="flex-1 text-[14px]" style={{ letterSpacing: '-0.02em' }}>
+            <HelmWordmark fontSize={14} />
           </span>
           <button
             onClick={toggleSidebar}
@@ -749,14 +751,14 @@ export function Sidebar() {
               side="top"
               content={
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>agent-chat: <span style={{ color: '#fff' }}>v1.8.7</span></div>
+                  <div>helm: <span style={{ color: '#fff' }}>v1.9.0</span></div>
                   <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                 </div>
               }
               delayMs={200}
               onShow={fetchAdapterVersion}
             >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.8.7</span>
+              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.0</span>
             </Tooltip>
           </div>
         </div>

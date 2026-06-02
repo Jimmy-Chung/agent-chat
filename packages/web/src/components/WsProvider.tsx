@@ -8,6 +8,7 @@ import { useWsStore } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
 import { PairingRequiredScreen } from './AdapterConnectionModal'
+import { HelmLogo, HelmWordmark } from '@/components/ui/HelmLogo'
 
 interface AgentChatErrorDetail {
   code?: string
@@ -316,12 +317,19 @@ function AuthForm({ onSuccess }: { onSuccess: () => void }) {
           border: '1px solid var(--divider)',
         }}
       >
-        <h1
-          className="text-lg font-semibold text-center"
-          style={{ color: 'var(--fg-strong)' }}
-        >
-          agent-chat
-        </h1>
+        <div className="flex items-center justify-center gap-2.5">
+          <span
+            className="flex h-9 w-9 items-center justify-center rounded-xl"
+            style={{
+              background: 'radial-gradient(130% 120% at 30% 18%, #3AA0FF 0%, #0A84FF 42%, #0050C8 100%)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -5px 14px rgba(0,40,110,0.5), 0 3px 8px rgba(0,0,0,0.3)',
+              color: '#fff',
+            }}
+          >
+            <HelmLogo size={22} accentColor="#FFD98A" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,30,90,0.45))' }} />
+          </span>
+          <HelmWordmark fontSize={20} />
+        </div>
         <p className="text-center text-sm" style={{ color: 'var(--fg-dim)' }}>
           请输入 Token 以继续
         </p>

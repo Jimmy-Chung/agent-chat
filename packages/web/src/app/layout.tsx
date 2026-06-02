@@ -5,9 +5,13 @@ import { PushSetup } from '@/components/PushSetup'
 import { ToastViewport } from '@/components/ToastViewport'
 
 export const metadata: Metadata = {
-  title: 'agent-chat',
-  description: 'Agent-friendly personal IM',
+  title: 'Helm',
+  description: 'Take the helm of your CLI agents — PI, Claude Code & Codex from one GUI.',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icon.svg',
+    apple: '/icon.svg',
+  },
 }
 
 export const viewport: Viewport = {
