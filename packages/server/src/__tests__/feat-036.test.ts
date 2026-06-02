@@ -2,6 +2,9 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import worker from '../worker'
 import { setupTestDb } from './db-helper'
+import { createDevice, setDeviceRevoked } from '../pairing/store'
+import { sha256Hex, randomToken, decodeJwt } from '../pairing/crypto'
+import { JIT_JWT_TTL_SECONDS } from '../pairing/routes'
 
 // ─── Mock helpers ────────────────────────────────────────────────────────
 
@@ -219,6 +222,81 @@ describe('FEAT-036: provider proxy endpoint', () => {
     expect((calledInit.headers as Record<string, string>)['Authorization']).toBe('Bearer pi-secret')
 
     restore()
+  })
+
+  it('signs a JIT JWT when deviceCredential + adapterInstanceId are provided', async () => {
+    const credential = randomToken(24)
+    const adapterId = 'adapter_jit_test'
+    await createDevice({
+      adapterInstanceId: adapterId,
+      name: 'Test Device',
+      platform: 'web',
+      credentialHash: await sha256Hex(credential),
+      scopes: ['agent:control', 'workspace:preview'],
+      pairingSessionId: 'ps_test_jit',
+    })
+
+    const restore = mockHealthz(
+      new Response(JSON.stringify([{ id: 'provider-1' }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+
+    const qs = new URLSearchParams({
+      wssUrl: 'wss://pi.example.com/api/agent-chat/v1/socket',
+      deviceCredential: credential,
+      adapterInstanceId: adapterId,
+      group: 'universal',
+    })
+    const res = await fetch(`/api/agent-chat/v1/providers?${qs}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    })
+
+    expect(res.status).toBe(200)
+    const calledInit = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    const authHeader = (calledInit.headers as Record<string, string>)['Authorization']
+    expect(authHeader).toMatch(/^Bearer eyJ/)
+
+    const { payload } = decodeJwt(authHeader.slice(7))
+    expect(payload.aud).toBe(adapterId)
+    expect(payload.scope).toContain('agent:control')
+    expect(typeof payload.exp).toBe('number')
+    expect(payload.exp as number - (payload.iat as number)).toBe(JIT_JWT_TTL_SECONDS)
+
+    restore()
+  })
+
+  it('returns 401 when deviceCredential is invalid', async () => {
+    const res = await fetch(
+      '/api/agent-chat/v1/providers?wssUrl=wss://pi.example.com/api/agent-chat/v1/socket&deviceCredential=bad-cred&adapterInstanceId=adapter_jit_test',
+      { headers: { Authorization: 'Bearer test-token' } },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 401 when device is revoked', async () => {
+    const credential = randomToken(24)
+    const adapterId = 'adapter_jit_revoked'
+    const device = await createDevice({
+      adapterInstanceId: adapterId,
+      name: 'Revoked Device',
+      platform: 'web',
+      credentialHash: await sha256Hex(credential),
+      scopes: ['agent:control'],
+      pairingSessionId: 'ps_test_revoked',
+    })
+    await setDeviceRevoked(device.id, true)
+
+    const qs = new URLSearchParams({
+      wssUrl: 'wss://pi.example.com/api/agent-chat/v1/socket',
+      deviceCredential: credential,
+      adapterInstanceId: adapterId,
+    })
+    const res = await fetch(`/api/agent-chat/v1/providers?${qs}`, {
+      headers: { Authorization: 'Bearer test-token' },
+    })
+    expect(res.status).toBe(401)
   })
 
   it('returns reachable=true when adapter-status upstream is healthy', async () => {

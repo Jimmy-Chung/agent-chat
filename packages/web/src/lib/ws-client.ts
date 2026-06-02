@@ -856,6 +856,14 @@ function getAdapterQs(): string {
   const qs = new URLSearchParams()
   if (wssUrl) qs.set('wssUrl', wssUrl)
   if (piToken) qs.set('piToken', piToken)
+  try {
+    const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
+    if (paired) {
+      const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
+      if (deviceCredential) qs.set('deviceCredential', deviceCredential)
+      if (adapterInstanceId) qs.set('adapterInstanceId', adapterInstanceId)
+    }
+  } catch { /* ignore */ }
   return qs.toString()
 }
 

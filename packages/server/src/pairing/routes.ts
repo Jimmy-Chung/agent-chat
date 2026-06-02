@@ -30,7 +30,34 @@ const SESSION_TTL_MAX_MS = 10 * 60 * 1000
 const CODE_TTL_MS = 3 * 60 * 1000
 const MAX_CODE_ATTEMPTS = 5
 const JWT_TTL_SECONDS = 300
+export const JIT_JWT_TTL_SECONDS = 60
 const DEFAULT_SCOPES = ['agent:control', 'workspace:preview']
+
+/**
+ * Issue a just-in-time short-lived JWT for a paired device, used by the server
+ * when proxying HTTP requests to the adapter (providers, workspace, etc.).
+ * Returns null if the credential is invalid, revoked, or mismatched.
+ */
+export async function issueJitJwt(
+  deviceCredential: string,
+  adapterInstanceId: string,
+  iss: string,
+): Promise<string | null> {
+  const device = await getDeviceByCredentialHash(await sha256Hex(deviceCredential))
+  if (!device || device.revoked || device.adapter_instance_id !== adapterInstanceId) return null
+  const key = await getActiveSigningKey()
+  const now = Math.floor(Date.now() / 1000)
+  return signJwt(key.privateJwk, key.kid, {
+    iss,
+    aud: adapterInstanceId,
+    sub: device.id,
+    sid: device.pairing_session_id,
+    scope: (device.scopes ? JSON.parse(device.scopes) as string[] : DEFAULT_SCOPES).join(' '),
+    iat: now,
+    exp: now + JIT_JWT_TTL_SECONDS,
+    jti: randomToken(12),
+  })
+}
 
 function bearer(authHeader: string | undefined): string | undefined {
   return authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
