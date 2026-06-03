@@ -4,15 +4,11 @@
 // - buildInterpretPrompt / callInterpret：组 prompt + 调 S2 server 代理
 import type { CandidateNode } from './aggregator'
 import type { GoalAnchor, TraceNode } from './types'
-import { computeGoalDistance } from './goal-distance'
+import { computeGoalDistance, goalAlignmentToDistance } from './goal-distance'
 
 export interface InterpretResult {
   conclusion: string[]
   goalAlignment: number[]
-}
-
-function clamp01(n: number): number {
-  return Math.min(1, Math.max(0, n))
 }
 
 export function candidateText(c: CandidateNode): string {
@@ -67,7 +63,7 @@ export function buildTrace(
     const hasLlm = typeof llmConclusion === 'string' && llmConclusion.trim().length > 0
     const conclusion = hasLlm ? (llmConclusion as string) : localSummary(c)
     const goal_distance = hasLlm
-      ? clamp01(1 - (interpret?.goalAlignment[i] ?? 5) / 10)
+      ? goalAlignmentToDistance(interpret?.goalAlignment[i] ?? 5)
       : computeGoalDistance(goalText, candidateText(c))
     const isInProgressNode = !!opts.inProgress && i === lastIdx
     return {

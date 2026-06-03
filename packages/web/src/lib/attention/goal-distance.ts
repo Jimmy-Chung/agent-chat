@@ -47,6 +47,17 @@ export function computeGoalDistance(goalText: string, nodeText: string): number 
   return Math.min(1, Math.max(0, 1 - sim))
 }
 
+/** LLM goalAlignment(0-10) → 目标距离(0-1)。 */
+export function goalAlignmentToDistance(goalAlignment: number): number {
+  const ga = Number.isFinite(goalAlignment) ? goalAlignment : 5
+  return Math.min(1, Math.max(0, 1 - ga / 10))
+}
+
+/** 子层（exchange）目标距离：相对所在 Phase 的目标（conclusion ?? user_message），非顶层目标。 */
+export function subGoalDistance(phaseGoalText: string, exchangeText: string): number {
+  return computeGoalDistance(phaseGoalText, exchangeText)
+}
+
 export type GoalDistanceTone = 'near' | 'neutral' | 'off'
 
 /** 目标距离分段：<0.35 紧贴 / 0.35–0.65 中性 / >0.65 偏离。 */

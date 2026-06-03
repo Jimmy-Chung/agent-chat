@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { TraceNode } from '@/lib/attention'
-import { goalDistanceColor } from '@/lib/attention'
+import { goalDistanceColor, subGoalDistance } from '@/lib/attention'
 
 /** 节点详情：用户原话 + 结论 + 目标距离 + 子交互（exchanges）展开。 */
 export function AttentionNodeCard({ node }: { node: TraceNode }) {
@@ -62,20 +62,28 @@ export function AttentionNodeCard({ node }: { node: TraceNode }) {
           </button>
           {expanded && (
             <ul className="mt-2 flex flex-col gap-2" data-testid="attention-subexchanges">
-              {exchanges.map((ex) => (
-                <li
-                  key={ex.id}
-                  className="rounded-lg px-2.5 py-2"
-                  style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}
-                >
-                  <div className="truncate text-[12px]" style={{ color: 'var(--fg-strong)' }}>
-                    {ex.user_message}
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--fg-dim)' }}>
-                    {ex.assistant_summary}
-                  </div>
-                </li>
-              ))}
+              {exchanges.map((ex) => {
+                // 子层目标距离相对所在 Phase 的目标（conclusion ?? user_message）
+                const phaseGoal = node.conclusion || node.user_message
+                const subDist = subGoalDistance(phaseGoal, `${ex.user_message} ${ex.assistant_summary}`)
+                return (
+                  <li
+                    key={ex.id}
+                    className="rounded-lg px-2.5 py-2"
+                    style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: goalDistanceColor(subDist) }} />
+                      <span className="truncate text-[12px]" style={{ color: 'var(--fg-strong)' }}>
+                        {ex.user_message}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px]" style={{ color: 'var(--fg-dim)' }}>
+                      {ex.assistant_summary}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>
