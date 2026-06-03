@@ -8,13 +8,20 @@ function normalizeCwd(cwd: string): string {
   return cwd.trim().replace(/\/+$/, '') || '/'
 }
 
-function parseProgrammingSpec(topic: Topic): { cwd?: string } | null {
-  if (!topic.programming_spec_json) return null
+function parseSpec(specJson: string | null): { cwd?: string } | null {
+  if (!specJson) return null
   try {
-    return JSON.parse(topic.programming_spec_json) as { cwd?: string }
+    return JSON.parse(specJson) as { cwd?: string }
   } catch {
     return null
   }
+}
+
+function getTopicCwd(topic: Topic): string | undefined {
+  const spec = topic.agent_type === 'programming'
+    ? parseSpec(topic.programming_spec_json)
+    : parseSpec(topic.general_spec_json)
+  return spec?.cwd
 }
 
 export async function createTopic(input: {
@@ -79,17 +86,17 @@ export async function getTopicByCwd(cwd: string, excludeTopicId?: string): Promi
     .from(topics)
     .where(
       excludeTopicId
-        ? and(eq(topics.archived, false), eq(topics.agentType, 'programming'), ne(topics.id, excludeTopicId))
-        : and(eq(topics.archived, false), eq(topics.agentType, 'programming')),
+        ? and(eq(topics.archived, false), ne(topics.id, excludeTopicId))
+        : eq(topics.archived, false),
     )
     .all()
 
   return rows
     .map(toDomain)
     .find((topic) => {
-      const spec = parseProgrammingSpec(topic)
-      if (!spec?.cwd) return false
-      return normalizeCwd(spec.cwd) === normalized
+      const topicCwd = getTopicCwd(topic)
+      if (!topicCwd) return false
+      return normalizeCwd(topicCwd) === normalized
     })
 }
 

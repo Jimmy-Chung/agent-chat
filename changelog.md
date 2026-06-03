@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.1] — fix: General 话题支持 cwd 创建
+
+- 修复 General 话题创建时 cwd 被错误塞进 programming spec，导致协议校验/adapter createSession 失败的问题。
+- 协议补齐 `general.cwd`，server 持久化到 `general_spec_json` 并透传给 adapter。
+- cwd 去重和前端目录展示统一支持 Programming / General 两类话题。
+- 版本显示更新为 `v1.9.1`。
+
 ## 2026-06-03 [v1.9.0] — feat: Attention 实时注意力面板
 
 - 新增「注意力」面板（对话区头部入口）：把会话实时压缩成 5–12 个决策节点，呈现原始目标 / 关键阶段 / 是否偏离目标。

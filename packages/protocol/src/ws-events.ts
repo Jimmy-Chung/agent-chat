@@ -467,6 +467,11 @@ export const topicCreateSchema = z.object({
       ]),
     })
     .optional(),
+  general: z
+    .object({
+      cwd: z.string().optional(),
+    })
+    .optional(),
   sopTemplateId: z.string().optional(),
   providerId: z.string().optional(),
 })

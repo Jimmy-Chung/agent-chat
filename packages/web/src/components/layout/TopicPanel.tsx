@@ -134,12 +134,15 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   const workspacePath = useWsStore((s) => s.workspacePath)
 
   const projectDir = useMemo(() => {
-    if (!activeTopic.programming_spec_json) return undefined
+    const specJson = activeTopic.agent_type === 'programming'
+      ? activeTopic.programming_spec_json
+      : activeTopic.general_spec_json
+    if (!specJson) return undefined
     try {
-      const cwd = (JSON.parse(activeTopic.programming_spec_json).cwd ?? '').trim()
+      const cwd = (JSON.parse(specJson).cwd ?? '').trim()
       return cwd || undefined
     } catch { return undefined }
-  }, [activeTopic.programming_spec_json])
+  }, [activeTopic.agent_type, activeTopic.programming_spec_json, activeTopic.general_spec_json])
 
   // Display path with the workspace root stripped (full path kept for hover/title).
   const projectDirDisplay = useMemo(() => {

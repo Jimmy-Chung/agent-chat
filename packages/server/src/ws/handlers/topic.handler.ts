@@ -22,7 +22,9 @@ export function registerTopicHandlers(
       return
     }
 
-    const requestedCwd = data.agentType === 'programming' ? data.programming?.cwd?.trim() : undefined
+    const requestedCwd = data.agentType === 'programming'
+      ? data.programming?.cwd?.trim()
+      : data.general?.cwd?.trim()
     if (requestedCwd) {
       const occupiedTopic = await topicRepo.getTopicByCwd(requestedCwd)
       if (occupiedTopic) {
@@ -39,6 +41,27 @@ export function registerTopicHandlers(
       }
     }
 
+    const sopTemplate = data.sopTemplateId
+      ? await sopRepo.getTemplate(data.sopTemplateId)
+      : undefined
+    const generalSpec = data.agentType === 'general'
+      ? {
+          ...data.general,
+          ...(sopTemplate
+            ? {
+                systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
+                initialPlan: sopTemplate.plan_template ?? undefined,
+                initialTodos: sopTemplate.todos_template_json
+                  ? JSON.parse(sopTemplate.todos_template_json)
+                  : undefined,
+              }
+            : {}),
+        }
+      : undefined
+    const generalSpecJson = generalSpec && Object.values(generalSpec).some((value) => value !== undefined)
+      ? JSON.stringify(generalSpec)
+      : null
+
     const topic = await topicRepo.createTopic({
       name: data.name,
       kind: 'normal',
@@ -46,29 +69,20 @@ export function registerTopicHandlers(
       programmingSpecJson: data.programming
         ? JSON.stringify(data.programming)
         : null,
+      generalSpecJson,
       sopTemplateId: data.sopTemplateId,
     })
     broadcaster.broadcast('topic.created', topic)
 
     try {
-      const sopTemplate = data.sopTemplateId
-        ? await sopRepo.getTemplate(data.sopTemplateId)
-        : undefined
-
       const sessionParams: Record<string, unknown> = {
         kind: data.agentType,
         topicId: topic.id,
         programming: data.agentType === 'programming' ? data.programming : undefined,
+        general: data.agentType === 'general' ? generalSpec : undefined,
       }
 
       if (sopTemplate) {
-        sessionParams.general = {
-          systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
-          initialPlan: sopTemplate.plan_template ?? undefined,
-          initialTodos: sopTemplate.todos_template_json
-            ? JSON.parse(sopTemplate.todos_template_json)
-            : undefined,
-        }
         sessionParams.workflowMode = sopTemplate.workflow_mode
       }
 

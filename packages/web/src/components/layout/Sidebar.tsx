@@ -30,9 +30,12 @@ function normalizeCwd(cwd: string): string {
 }
 
 function getTopicCwd(topic: import('@agent-chat/protocol').Topic): string | null {
-  if (!topic.programming_spec_json) return null
+  const specJson = topic.agent_type === 'programming'
+    ? topic.programming_spec_json
+    : topic.general_spec_json
+  if (!specJson) return null
   try {
-    const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+    const parsed = JSON.parse(specJson) as { cwd?: string }
     return parsed.cwd ? normalizeCwd(parsed.cwd) : null
   } catch {
     return null
@@ -80,7 +83,7 @@ function validateCreateTopic(input: {
     return buildCreateTopicToast({ code: 'DUPLICATE_NAME' })
   }
 
-  if (input.agentType === 'programming' && input.cwd.trim()) {
+  if (input.cwd.trim()) {
     const occupiedTopic = findTopicByCwd(input.topics, input.cwd)
     if (occupiedTopic) {
       return buildCreateTopicToast({ code: 'DUPLICATE_CWD', occupiedTopic })
@@ -625,11 +628,8 @@ export function Sidebar() {
             }
           : resolvedCwd
             ? {
-                programming: {
-                  extension: 'pi-agent' as ExtensionType,
-                  yolo: false,
+                general: {
                   cwd: resolvedCwd,
-                  permissionMode: 'default' as const,
                 },
               }
             : {}),
@@ -842,14 +842,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.0</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.9.1</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.0</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.1</span>
               </Tooltip>
             </div>
           </div>

@@ -32,6 +32,7 @@ export const programmingSpecSchema = z.object({
 export type ProgrammingSpecRpc = z.infer<typeof programmingSpecSchema>
 
 export const generalSpecSchema = z.object({
+  cwd: z.string().optional(),
   systemPrompt: z.string().optional(),
   initialPlan: z.string().optional(),
   initialTodos: z.array(todoItemSchema).optional(),

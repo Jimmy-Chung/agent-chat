@@ -855,6 +855,18 @@ describe('Client event schemas', () => {
     expect(result.programming).toBeUndefined()
   })
 
+  it('parses topic.create general with cwd', () => {
+    const result = topicCreateSchema.parse({
+      name: 'Chat',
+      agentType: 'general',
+      general: {
+        cwd: '/home/user/repo',
+      },
+    })
+    expect(result.programming).toBeUndefined()
+    expect(result.general?.cwd).toBe('/home/user/repo')
+  })
+
   it('parses topic.delete', () => {
     const result = topicDeleteSchema.parse({
       id: 't1',
@@ -987,6 +999,7 @@ describe('RPC schemas', () => {
     const result = createSessionParamsSchema.parse({
       kind: 'general',
       general: {
+        cwd: '/home/user/repo',
         systemPrompt: 'You are an assistant',
         initialPlan: '# Plan\nStep 1',
         initialTodos: [{ id: 't1', content: 'First', status: 'pending' }],
@@ -994,6 +1007,7 @@ describe('RPC schemas', () => {
       workflowMode: 'eager',
     })
     expect(result.kind).toBe('general')
+    expect(result.general?.cwd).toBe('/home/user/repo')
     expect(result.general?.initialTodos).toHaveLength(1)
     expect(result.workflowMode).toBe('eager')
   })

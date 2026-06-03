@@ -15,6 +15,7 @@ export interface ProgrammingSpec {
 }
 
 export interface GeneralSpec {
+  cwd?: string
   systemPrompt?: string
   initialPlan?: string
   initialTodos?: TodoItem[]

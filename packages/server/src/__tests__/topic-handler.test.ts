@@ -73,6 +73,36 @@ describe('Topic handler — topic.create', () => {
     )
   })
 
+  it('creates a general topic with cwd and passes it to PI createSession', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await handler({}, {
+      d: {
+        name: 'General Workspace',
+        agentType: 'general',
+        general: {
+          cwd: '/home/user/general',
+        },
+      },
+    })
+
+    const topics = await topicRepo.listTopics()
+    expect(topics[0].agent_type).toBe('general')
+
+    const spec = JSON.parse(topics[0].general_spec_json!)
+    expect(spec.cwd).toBe('/home/user/general')
+    expect(topics[0].programming_spec_json).toBeNull()
+
+    expect(mockPi.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'general',
+        general: {
+          cwd: '/home/user/general',
+        },
+      }),
+    )
+  })
+
   it('creates a programming topic with spec', async () => {
     const handler = await getHandler('client:topic.create')
 
@@ -180,6 +210,42 @@ describe('Topic handler — topic.create', () => {
       topicId: expect.any(String),
       topicName: 'Existing Topic',
       cwd: '/repo/demo',
+    })
+    expect(mockPi.createSession).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate working directories across general and programming topics', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await topicRepo.createTopic({
+      name: 'Existing General',
+      kind: 'normal',
+      agentType: 'general',
+      generalSpecJson: JSON.stringify({
+        cwd: '/repo/shared/',
+      }),
+    })
+
+    await handler({}, {
+      d: {
+        name: 'New Programming',
+        agentType: 'programming',
+        programming: {
+          extension: 'claude-code',
+          yolo: false,
+          cwd: '/repo/shared',
+          permissionMode: 'default',
+        },
+      },
+    })
+
+    const errorEvent = mockHub.getBroadcastEvents().find((e: any) => e.type === 'error')
+    expect(errorEvent).toBeDefined()
+    expect(errorEvent.data.code).toBe('DUPLICATE_CWD')
+    expect(errorEvent.data.details).toEqual({
+      topicId: expect.any(String),
+      topicName: 'Existing General',
+      cwd: '/repo/shared',
     })
     expect(mockPi.createSession).not.toHaveBeenCalled()
   })

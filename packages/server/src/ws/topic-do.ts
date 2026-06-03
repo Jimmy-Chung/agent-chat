@@ -643,7 +643,9 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           this.broadcastAll('error', { code: 'DUPLICATE_NAME', message: '同名话题已存在' })
           break
         }
-        const requestedCwd = data.agentType === 'programming' ? data.programming?.cwd?.trim() : undefined
+        const requestedCwd = data.agentType === 'programming'
+          ? data.programming?.cwd?.trim()
+          : data.general?.cwd?.trim()
         if (requestedCwd) {
           const occupiedTopic = await topicRepo.getTopicByCwd(requestedCwd)
           if (occupiedTopic) {
@@ -660,15 +662,23 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           }
         }
         const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
-        const generalSpecJson = sopTemplate
-          ? JSON.stringify({
-              systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
-              initialPlan: sopTemplate.plan_template ?? undefined,
-              initialTodos: sopTemplate.todos_template_json
-                ? JSON.parse(sopTemplate.todos_template_json)
-                : undefined,
-              workflowMode: sopTemplate.workflow_mode ?? undefined,
-            })
+        const generalSpec = data.agentType === 'general'
+          ? {
+              ...data.general,
+              ...(sopTemplate
+                ? {
+                    systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
+                    initialPlan: sopTemplate.plan_template ?? undefined,
+                    initialTodos: sopTemplate.todos_template_json
+                      ? JSON.parse(sopTemplate.todos_template_json)
+                      : undefined,
+                    workflowMode: sopTemplate.workflow_mode ?? undefined,
+                  }
+                : {}),
+            }
+          : undefined
+        const generalSpecJson = generalSpec && Object.values(generalSpec).some((value) => value !== undefined)
+          ? JSON.stringify(generalSpec)
           : null
 
         const topic = await topicRepo.createTopic({

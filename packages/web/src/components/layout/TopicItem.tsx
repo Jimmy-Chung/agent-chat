@@ -5,9 +5,12 @@ import type { Topic } from '@agent-chat/protocol'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 
 function getTopicCwdDir(topic: Topic, workspaceRoot?: string | null): string | null {
-  if (!topic.programming_spec_json) return null
+  const specJson = topic.agent_type === 'programming'
+    ? topic.programming_spec_json
+    : topic.general_spec_json
+  if (!specJson) return null
   try {
-    const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+    const parsed = JSON.parse(specJson) as { cwd?: string }
     const cwd = (parsed.cwd ?? '').trim().replace(/\/+$/, '') || '/'
     if (cwd === '/' || !cwd) return null
     // Strip workspace root prefix to get relative path
@@ -106,10 +109,13 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
               )}
               {cwdDir && (
                 <div className="text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
-                  {topic.programming_spec_json
+                  {(topic.agent_type === 'programming' ? topic.programming_spec_json : topic.general_spec_json)
                     ? (() => {
                         try {
-                          const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+                          const specJson = topic.agent_type === 'programming'
+                            ? topic.programming_spec_json
+                            : topic.general_spec_json
+                          const parsed = JSON.parse(specJson!) as { cwd?: string }
                           return parsed.cwd || ''
                         } catch { return '' }
                       })()
