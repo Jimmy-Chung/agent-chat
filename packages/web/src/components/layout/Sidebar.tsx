@@ -824,11 +824,11 @@ export function Sidebar() {
           <NotificationBell />
           {workspacePath && (
             <div
-              className="truncate text-[10.5px]"
-              style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', maxWidth: 100 }}
+              className="truncate text-[10.5px] flex-1"
+              style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', maxWidth: 160 }}
               title={workspacePath}
             >
-              {workspacePath.split('/').pop() || workspacePath}
+              {workspacePath}
             </div>
           )}
           <div className="ml-auto">
