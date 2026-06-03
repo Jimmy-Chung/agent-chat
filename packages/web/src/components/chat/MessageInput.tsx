@@ -122,6 +122,18 @@ export function MessageInput({ topicId }: MessageInputProps) {
     if (currentModel) setSelectedModel(currentModel)
   }, [currentModel])
 
+  // Auto-select first model when topic has no model set yet
+  useEffect(() => {
+    if (!selectedModel && availableModels.length > 0) {
+      const first = availableModels[0]
+      setSelectedModel(first)
+      getWsClient().send({
+        type: 'topic.setModel',
+        data: { id: topicId, model: first },
+      })
+    }
+  }, [selectedModel, availableModels, topicId])
+
   // When model changes, tell server → adapter
   const handleModelChange = useCallback((model: string) => {
     setSelectedModel(model)
