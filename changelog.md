@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-03 [v1.8.12] — refactor: 侧边栏结构重组对齐设计稿
+
+- 侧边栏重组为三层：新建话题 → 话题区(flex:1,含搜索+列表+fade mask) → 底部浓缩栏 → Footer。
+- System 话题（定时任务/产物池/SOP）从列表中移除，改为底部图标按钮（带数字徽章）。
+- Provider 标签从侧边栏中部移除，改为底部「插件管理」popover（含 Provider tabs + 快速切换 + 管理入口）。
+- TopicItem 间距微调对齐设计稿（column-gap 9px, padding 8px 9px 9px）。
+- 话题列表新增 CSS fade mask 渐变淡出。
+- 版本显示更新为 `v1.8.12`。
+
 ## 2026-06-03 [v1.8.11] — fix: 非 Claude Code 话题显示 model 选项 + 默认选首模型
 
 - 输入框 model 选择器不再限定 `programming` agent_type，Codex 和 PI Agent 话题也能从绑定的 provider 中选择模型。
