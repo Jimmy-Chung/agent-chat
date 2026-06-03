@@ -491,6 +491,7 @@ export function buildSessionParams(topic: Topic): Parameters<PiClient['createSes
         ? { extension: 'claude-code' }
         : undefined,
     general: topic.general_spec_json ? JSON.parse(topic.general_spec_json) : undefined,
+    providerId: topic.current_provider_id ?? undefined,
     initialModel: topic.current_model ?? undefined,
   } as Parameters<PiClient['createSession']>[0]
 }
