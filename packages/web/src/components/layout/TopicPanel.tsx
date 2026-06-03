@@ -14,6 +14,7 @@ import { MessageList } from '@/components/chat/MessageList'
 import { MessageInput } from '@/components/chat/MessageInput'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { McpSettingsModal } from '@/components/McpSettingsModal'
+import { AttentionDrawer } from '@/components/attention/AttentionDrawer'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
@@ -98,6 +99,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
   const [renamingTopic, setRenamingTopic] = useState<{ id: string; name: string } | null>(null)
   const [showMcpSettings, setShowMcpSettings] = useState(false)
+  const [showAttention, setShowAttention] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -268,6 +270,15 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
               {activeTopic.current_model}
             </Chip>
           )}
+          <button
+            onClick={() => setShowAttention(true)}
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+            style={{ color: 'var(--fg-dim)' }}
+            aria-label="注意力"
+            title="注意力 — 决策轨迹"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><circle cx="12" cy="12" r="9" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>
+          </button>
           <button onClick={toggleMobileInspector} className="flex h-7 w-7 items-center justify-center rounded-md md:hidden" style={{ color: 'var(--fg-dim)' }} aria-label="Inspector">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /></svg>
           </button>
@@ -360,6 +371,10 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           topicName={activeTopic.name}
         />,
         document.body,
+      )}
+
+      {showAttention && (
+        <AttentionDrawer topicId={activeTopic.id} onClose={() => setShowAttention(false)} />
       )}
     </div>
   )

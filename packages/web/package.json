@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@agent-chat/protocol": "workspace:*",
+    "@xyflow/react": "^12.11.0",
     "immer": "^10.1.1",
     "jsqr": "^1.4.0",
     "next": "^15.3.1",

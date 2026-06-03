@@ -46,3 +46,18 @@ export function computeGoalDistance(goalText: string, nodeText: string): number 
   const sim = cosineSimilarity(tokenize(goalText), tokenize(nodeText))
   return Math.min(1, Math.max(0, 1 - sim))
 }
+
+export type GoalDistanceTone = 'near' | 'neutral' | 'off'
+
+/** 目标距离分段：<0.35 紧贴 / 0.35–0.65 中性 / >0.65 偏离。 */
+export function goalDistanceTone(d: number): GoalDistanceTone {
+  if (d < 0.35) return 'near'
+  if (d > 0.65) return 'off'
+  return 'neutral'
+}
+
+/** 弱色条颜色（绿/黄/橙）。v1 只做弱提示，不做强告警。 */
+export function goalDistanceColor(d: number): string {
+  const tone = goalDistanceTone(d)
+  return tone === 'near' ? '#6FE39A' : tone === 'off' ? '#F7A26B' : '#F7C26B'
+}
