@@ -451,7 +451,9 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
     : state === 'aborting' ? 'Aborting'
     : 'Idle'
   const showProgress = isActive && !!progress
-  const showBar = isActive || !!sessionState || !!sessionError
+  // Only show when agent is active or session is unhealthy — idle + connected is
+  // redundant with the green topic dot already visible in the sidebar/topic panel.
+  const showBar = isActive || sessionState === 'reconnecting' || sessionState === 'disconnected' || !!sessionError
 
   if (!showBar) return null
 

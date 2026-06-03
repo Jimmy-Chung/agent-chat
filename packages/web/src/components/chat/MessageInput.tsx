@@ -109,7 +109,12 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const boundProvider = activeTopic?.current_provider_id
     ? providerConfigs.find((c) => c.id === activeTopic.current_provider_id)
     : undefined
-  const fallbackProvider = providerConfigs.find((c) => c.isActive)
+  // Fallback provider must match the topic's agent type so PI topics never
+  // pick up a Claude Code / Codex provider (which has alias models like opus).
+  const isProgramming = activeTopic?.agent_type === 'programming'
+  const fallbackProvider = providerConfigs.find((c) =>
+    c.isActive && (isProgramming || (c.group ?? 'pi-agent') === 'pi-agent'),
+  )
   const modelProvider = boundProvider ?? (activeTopic?.current_provider_id ? undefined : fallbackProvider)
   const availableModels = modelProvider?.models ?? []
   // claude-code 别名映射：下拉展示「opus → glm5.1」，但 value 仍传别名（adapter 内部解析）。

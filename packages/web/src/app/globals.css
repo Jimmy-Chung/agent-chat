@@ -159,12 +159,11 @@ code, pre {
   letter-spacing: -0.01em;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
-    0 4px 14px rgba(10, 132, 255, 0.35);
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   -webkit-font-smoothing: antialiased;
   transition: transform 120ms var(--ease-spring), box-shadow 180ms var(--ease-morph);
 }
-.role-bubble-user:hover  { box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.18), 0 6px 18px rgba(10,132,255,0.45); }
+.role-bubble-user:hover  { box-shadow: inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.18); }
 .role-bubble-user:active { transform: scale(0.985); }
 
 .role-bubble-assistant {
@@ -184,7 +183,8 @@ code, pre {
 .message-bubble-shell {
   position: relative;
   max-width: 100%;
-  overflow-x: auto;
+  /* overflow-x deliberately omitted — code blocks inside MarkdownRenderer
+     have their own overflow-x:auto; user text uses overflow-wrap:break-word */
 }
 
 .message-edge-timestamp {
