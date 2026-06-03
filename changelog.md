@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.01] — experiment: Attention X 多方案图面板
+
+- 基于 `attention-x` 实验分支增加 Attention X 临时面板，可在当前话题历史上切换查看阶段聚合、多层树、目标支链、Plan/Todo、选项决策五种图方案。
+- 新增五组纯 projector 原型与回归测试，用于评估长对话目标链路、子话题聚合/展开、支线偏离、计划锚点和选择决策边。
+- 版本显示更新为 `v1.9.5-alpha.01`。
+
 ## 2026-06-04 [v1.9.4] — fix: session 重建保留 provider 绑定
 
 - 修复 General / PI Agent 话题在 session restore、select retry、message delivery recreate 后丢失 `providerId` 的问题。
