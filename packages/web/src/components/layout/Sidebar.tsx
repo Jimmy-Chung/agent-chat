@@ -584,7 +584,7 @@ export function Sidebar() {
 
     const activeProviderId = newTopicAgent === 'programming'
       ? getActiveProviderIdForExtension(providerConfigs, extension)
-      : getActiveProviderIdForGroup(providerConfigs, activeProviderTab)
+      : getActiveProviderIdForGroup(providerConfigs, 'pi-agent')
 
     getWsClient().send({
       type: 'topic.create',
