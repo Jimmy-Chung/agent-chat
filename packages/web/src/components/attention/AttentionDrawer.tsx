@@ -2,23 +2,12 @@
 
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import dynamic from 'next/dynamic'
 import { useAttentionTrace } from '@/lib/attention'
-import { AttentionPanelContent } from './AttentionPanelContent'
-
-// React Flow 图：dynamic import + ssr:false（仅 client 加载，不进首屏，SSR 不报错）。
-const AttentionGraph = dynamic(() => import('./AttentionGraph'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
-      加载决策图…
-    </div>
-  ),
-})
+import { AttentionXPanel } from './AttentionXPanel'
 
 /** 宽 drawer：左窄列表 + 右 React Flow 实时图。仅在打开时挂载（hook 随之运行）。 */
 export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose: () => void }) {
-  const { nodes, goalAnchor, isAnalyzing } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, isAnalyzing } = useAttentionTrace(topicId)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -38,7 +27,7 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex h-full w-full max-w-[920px] flex-col"
+        className="flex h-full w-full max-w-[1180px] flex-col"
         style={{
           background: 'var(--glass-modal, rgba(20,22,27,0.86))',
           WebkitBackdropFilter: 'blur(60px) saturate(200%)',
@@ -53,7 +42,7 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
         >
           <span style={{ fontSize: 14 }}>🧭</span>
           <span className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.01em' }}>
-            注意力
+            注意力 X
           </span>
           {isAnalyzing && (
             <span className="text-[11px]" style={{ color: '#F7C26B' }}>
@@ -72,10 +61,11 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
           </button>
         </header>
         <div className="min-h-0 flex-1">
-          <AttentionPanelContent
+          <AttentionXPanel
+            topicId={topicId}
             nodes={nodes}
             goalAnchor={goalAnchor}
-            renderGraph={(p) => <AttentionGraph {...p} />}
+            planItems={planItems}
           />
         </div>
       </div>
