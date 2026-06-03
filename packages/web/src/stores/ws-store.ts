@@ -48,6 +48,7 @@ interface WsState {
   unauthorized: boolean
   providerConfigs: ProviderConfig[]
   providerConfigsLoading: boolean
+  workspacePath: string | null
 }
 
 interface WsActions {
@@ -62,6 +63,7 @@ interface WsActions {
   setUnauthorized: () => void
   setProviderConfigs: (configs: ProviderConfig[]) => void
   setProviderConfigsLoading: (loading: boolean) => void
+  setWorkspacePath: (path: string | null) => void
 }
 
 export const useWsStore = create<WsState & WsActions>()(
@@ -74,6 +76,7 @@ export const useWsStore = create<WsState & WsActions>()(
     unauthorized: false,
     providerConfigs: [],
     providerConfigsLoading: false,
+    workspacePath: null,
 
     connect: () => {
       set((s) => {
@@ -137,6 +140,12 @@ export const useWsStore = create<WsState & WsActions>()(
     setProviderConfigsLoading: (loading) => {
       set((s) => {
         s.providerConfigsLoading = loading
+      })
+    },
+
+    setWorkspacePath: (path) => {
+      set((s) => {
+        s.workspacePath = path
       })
     },
   })),

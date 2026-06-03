@@ -129,10 +129,25 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
     try { return (JSON.parse(activeTopic.programming_spec_json).extension as 'claude-code' | 'codex') ?? 'claude-code' } catch { return 'claude-code' as const }
   }, [activeTopic.programming_spec_json])
 
+  const workspacePath = useWsStore((s) => s.workspacePath)
+
   const projectDir = useMemo(() => {
     if (!activeTopic.programming_spec_json) return undefined
-    try { return JSON.parse(activeTopic.programming_spec_json).cwd } catch { return undefined }
+    try {
+      const cwd = (JSON.parse(activeTopic.programming_spec_json).cwd ?? '').trim()
+      return cwd || undefined
+    } catch { return undefined }
   }, [activeTopic.programming_spec_json])
+
+  // Display path with the workspace root stripped (full path kept for hover/title).
+  const projectDirDisplay = useMemo(() => {
+    if (!projectDir) return undefined
+    const full = projectDir.replace(/\/+$/, '') || '/'
+    const root = (workspacePath ?? '').trim().replace(/\/+$/, '')
+    if (root && full.startsWith(`${root}/`)) return full.slice(root.length + 1)
+    if (root && full === root) return full.split('/').pop() || full
+    return full.startsWith('/') ? full.split('/').pop()! : full
+  }, [projectDir, workspacePath])
 
   const approvalsByMessage = useMemo(() => {
     const map: Record<string, { interactionId: string; interactionKind: string; prompt: string; options?: string[]; status: 'pending' | 'resolved' | 'timeout'; response?: string }> = {}
@@ -223,53 +238,27 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         </div>
 
         {activeTopic.agent_type === 'programming' && (
-          <span className="inline-flex items-center rounded-full text-[11.5px] font-medium" style={{ height: 22, letterSpacing: '-0.005em' }}>
-            <span
-              className="inline-flex items-center gap-1.5 rounded-l-full pl-2 pr-1.5 py-0.5 h-full"
-              style={{ background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', borderRight: 'none', color: '#6cb1ff' }}
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 7 3 12 8 17" /><polyline points="16 7 21 12 16 17" /></svg>
-              Programming
-            </span>
-            <ExtensionDropdown extension={activeExtension} />
-          </span>
+          <ExtensionChip extension={activeExtension} />
         )}
         {activeTopic.agent_type === 'programming' && (
-          <>
-          <button
-            onClick={togglePlanMode}
-            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
-            style={{
-              height: 22,
-              background: planMode ? 'rgba(255,214,10,0.12)' : 'var(--glass-1)',
-              border: planMode ? '1px solid rgba(255,214,10,0.30)' : '1px solid var(--hairline)',
-              color: planMode ? '#F7C26B' : 'var(--fg-dim)',
-              letterSpacing: '-0.005em',
-            }}
-          >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11h6M9 7h6M9 15h4" /><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
-            Plan
-          </button>
-          <button
-            onClick={() => setShowMcpSettings(true)}
-            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
-            style={{
-              height: 22,
-              background: 'var(--glass-1)',
-              border: '1px solid var(--hairline)',
-              color: 'var(--fg-dim)',
-              letterSpacing: '-0.005em',
-            }}
-          >
-            MCP
-          </button>
-          </>
+          <ToolsMenu planMode={planMode} onTogglePlan={togglePlanMode} onOpenMcp={() => setShowMcpSettings(true)} />
         )}
         {activeTopic.agent_type === 'general' && (
           <Chip>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
             普通
           </Chip>
+        )}
+
+        {projectDirDisplay && (
+          <span
+            className="hidden min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium sm:inline-flex"
+            style={{ height: 22, maxWidth: 240, background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-dim)', letterSpacing: '-0.005em' }}
+            title={projectDir}
+          >
+            <svg className="shrink-0" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
+            <span className="truncate">{projectDirDisplay}</span>
+          </span>
         )}
 
         <div className="ml-auto flex items-center gap-2">
@@ -1034,15 +1023,95 @@ function formatRunStatus(status?: string): string {
   return status
 }
 
-function ExtensionDropdown({ extension }: { extension: 'claude-code' | 'codex' }) {
-  const label = extension === 'claude-code' ? 'Claude Code' : 'Codex'
-
+function ExtensionChip({ extension }: { extension: 'claude-code' | 'codex' }) {
+  const isCodex = extension === 'codex'
+  const label = isCodex ? 'Codex' : 'Claude Code'
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-r-full pl-1.5 pr-2 py-0.5 h-full"
-      style={{ background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', color: '#6cb1ff' }}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium"
+      style={{ height: 22, background: 'rgba(10,132,255,0.10)', border: '1px solid rgba(10,132,255,0.30)', color: '#6cb1ff', letterSpacing: '-0.005em' }}
     >
+      {isCodex ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7" /><polyline points="3 7 12 13 21 7" /><path d="m9 11-3 3 3 3" /><path d="m15 11 3 3-3 3" /></svg>
+      ) : (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 7 3 12 8 17" /><polyline points="16 7 21 12 16 17" /></svg>
+      )}
       {label}
     </span>
+  )
+}
+
+function ToolsMenu({ planMode, onTogglePlan, onOpenMcp }: { planMode: boolean; onTogglePlan: () => void; onOpenMcp: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
+        style={{
+          height: 22,
+          background: planMode ? 'rgba(255,214,10,0.12)' : 'var(--glass-1)',
+          border: planMode ? '1px solid rgba(255,214,10,0.30)' : '1px solid var(--hairline)',
+          color: planMode ? '#F7C26B' : 'var(--fg-dim)',
+          letterSpacing: '-0.005em',
+        }}
+        title="模式与工具"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 120ms ease' }}><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl"
+          style={{
+            background: 'var(--glass-modal)',
+            WebkitBackdropFilter: 'blur(60px) saturate(200%)',
+            backdropFilter: 'blur(60px) saturate(200%)',
+            border: '1px solid var(--hairline-2)',
+            boxShadow: '0 16px 40px rgba(0,0,0,.5)',
+          }}
+        >
+          <button
+            onClick={onTogglePlan}
+            className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-sm transition-colors hover:opacity-80"
+            style={{ color: planMode ? '#F7C26B' : 'var(--fg-regular)' }}
+          >
+            <span className="flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11h6M9 7h6M9 15h4" /><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
+              Plan 模式
+            </span>
+            <span
+              className="rounded-full px-1.5 text-[10px] font-semibold"
+              style={{
+                background: planMode ? 'rgba(255,214,10,0.18)' : 'var(--glass-1)',
+                border: planMode ? '1px solid rgba(255,214,10,0.30)' : '1px solid var(--hairline)',
+                color: planMode ? '#F7C26B' : 'var(--fg-dim)',
+              }}
+            >
+              {planMode ? 'ON' : 'OFF'}
+            </span>
+          </button>
+          <button
+            onClick={() => { onOpenMcp(); setOpen(false) }}
+            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-sm transition-colors hover:opacity-80"
+            style={{ color: 'var(--fg-regular)', borderTop: '1px solid var(--hairline)' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></svg>
+            MCP 设置
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

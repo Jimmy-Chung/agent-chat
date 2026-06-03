@@ -461,7 +461,8 @@ export function Sidebar() {
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
   const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
-  const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const workspacePath = useWsStore((s) => s.workspacePath)
+  const setWorkspacePath = useWsStore((s) => s.setWorkspacePath)
 
   // Fetch workspace root path once connected for footer display
   useEffect(() => {
@@ -469,7 +470,7 @@ export function Sidebar() {
     fetchWorkspaceBrowse()
       .then((w) => setWorkspacePath(w.workspacePath ?? null))
       .catch(() => setWorkspacePath(null))
-  }, [wsStatus])
+  }, [wsStatus, setWorkspacePath])
 
   // Auto-select the tab that contains the currently active provider
   useEffect(() => {
@@ -813,39 +814,44 @@ export function Sidebar() {
           : null}
 
         <div
-          className="flex shrink-0 items-center gap-2 px-3.5 py-2.5 text-xs"
+          className="flex shrink-0 flex-col gap-1.5 px-3.5 py-2.5 text-xs"
           style={{ borderTop: '1px solid var(--hairline)', color: 'var(--fg-dim)' }}
         >
-          <PiStatusBadge
-            wsStatus={wsStatus}
-            adapterLink={adapterLink}
-            onClick={() => setShowConnectionModal(true)}
-          />
-          <NotificationBell />
           {workspacePath && (
-            <div
-              className="truncate text-[10.5px] flex-1"
-              style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', maxWidth: 160 }}
-              title={workspacePath}
-            >
-              {workspacePath}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>工作区目录：</span>
+              <span
+                className="truncate text-[10.5px]"
+                style={{ color: 'var(--fg-regular)', fontFamily: 'var(--font-mono)' }}
+                title={workspacePath}
+              >
+                {workspacePath}
+              </span>
             </div>
           )}
-          <div className="ml-auto">
-            <Tooltip
-              variant="info"
-              side="top"
-              content={
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                  <div>helm: <span style={{ color: '#fff' }}>v1.8.18</span></div>
-                  <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
-                </div>
-              }
-              delayMs={200}
-              onShow={fetchAdapterVersion}
-            >
-              <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.8.18</span>
-            </Tooltip>
+          <div className="flex items-center gap-2">
+            <PiStatusBadge
+              wsStatus={wsStatus}
+              adapterLink={adapterLink}
+              onClick={() => setShowConnectionModal(true)}
+            />
+            <NotificationBell />
+            <div className="ml-auto">
+              <Tooltip
+                variant="info"
+                side="top"
+                content={
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.8.19</span></div>
+                    <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
+                  </div>
+                }
+                delayMs={200}
+                onShow={fetchAdapterVersion}
+              >
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.8.19</span>
+              </Tooltip>
+            </div>
           </div>
         </div>
       </div>
