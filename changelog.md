@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-03 [v1.8.13] — UI polish: 状态条、model fallback、气泡样式
+
+- AgentStatusBar 闲时隐藏（idle + connected），仅活跃或异常时显示。
+- PI Agent 话题 fallback provider 限定 pi-agent group，不再误选 Claude Code/Codex provider。
+- 消息气泡去掉外层 overflow-x 滚动条（代码块自带），user 气泡去掉蓝外发光。
+- 版本显示更新为 `v1.8.13`。
+
 ## 2026-06-03 [v1.8.12] — refactor: 侧边栏结构重组对齐设计稿
 
 - 侧边栏重组为三层：新建话题 → 话题区(flex:1,含搜索+列表+fade mask) → 底部浓缩栏 → Footer。
