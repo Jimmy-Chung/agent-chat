@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-03 [v1.8.10] — fix: ProviderConfigModal isActive badge 文案修正
+
+- ProviderConfigModal 中 `isActive`（当前激活）的 badge 从 "Default" 改为 "活跃"，颜色从金色改为绿色，与 `isDefault`（官方内置）语义分离。
+- 版本显示更新为 `v1.8.10`。
+
 ## 2026-06-03 [v1.8.9] — fix: JWT 过期致 provider 401、创建话题失败、刷新后消息无响应
 
 ### AIT-208
