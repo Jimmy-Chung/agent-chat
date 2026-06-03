@@ -21,6 +21,7 @@ function makeConfig(): AppConfig {
     vapidPrivateKey: '',
     vapidSubject: 'mailto:test@example.com',
     webBaseUrl: '',
+    attentionLlm: { apiKey: '', baseUrl: '', model: '' },
   }
 }
 

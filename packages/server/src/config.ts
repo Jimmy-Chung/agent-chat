@@ -16,6 +16,10 @@ export interface Env {
   VAPID_SUBJECT?: string
   /** Public base URL of the agent-chat web app (for pairing `/pair` links). */
   AGENT_CHAT_WEB_URL?: string
+  /** Attention 面板分析用 LLM（agent-chat 自配，不复用 adapter 的 provider）。 */
+  ATTENTION_LLM_API_KEY?: string
+  ATTENTION_LLM_BASE_URL?: string
+  ATTENTION_LLM_MODEL?: string
 }
 
 export interface AppConfig {
@@ -41,6 +45,12 @@ export interface AppConfig {
   adapterInstanceId?: string
   /** Server origin used as JWT `iss` claim in DO contexts (no request URL). */
   serverOrigin?: string
+  /** Attention 面板分析用 LLM（OpenAI 兼容）。三者任一为空即视为未配置 → 降级。 */
+  attentionLlm: {
+    apiKey: string
+    baseUrl: string
+    model: string
+  }
 }
 
 export function createConfig(env: Env): AppConfig {
@@ -62,5 +72,10 @@ export function createConfig(env: Env): AppConfig {
     vapidPrivateKey: env.VAPID_PRIVATE_KEY || '',
     vapidSubject: env.VAPID_SUBJECT || 'mailto:admin@example.com',
     webBaseUrl: env.AGENT_CHAT_WEB_URL || '',
+    attentionLlm: {
+      apiKey: env.ATTENTION_LLM_API_KEY || '',
+      baseUrl: env.ATTENTION_LLM_BASE_URL || '',
+      model: env.ATTENTION_LLM_MODEL || '',
+    },
   }
 }
