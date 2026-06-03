@@ -90,6 +90,14 @@ class WsClient {
     if (token) params.set('token', token)
     if (this.piConfig?.wssUrl) params.set('piWssUrl', this.piConfig.wssUrl)
     if (this.piConfig?.piToken) params.set('piToken', this.piConfig.piToken)
+    try {
+      const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
+      if (paired) {
+        const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
+        if (deviceCredential) params.set('deviceCredential', deviceCredential)
+        if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
+      }
+    } catch { /* ignore */ }
     const url = params.toString() ? `${wsUrl}?${params}` : wsUrl
 
     useWsStore.getState().setStatus('connecting')

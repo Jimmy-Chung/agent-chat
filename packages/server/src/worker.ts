@@ -335,6 +335,11 @@ export default {
         const piTokenParam = url.searchParams.get('piToken')
         if (piWssUrl) config.piAdapterUrl = piWssUrl
         if (piTokenParam) config.piAdapterToken = piTokenParam
+        const dc = url.searchParams.get('deviceCredential')
+        const aid = url.searchParams.get('adapterInstanceId')
+        if (dc) config.deviceCredential = dc
+        if (aid) config.adapterInstanceId = aid
+        config.serverOrigin = url.origin
         await stub.setConfig(config, topicId)
         return stub.fetch(request)
       } catch (e) {

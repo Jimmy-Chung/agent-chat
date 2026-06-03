@@ -36,6 +36,11 @@ export interface AppConfig {
   vapidPrivateKey: string
   vapidSubject: string
   webBaseUrl: string
+  /** Paired-device credential for JIT JWT signing (WS connection + HTTP proxy). */
+  deviceCredential?: string
+  adapterInstanceId?: string
+  /** Server origin used as JWT `iss` claim in DO contexts (no request URL). */
+  serverOrigin?: string
 }
 
 export function createConfig(env: Env): AppConfig {
