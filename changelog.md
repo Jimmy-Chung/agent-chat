@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.02] — experiment: 动态聊天树治理模型
+
+- 将 Attention X 从卡片/列表式投影改为 `chat history -> evolving topic tree` 治理模型，先生成稳定的 `goal / topic / turn / plan / decision` 树，再由图层渲染。
+- 支持主目标链、偏离目标支线、active path 展开、旧子话题聚合，以及 plan/todo/choice 挂载到相关 turn。
+- 新增动态树默认视图，打开 Attention X 时直接显示连续/分散的思维导图式节点图。
+- 版本显示更新为 `v1.9.5-alpha.02`。
+
 ## 2026-06-04 [v1.9.5-alpha.01] — experiment: Attention X 多方案图面板
 
 - 基于 `attention-x` 实验分支增加 Attention X 临时面板，可在当前话题历史上切换查看阶段聚合、多层树、目标支链、Plan/Todo、选项决策五种图方案。

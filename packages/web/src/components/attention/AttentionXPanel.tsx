@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
 import { getWsClient } from '@/lib/ws-client'
 import { projectBranches } from '@/lib/attention/branch-projector'
@@ -10,15 +11,21 @@ import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildAttentionTree } from '@/lib/attention/tree-projector'
 import { goalDistanceColor } from '@/lib/attention'
 
-type ViewMode = 'phase' | 'tree' | 'branches' | 'plan' | 'choice'
+type ViewMode = 'mind' | 'phase' | 'tree' | 'branches' | 'plan' | 'choice'
 
 const MODES: Array<{ id: ViewMode; label: string }> = [
+  { id: 'mind', label: '动态树' },
   { id: 'phase', label: '阶段聚合' },
   { id: 'tree', label: '多层树' },
   { id: 'branches', label: '目标支链' },
   { id: 'plan', label: 'Plan/Todo' },
   { id: 'choice', label: '选项决策' },
 ]
+
+const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
+  ssr: false,
+  loading: () => <EmptyHint text="加载动态树…" />,
+})
 
 function NodePill({ node, label }: { node: TraceNode; label?: string }) {
   return (
@@ -198,7 +205,7 @@ export function AttentionXPanel({
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
 }) {
-  const [mode, setMode] = useState<ViewMode>('phase')
+  const [mode, setMode] = useState<ViewMode>('mind')
   const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
 
   return (
@@ -231,6 +238,7 @@ export function AttentionXPanel({
         </div>
       </div>
       <div className="min-h-0 flex-1">
+        {mode === 'mind' && <MindMapGraph nodes={nodes} goalAnchor={goalAnchor} planItems={planItems} />}
         {mode === 'phase' && <PhaseView nodes={nodes} />}
         {mode === 'tree' && <TreeView nodes={nodes} goalAnchor={goalAnchor} />}
         {mode === 'branches' && <BranchView nodes={nodes} />}
