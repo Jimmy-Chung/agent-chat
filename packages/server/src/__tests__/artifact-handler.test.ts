@@ -62,6 +62,7 @@ describe('Artifact handler — upload.init', () => {
         vapidPrivateKey: '',
         vapidSubject: '',
         webBaseUrl: '',
+        attentionLlm: { apiKey: '', baseUrl: '', model: '' },
       },
       baseUrl: 'https://agent-chat.test',
     })

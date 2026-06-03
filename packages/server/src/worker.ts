@@ -11,6 +11,7 @@ import { handleArtifactAccessRequest } from './r2/artifact-access'
 import { createPushRoutes } from './routes/push'
 import { getLogs, clearLogs } from './server-logs'
 import { createPairingRoutes, issueJitJwt } from './pairing/routes'
+import { createAttentionRoutes } from './routes/attention'
 import { piWsToHttpBase } from '@agent-chat/protocol'
 
 let initialized = false
@@ -34,6 +35,9 @@ app.use('*', cors())
 
 // Device pairing API (AIT-216): /api/agent-chat/v1/pairing, /devices/token, /.well-known/jwks.json
 app.route('/', createPairingRoutes(() => appConfig))
+
+// Attention 分析 LLM 代理 (AIT-220): POST /api/agent-chat/v1/attention/interpret
+app.route('/', createAttentionRoutes(() => appConfig))
 
 app.get('/healthz', async (c) => {
   try {

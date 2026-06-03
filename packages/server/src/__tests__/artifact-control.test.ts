@@ -22,6 +22,7 @@ const config = {
   vapidPrivateKey: '',
   vapidSubject: '',
   webBaseUrl: '',
+  attentionLlm: { apiKey: '', baseUrl: '', model: '' },
 }
 
 function makeContext(pendingUploads: PendingUploadStore) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-03 [v1.9.0] — feat: Attention 实时注意力面板
+
+- 新增「注意力」面板（对话区头部入口）：把会话实时压缩成 5–12 个决策节点，呈现原始目标 / 关键阶段 / 是否偏离目标。
+- S1 数据适配 + 聚合骨架：`storeToRawEvents` 从已有 store 数据（消息/parts/todos/plan）产出决策骨架，无 LLM、纯前端。
+- S2 server `/attention/interpret` 薄 LLM 代理：用 agent-chat 自配的 OpenAI 兼容 LLM（Worker secret）提炼 conclusion + 目标距离；未配置/失败自动降级。
+- S3 实时增量编排：turn 落定触发一次 interpret，历史冻结，进行中节点 cosine 占位；server 不可用全程 cosine 兜底。
+- S4 宽 drawer + 窄列表 + React Flow 实时图（`@xyflow/react`，dynamic import 不进首屏）。
+- S5 目标距离弱提示：cosine / goalAlignment 映射为绿/黄/橙色条，子层相对所在 Phase 目标；v1 仅弱提示、不做脉动告警。
+- 部署提示：分析 LLM 需在 Worker 配 `ATTENTION_LLM_API_KEY`/`ATTENTION_LLM_BASE_URL`/`ATTENTION_LLM_MODEL`，未配则自动降级为本地 cosine。
+- 版本显示更新为 `v1.9.0`。
+
 ## 2026-06-03 [v1.8.19] — fix: footer 工作区目录独立成行 + 头部目录标签/工具下拉
 
 - 侧边栏 footer 工作区目录改为单独一行（在「已连接」上方），不再被状态徽标挤压截断；hover 显示完整路径。
