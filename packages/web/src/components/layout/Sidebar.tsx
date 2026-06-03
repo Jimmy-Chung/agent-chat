@@ -450,6 +450,15 @@ export function Sidebar() {
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
   const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+
+  // Fetch workspace root path once connected for footer display
+  useEffect(() => {
+    if (wsStatus !== 'connected') return
+    fetchWorkspaceBrowse()
+      .then((w) => setWorkspacePath(w.workspacePath ?? null))
+      .catch(() => setWorkspacePath(null))
+  }, [wsStatus])
 
   // Auto-select the tab that contains the currently active provider
   useEffect(() => {
@@ -792,6 +801,15 @@ export function Sidebar() {
             onClick={() => setShowConnectionModal(true)}
           />
           <NotificationBell />
+          {workspacePath && (
+            <div
+              className="truncate text-[10.5px]"
+              style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', maxWidth: 100 }}
+              title={workspacePath}
+            >
+              {workspacePath.split('/').pop() || workspacePath}
+            </div>
+          )}
           <div className="ml-auto">
             <Tooltip
               variant="info"
