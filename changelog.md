@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-03 [v1.8.11] — fix: 非 Claude Code 话题显示 model 选项 + 默认选首模型
+
+- 输入框 model 选择器不再限定 `programming` agent_type，Codex 和 PI Agent 话题也能从绑定的 provider 中选择模型。
+- 新话题自动选择 provider 配置的第一个模型作为默认值，不再显示 "—"。
+- 版本显示更新为 `v1.8.11`。
+
 ## 2026-06-03 [v1.8.10] — fix: ProviderConfigModal isActive badge 文案修正
 
 - ProviderConfigModal 中 `isActive`（当前激活）的 badge 从 "Default" 改为 "活跃"，颜色从金色改为绿色，与 `isDefault`（官方内置）语义分离。
