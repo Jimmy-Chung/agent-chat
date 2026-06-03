@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { useWsStore } from '@/stores/ws-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
+import { useCronStore } from '@/stores/cron-store'
 import { useToastStore } from '@/stores/toast-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
@@ -168,131 +169,230 @@ const PROVIDER_TAB_DEFS = [
   },
 ]
 
-function ProviderTabContent({
-  providers,
-  tabKey,
+
+// ── Bottom resource bar helpers ────────────────────────────────────────────
+
+function SystemIconButton({
+  label,
+  badgeCount,
+  active,
+  kind,
+  onClick,
+}: {
+  label: string
+  badgeCount: number
+  active: boolean
+  kind: string
+  onClick: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  const isCron = kind === 'system_cron_admin'
+  const isArtifact = kind === 'system_artifact_pool'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="relative flex items-center gap-1.5 rounded-md px-1.5 py-1"
+      style={{
+        height: 28,
+        background: active ? 'rgba(10,132,255,0.13)' : hovered ? 'var(--glass-1)' : 'transparent',
+        border: active ? '1px solid rgba(10,132,255,0.35)' : '1px solid transparent',
+        borderRadius: 7,
+        transition: 'background 120ms ease',
+      }}
+      title={label}
+    >
+      <span style={{
+        display: 'inline-flex', width: 14, height: 14,
+        color: active ? '#6cb1ff' : isCron ? 'var(--cron-gold)' : isArtifact ? '#B8B6FF' : 'var(--fg-dim)',
+      }}>
+        {isCron ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="13" r="7"/><path d="M12 9v4l2.5 2"/><path d="M9 2h6"/><path d="M12 2v3"/>
+          </svg>
+        ) : isArtifact ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4"/><path d="M12 11v10"/>
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+        )}
+      </span>
+      {badgeCount > 0 && (
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600, lineHeight: '14px',
+          color: isCron ? 'var(--cron-gold)' : 'var(--fg-dim)',
+          background: active ? 'rgba(10,132,255,0.14)' : 'var(--glass-1)',
+          padding: '0 4px', borderRadius: 4, letterSpacing: 0,
+        }}>{badgeCount}</span>
+      )}
+    </button>
+  )
+}
+
+function PluginMgmtButton({
+  activeProviderTab,
+  setActiveProviderTab,
+  providerConfigs,
   switchingId,
   onSwitch,
   onManage,
 }: {
-  providers: ProviderConfig[]
-  tabKey: 'claude-code' | 'codex' | 'pi-agent'
+  activeProviderTab: string
+  setActiveProviderTab: (tab: 'claude-code' | 'codex' | 'pi-agent') => void
+  providerConfigs: ProviderConfig[]
   switchingId: string | null
   onSwitch: (id: string) => void
   onManage: () => void
 }) {
-  const tabDef = PROVIDER_TAB_DEFS.find((t) => t.key === tabKey)!
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const activeProvider = providerConfigs.find((c) => c.isActive)
 
-  if (providers.length === 0) {
-    return (
-      <div
-        className="shrink-0 mx-2.5 mb-2 flex flex-col items-center gap-2 text-center"
-        style={{
-          padding: '16px 14px',
-          borderRadius: 11,
-          background: tabDef.emptyBg,
-          border: `1px dashed ${tabDef.emptyBorder}`,
-        }}
-      >
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: `${tabDef.emptyBg}`,
-          border: `1px solid ${tabDef.emptyBorder}`,
-          color: tabDef.emptyColor,
-          display: 'grid', placeItems: 'center',
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M16.95 16.95l2.15 2.15M4.9 19.1l2.1-2.1M16.95 7.05l2.15-2.15"/>
-          </svg>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--fg-regular)', fontWeight: 500, letterSpacing: '-0.005em' }}>
-          尚未配置 {tabDef.label} Provider
-        </div>
-        <button
-          type="button"
-          onClick={onManage}
-          style={{
-            marginTop: 2, height: 26, padding: '0 10px', borderRadius: 7,
-            background: `${tabDef.emptyBg}`,
-            color: tabDef.emptyColor,
-            border: `1px solid ${tabDef.emptyBorder}`,
-            fontSize: 11, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5,
-            letterSpacing: '-0.005em', fontFamily: 'var(--font-ui)',
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
-          新增 Provider
-        </button>
-      </div>
-    )
-  }
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
 
   return (
-    <div className="shrink-0 mx-2.5 mb-1 flex flex-col gap-px">
-      {providers.map((p) => {
-        const isSwitching = switchingId === p.id
-        const isSelected = p.isActive
-        return (
-          <button
-            key={p.id}
-            type="button"
-            disabled={isSwitching}
-            onClick={() => { if (!isSelected) onSwitch(p.id) }}
-            className="w-full"
+    <div ref={ref} className="relative ml-auto">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 rounded-md px-1.5 py-1"
+        style={{
+          height: 28,
+          background: open ? 'var(--glass-1)' : 'transparent',
+          border: open ? '1px solid var(--hairline)' : '1px solid transparent',
+          borderRadius: 7,
+          color: open ? 'var(--fg-regular)' : 'var(--fg-dim)',
+          transition: 'background 120ms ease',
+        }}
+        title="插件管理"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/><line x1="9" y1="3" x2="9" y2="21"/>
+        </svg>
+        {activeProvider && (
+          <span style={{ fontSize: 10, color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+            {activeProvider.models?.[0] ?? activeProvider.provider}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-full right-0 mb-2"
+          style={{
+            width: 220,
+            background: 'rgba(20,22,27,0.92)',
+            backdropFilter: 'blur(60px) saturate(200%)',
+            WebkitBackdropFilter: 'blur(60px) saturate(200%)',
+            border: '1px solid var(--hairline-strong)',
+            borderRadius: 12,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06)',
+            zIndex: 40,
+          }}
+        >
+          {/* Tab strip inside popover */}
+          <div
+            className="mx-2.5 mt-2.5"
             style={{
-              display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', columnGap: 8,
-              padding: '8px 10px', borderRadius: 8,
-              background: isSelected ? 'rgba(10,132,255,.13)' : 'transparent',
-              boxShadow: isSelected ? 'inset 0 0 0 1px rgba(10,132,255,.45)' : 'none',
-              opacity: isSwitching ? 0.6 : 1,
-              cursor: isSelected ? 'default' : 'default', border: 'none',
-              transition: 'background 120ms ease',
+              display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, padding: 3,
+              background: 'rgba(0,0,0,0.32)', border: '1px solid var(--hairline)',
+              borderRadius: 9, height: 32,
             }}
-            onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--glass-1)' }}
-            onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                background: 'var(--ok-green)', boxShadow: '0 0 6px var(--ok-green)',
-              }} />
-              <span style={{
-                fontSize: 13, fontWeight: isSelected ? 600 : 500, color: 'var(--fg-strong)',
-                letterSpacing: '-0.005em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{p.name}</span>
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--fg-dim)',
-                flexShrink: 0, letterSpacing: 0,
-              }}>{p.models?.[0] ?? p.provider}</span>
-            </div>
-            {isSwitching ? (
-              <svg className="animate-spin" width="10" height="10" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeOpacity="0.2"/>
-                <path d="M8 2a6 6 0 0 1 5.3 3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            ) : p.isDefault ? (
-              <span style={{
-                fontSize: 9, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
-                letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
-                background: 'rgba(247,194,107,.16)', color: 'var(--cron-gold)',
-                border: '1px solid rgba(247,194,107,.30)', flexShrink: 0,
-              }}>Default</span>
-            ) : isSelected ? (
-              <span style={{
-                fontSize: 9, padding: '1px 5px', borderRadius: 5, fontWeight: 700,
-                letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: 'var(--font-mono)',
-                background: 'rgba(10,132,255,.16)', color: '#7CB6FF',
-                border: '1px solid rgba(10,132,255,.30)', flexShrink: 0,
-              }}>Active</span>
-            ) : (
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--fg-dim)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 6 15 12 9 18"/>
-              </svg>
-            )}
+            {PROVIDER_TAB_DEFS.map(({ key, label, icon, activeColor, countBg }) => {
+              const count = providerConfigs.filter((c) => (c.group ?? 'claude-code') === key).length
+              const isActive = activeProviderTab === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveProviderTab(key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    borderRadius: 7, border: 'none', cursor: 'default', fontSize: 11, fontWeight: isActive ? 600 : 500,
+                    color: isActive ? 'var(--fg-strong)' : 'var(--fg-dim)',
+                    background: isActive ? 'var(--glass-2)' : 'transparent',
+                    boxShadow: isActive ? 'inset 0 0 0 1px var(--hairline-strong), inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
+                    letterSpacing: '-0.005em', fontFamily: 'var(--font-ui)',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', color: isActive ? activeColor : 'var(--fg-dim)', fontSize: 11 }}>{icon}</span>
+                  <span style={{ fontSize: 10.5 }}>{label}</span>
+                  <span style={{
+                    fontFamily: 'var(--font-mono)', fontSize: 8.5, fontWeight: 600,
+                    color: isActive ? activeColor : 'var(--fg-dim)',
+                    background: isActive ? countBg : 'rgba(255,255,255,0.06)',
+                    padding: '0 3px', height: 13, borderRadius: 3,
+                    display: 'inline-flex', alignItems: 'center', letterSpacing: 0,
+                  }}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+          {/* Provider list in popover */}
+          <div className="mx-2 my-1.5 flex flex-col gap-px max-h-[160px] overflow-y-auto">
+            {providerConfigs
+              .filter((c) => (c.group ?? 'claude-code') === activeProviderTab)
+              .map((p) => {
+                const isSelected = p.isActive
+                const isSwitching = switchingId === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={isSwitching}
+                    onClick={() => { if (!isSelected) { onSwitch(p.id); setOpen(false) } }}
+                    className="w-full flex items-center gap-2 rounded-md px-2 py-1.5"
+                    style={{
+                      background: isSelected ? 'rgba(10,132,255,.13)' : 'transparent',
+                      border: 'none', cursor: 'default',
+                      opacity: isSwitching ? 0.6 : 1,
+                    }}
+                  >
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                      background: 'var(--ok-green)', boxShadow: '0 0 6px var(--ok-green)',
+                    }} />
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg-strong)', flex: 1, textAlign: 'left' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--fg-dim)' }}>
+                      {p.models?.[0] ?? ''}
+                    </span>
+                  </button>
+                )
+              })}
+          </div>
+          {/* Manage link */}
+          <button
+            type="button"
+            onClick={() => { onManage(); setOpen(false) }}
+            className="w-full flex items-center gap-2 rounded-b-lg px-3 py-2 text-[11px]"
+            style={{
+              borderTop: '1px solid var(--hairline)',
+              color: 'var(--fg-regular)',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--glass-1)' }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            管理 Provider…
           </button>
-        )
-      })}
+        </div>
+      )}
     </div>
   )
 }
@@ -346,6 +446,7 @@ export function Sidebar() {
   }, [adapterVersion])
   const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
+  const cronRunCount = useCronStore((s) => s.crons.filter((c) => c.status === 'active').length)
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
   const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
@@ -571,33 +672,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        {systemTopics.length > 0 && (
-          <>
-            <div className="shrink-0 px-4 pt-4 pb-1.5">
-              <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>
-                System
-              </span>
-            </div>
-            <div className="shrink-0 px-1.5 flex flex-col gap-px">
-              {systemTopics.map((topic) => {
-                const badgeCount = topic.kind === 'system_artifact_pool'
-                  ? poolArtifacts.length
-                  : 0
-                return (
-                  <TopicItem
-                    key={topic.id}
-                    topic={topic}
-                    active={topic.id === activeTopicId}
-                    onClick={() => selectTopic(topic.id)}
-                    badgeCount={badgeCount}
-                  />
-                )
-              })}
-            </div>
-            <div className="mx-4 my-2 shrink-0" style={{ height: 1, background: 'var(--hairline)' }} />
-          </>
-        )}
-
+        {/* System topic delete modal (if deleting a system topic) */}
         {deletingTopic && createPortal(
           <DeleteTopicModal
             topicId={deletingTopic.id}
@@ -607,117 +682,44 @@ export function Sidebar() {
           document.body,
         )}
 
-        {/* Provider section */}
-        <div className="shrink-0 px-4 pb-1.5 pt-1 flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>Provider</span>
-          <span className="text-[10px] tabular-nums" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
-            {providerConfigs.length > 0 ? providerConfigs.length : ''}
-          </span>
-        </div>
-
-        {/* 3-segment tab strip */}
-        <div
-          className="shrink-0 mx-2.5 mb-2"
-          style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 3, padding: 3,
-            background: 'rgba(0,0,0,0.32)', border: '1px solid var(--hairline)',
-            borderRadius: 9, height: 32,
-          }}
-        >
-          {PROVIDER_TAB_DEFS.map(({ key, label, icon, activeColor, countBg }) => {
-            const count = providerConfigs.filter((c) => (c.group ?? 'claude-code') === key).length
-            const isActive = activeProviderTab === key
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveProviderTab(key)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  borderRadius: 7, border: 'none', cursor: 'default', fontSize: 11.5, fontWeight: isActive ? 600 : 500,
-                  color: isActive ? 'var(--fg-strong)' : 'var(--fg-dim)',
-                  background: isActive ? 'var(--glass-2)' : 'transparent',
-                  boxShadow: isActive ? 'inset 0 0 0 1px var(--hairline-strong), inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
-                  letterSpacing: '-0.005em', fontFamily: 'var(--font-ui)',
-                }}
-              >
-                <span style={{ display: 'inline-flex', color: isActive ? activeColor : 'var(--fg-dim)' }}>{icon}</span>
-                <span>{label}</span>
-                <span style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
-                  color: isActive ? activeColor : 'var(--fg-dim)',
-                  background: isActive ? countBg : 'rgba(255,255,255,0.06)',
-                  padding: '0 4px', height: 14, borderRadius: 4,
-                  display: 'inline-flex', alignItems: 'center', letterSpacing: 0,
-                }}>{count}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Provider list for active tab */}
-        <ProviderTabContent
-          providers={providerConfigs.filter((c) => (c.group ?? 'claude-code') === activeProviderTab)}
-          tabKey={activeProviderTab}
-          switchingId={switchingId}
-          onSwitch={handleSwitchProvider}
-          onManage={() => setShowProviderConfig(true)}
-        />
-
-        {/* Manage row */}
-        <div className="shrink-0 mx-2.5 mb-1">
-          <button
-            type="button"
-            onClick={() => setShowProviderConfig(true)}
-            className="w-full flex items-center gap-2 rounded-lg text-[12px] transition-colors"
-            style={{ padding: '8px 10px', color: 'var(--fg-regular)' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--glass-1)'; (e.currentTarget as HTMLElement).style.color = 'var(--fg-strong)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--fg-regular)' }}
-          >
-            <span style={{ display: 'inline-flex', color: 'var(--fg-dim)' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </span>
-            <span>管理 Provider…</span>
-            <span className="ml-auto" style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--fg-dim)' }}>
-              {providerConfigs.length || ''}
-            </span>
-          </button>
-        </div>
-
-        {/* ProviderConfigModal portal */}
-        {showProviderConfig && typeof document !== 'undefined'
-          ? createPortal(
-              <ProviderConfigModal
-                onClose={() => setShowProviderConfig(false)}
-              />,
-              document.body,
-            )
-          : null}
-
-        <div className="mx-4 my-2 shrink-0" style={{ height: 1, background: 'var(--hairline)' }} />
-
-        <div className="shrink-0 px-4 pb-1.5 pt-1">
-          <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>
-            Topics
-          </span>
-        </div>
-
-        <div className="shrink-0 px-3 pb-2">
+        {/* ── Topic area (flex:1) ── */}
+        <div className="shrink-0 px-3 pb-2 pt-1">
           <input
             type="text"
             placeholder="搜索话题..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-md px-3 py-1.5 text-sm outline-none"
+            className="w-full rounded-lg px-2.5 text-[12.5px] outline-none"
             style={{
-              backgroundColor: 'var(--glass-1)',
+              height: 32,
+              backgroundColor: 'rgba(0,0,0,0.30)',
               color: 'var(--fg-regular)',
               border: '1px solid var(--hairline)',
+              letterSpacing: '-0.005em',
             }}
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-1.5">
+        <div className="shrink-0 flex items-center gap-2 px-[18px] pb-1.5">
+          <span className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>话题</span>
+          <span
+            className="text-[10px]"
+            style={{
+              fontFamily: 'var(--font-mono)', letterSpacing: 0,
+              color: 'var(--fg-dim)', background: 'var(--glass-1)',
+              border: '1px solid var(--hairline)', borderRadius: 8,
+              padding: '0 5px',
+            }}
+          >{normalTopics.length}</span>
+        </div>
+
+        <div
+          className="flex-1 overflow-y-auto px-1.5"
+          style={{
+            WebkitMaskImage: 'linear-gradient(180deg, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%)',
+            maskImage: 'linear-gradient(180deg, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%)',
+          }}
+        >
           {filteredNormal.length === 0 && (
             <p className="px-3 py-4 text-center text-xs" style={{ color: 'var(--fg-dim)' }}>
               暂无话题
@@ -734,6 +736,51 @@ export function Sidebar() {
             />
           ))}
         </div>
+
+        {/* ── Bottom resource bar ── */}
+        <div className="relative shrink-0">
+          <div className="flex items-center gap-0.5 px-2 py-1.5">
+            {/* System entry icons */}
+            {systemTopics.map((topic) => {
+              const isActive = topic.id === activeTopicId
+              const badgeCount = topic.kind === 'system_artifact_pool' ? poolArtifacts.length
+                : topic.kind === 'system_cron_admin' ? cronRunCount
+                : 0
+              return (
+                <SystemIconButton
+                  key={topic.id}
+                  label={topic.name}
+                  badgeCount={badgeCount}
+                  active={isActive}
+                  kind={topic.kind}
+                  onClick={() => selectTopic(topic.id)}
+                />
+              )
+            })}
+            {systemTopics.length > 0 && (
+              <span style={{ width: 1, height: 18, background: 'var(--hairline)', margin: '0 2px' }} />
+            )}
+            {/* Plugin management button */}
+            <PluginMgmtButton
+              activeProviderTab={activeProviderTab}
+              setActiveProviderTab={setActiveProviderTab}
+              providerConfigs={providerConfigs}
+              switchingId={switchingId}
+              onSwitch={handleSwitchProvider}
+              onManage={() => setShowProviderConfig(true)}
+            />
+          </div>
+        </div>
+
+        {/* ProviderConfigModal portal */}
+        {showProviderConfig && typeof document !== 'undefined'
+          ? createPortal(
+              <ProviderConfigModal
+                onClose={() => setShowProviderConfig(false)}
+              />,
+              document.body,
+            )
+          : null}
 
         <div
           className="flex shrink-0 items-center gap-2 px-3.5 py-2.5 text-xs"

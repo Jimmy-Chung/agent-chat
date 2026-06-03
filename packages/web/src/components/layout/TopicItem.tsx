@@ -21,8 +21,9 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0 }: 
   return (
     <button
       onClick={onClick}
-      className="group/grid grid w-full grid-cols-[22px_1fr_auto] gap-x-2 rounded-lg px-2 py-2 text-left transition-colors"
+      className="group/grid grid w-full grid-cols-[22px_1fr_auto] rounded-lg text-left transition-colors"
       style={{
+        columnGap: 9, padding: '8px 9px 9px',
         backgroundColor: active ? 'rgba(10,132,255,0.13)' : hovered ? 'var(--glass-1)' : 'transparent',
         boxShadow: active ? 'inset 0 0 0 1px rgba(10,132,255,0.55)' : 'none',
       }}
@@ -32,7 +33,7 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0 }: 
       {/* Icon */}
       <span
         className="flex h-[22px] w-[22px] items-center justify-center"
-        style={{ color: active ? '#6cb1ff' : isSystem ? 'var(--role-cron)' : 'var(--fg-regular)' }}
+        style={{ color: active ? '#6cb1ff' : isSystem ? 'var(--role-cron)' : 'var(--fg-regular)', marginTop: 1 }}
       >
         <TopicIcon kind={topic.kind} agentType={topic.agent_type} />
       </span>
