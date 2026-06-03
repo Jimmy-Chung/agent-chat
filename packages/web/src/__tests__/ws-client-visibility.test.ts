@@ -119,6 +119,16 @@ describe('WsClient — AIT-175 foreground reconnect', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
+  it('does not open a second socket while the first socket is still connecting', () => {
+    const client = getWsClient()
+    client.connect({ wssUrl: 'wss://pi.example.com', piToken: 'tok' })
+
+    client.connect({ wssUrl: 'wss://pi.example.com', piToken: 'tok' })
+    setVisibility('visible')
+
+    expect(MockWebSocket.instances).toHaveLength(1)
+  })
+
   it('does not reconnect while the tab is hidden', () => {
     const client = getWsClient()
     client.connect({ wssUrl: 'wss://pi.example.com', piToken: 'tok' })

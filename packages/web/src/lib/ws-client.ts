@@ -80,7 +80,8 @@ class WsClient {
 
   connect(piConfig?: PiConfig): void {
     this.bindVisibility()
-    if (this.ws?.readyState === WebSocket.OPEN) return
+    const state = this.ws?.readyState
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return
     this.disposed = false
     if (piConfig) this.piConfig = piConfig
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-04 [v1.9.2] — fix: 防止前端重复 WebSocket 连接
+
+- 修复 `WsClient.connect()` 在 WebSocket 仍处于 `CONNECTING` 时可再次创建连接的问题，避免同一页面同时收到两份实时 delta 导致回复显示双份。
+- 补充回归测试覆盖连接中重复调用 `connect()` 不会创建第二个 socket。
+- 版本显示更新为 `v1.9.2`。
+
 ## 2026-06-04 [v1.9.1] — fix: General 话题支持 cwd 创建
 
 - 修复 General 话题创建时 cwd 被错误塞进 programming spec，导致协议校验/adapter createSession 失败的问题。
