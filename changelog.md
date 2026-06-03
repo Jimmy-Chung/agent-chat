@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-03 [v1.8.15] — refactor: 创建话题弹窗统一工作目录、移除 Permission Mode radio
+
+- General 话题与 Programming 统一：都有工作目录输入框，留空自动创建。
+- 移除 Permission Mode 4 选 1 radio，仅保留 YOLO 开关。
+- 清理未使用的 RadioCard 组件。
+- 版本显示更新为 `v1.8.15`。
+
 ## 2026-06-03 [v1.8.14] — feat: 侧边栏 footer 显示工作区目录
 
 - WS 连接时自动从 `/workspace` 接口获取根路径，在 footer 显示最后一段目录名（hover 看完整路径）。
