@@ -101,6 +101,17 @@ async function fetchWorkspaceBrowse(): Promise<WorkspaceBrowseResponse> {
   const params = new URLSearchParams()
   if (wssUrl) params.set('wssUrl', wssUrl)
   if (piToken) params.set('piToken', piToken)
+  // Include paired device credential so server can sign a JIT JWT for the
+  // HTTP proxy call — without this, /workspace fails on the paired path
+  // once the pairing-time JWT (TTL=300s) expires.
+  try {
+    const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
+    if (paired) {
+      const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
+      if (deviceCredential) params.set('deviceCredential', deviceCredential)
+      if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
+    }
+  } catch { /* ignore */ }
 
   const agentChatToken = localStorage.getItem('AGENT_CHAT_TOKEN') || ''
   const headers: Record<string, string> = {}
