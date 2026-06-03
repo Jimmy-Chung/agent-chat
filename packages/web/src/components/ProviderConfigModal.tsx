@@ -441,14 +441,14 @@ export function ProviderConfigModal({
                                       <span
                                         className="shrink-0 rounded-md px-1.5 py-px text-[9.5px] font-semibold uppercase"
                                         style={{
-                                          background: 'rgba(247,194,107,0.16)',
-                                          color: 'var(--role-cron, #F7C26B)',
-                                          border: '1px solid rgba(247,194,107,0.30)',
+                                          background: 'rgba(48,209,88,0.14)',
+                                          color: 'var(--state-ok, #30D158)',
+                                          border: '1px solid rgba(48,209,88,0.30)',
                                           fontFamily: 'var(--font-mono)',
                                           letterSpacing: '0.06em',
                                         }}
                                       >
-                                        Default
+                                        活跃
                                       </span>
                                     )}
                                   </div>
