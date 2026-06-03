@@ -7,8 +7,8 @@ compatibility_flags = ["nodejs_compat"]
 AGENT_CHAT_TOKEN = "test-token"
 # Attention 分析 LLM（AIT-220）。base_url / model 非敏感，可放这里；
 # API key 用 secret 设置（不入库）：wrangler secret put ATTENTION_LLM_API_KEY
-# ATTENTION_LLM_BASE_URL = "https://api.deepseek.com/v1"
-# ATTENTION_LLM_MODEL = "deepseek-chat"
+ATTENTION_LLM_BASE_URL = "https://api.deepseek.com/v1"
+ATTENTION_LLM_MODEL = "deepseek-v4-pro"
 
 [dev]
 port = 8787
