@@ -534,7 +534,7 @@ export function Sidebar() {
   }, [])
 
   useEffect(() => {
-    if (!showNewTopic || newTopicAgent !== 'programming') return
+    if (!showNewTopic) return
     if (!cwd.trim().startsWith('/')) return
     if (workspace || workspaceLoading || workspaceError) return
     void loadWorkspace()
@@ -611,7 +611,16 @@ export function Sidebar() {
                 permissionMode,
               },
             }
-          : {}),
+          : resolvedCwd
+            ? {
+                programming: {
+                  extension: 'pi-agent' as ExtensionType,
+                  yolo: false,
+                  cwd: resolvedCwd,
+                  permissionMode: 'default' as const,
+                },
+              }
+            : {}),
       },
     })
 
@@ -926,8 +935,7 @@ function CreateTopicModal({
     () => workspace ? getWorkspaceDirMatches(cwd, workspace.subDirList).slice(0, 8) : [],
     [cwd, workspace],
   )
-  const resolvedCwd = useMemo(() => resolveWorkspaceCwd(cwd, workspace), [cwd, workspace])
-  const showWorkspacePicker = agentType === 'programming' && cwd.trim().startsWith('/')
+  const showWorkspacePicker = workspace && cwd.trim().startsWith('/')
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1024,7 +1032,7 @@ function CreateTopicModal({
             )}
 
             {agentType === 'programming' && (
-              <div className="space-y-5 rounded-[20px] p-4" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hairline)' }}>
+              <>
                 <Field label="Extension">
                   <div className="grid grid-cols-2 gap-2">
                     <SegmentedPill active={extension === 'claude-code'} onClick={() => onExtensionChange('claude-code')}>
@@ -1049,113 +1057,90 @@ function CreateTopicModal({
                     </div>
                   </div>
                 </Field>
+              </>
+            )}
 
-                <Field label="Permission Mode">
-                  <div className="space-y-2">
-                    <RadioCard
-                      active={permissionTier === 'normal'}
-                      title="普通"
-                      description="Agent 修改文件时需逐一确认。"
-                      onClick={() => onPermissionTierChange('normal')}
-                    />
-                    <RadioCard
-                      active={permissionTier === 'yolo'}
-                      tone="danger"
-                      title="YOLO"
-                      description="跳过所有权限检查，适合你愿意完全放权时使用。"
-                      onClick={() => onPermissionTierChange('yolo')}
-                    />
-                  </div>
-                </Field>
-
-                <Field label="Working Directory">
-                  <div className="space-y-2">
-                    <button
-                      type="button"
-                      className="flex h-11 w-full items-center justify-between rounded-xl px-3.5 text-sm"
-                      style={{
-                        background: 'rgba(0,0,0,.22)',
-                        border: '1px solid var(--hairline-2)',
-                        color: cwd ? 'var(--fg-strong)' : 'var(--fg-dim)',
-                      }}
+            <Field label="工作目录">
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={cwd}
+                  onFocus={() => {
+                    if (!workspace) onLoadWorkspace()
+                  }}
+                  onChange={(e) => {
+                    onCwdChange(e.target.value)
+                    if (!workspace) onLoadWorkspace()
+                  }}
+                  placeholder="/path/to/project"
+                  className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
+                  style={{
+                    background: 'rgba(0,0,0,.20)',
+                    color: 'var(--fg-regular)',
+                    border: '1px solid var(--hairline-2)',
+                  }}
+                />
+                <p className="text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
+                  {cwd.trim()
+                    ? workspace?.workspacePath
+                      ? `将在「${workspace.workspacePath}/${cwd.replace(/^\//, '')}」下创建工作目录`
+                      : `将使用输入的目录路径`
+                    : '留空则自动创建以话题名命名的独立工作目录'}
+                </p>
+                {showWorkspacePicker && (
+                  <div
+                    className="overflow-hidden rounded-xl"
+                    style={{
+                      background: 'rgba(0,0,0,.22)',
+                      border: '1px solid var(--hairline)',
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between px-3 py-2 text-[11.5px]"
+                      style={{ color: 'var(--fg-dim)', borderBottom: '1px solid var(--hairline)' }}
                     >
-                      <span className="truncate">{resolvedCwd || '留空则自动创建工作目录'}</span>
-                      <span className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>Folder</span>
-                    </button>
-                    <input
-                      type="text"
-                      value={cwd}
-                      onFocus={() => {
-                        if (cwd.trim().startsWith('/') && !workspace) onLoadWorkspace()
-                      }}
-                      onChange={(e) => {
-                        onCwdChange(e.target.value)
-                        if (e.target.value.trim().startsWith('/') && !workspace) onLoadWorkspace()
-                      }}
-                      placeholder="输入 / 选择工作区目录，或输入新目录名"
-                      className="h-10 w-full rounded-xl px-3.5 text-sm outline-none"
-                      style={{
-                        background: 'rgba(0,0,0,.20)',
-                        color: 'var(--fg-regular)',
-                        border: '1px solid var(--hairline)',
-                      }}
-                    />
-                    {showWorkspacePicker && (
-                      <div
-                        className="overflow-hidden rounded-xl"
-                        style={{
-                          background: 'rgba(0,0,0,.22)',
-                          border: '1px solid var(--hairline)',
-                        }}
-                      >
-                        <div
-                          className="flex items-center justify-between px-3 py-2 text-[11.5px]"
-                          style={{ color: 'var(--fg-dim)', borderBottom: '1px solid var(--hairline)' }}
+                      <span className="truncate">
+                        {workspace?.workspacePath ?? (workspaceLoading ? '正在读取工作区...' : '工作区目录')}
+                      </span>
+                      {workspaceError && (
+                        <button
+                          type="button"
+                          onClick={onLoadWorkspace}
+                          className="shrink-0"
+                          style={{ color: '#ff9f7a' }}
                         >
-                          <span className="truncate">
-                            {workspace?.workspacePath ?? (workspaceLoading ? '正在读取工作区...' : '工作区目录')}
-                          </span>
-                          {workspaceError && (
-                            <button
-                              type="button"
-                              onClick={onLoadWorkspace}
-                              className="shrink-0"
-                              style={{ color: '#ff9f7a' }}
-                            >
-                              重试
-                            </button>
-                          )}
-                        </div>
-                        {cwdMatches.length > 0 ? (
-                          <div className="max-h-44 overflow-y-auto py-1">
-                            {cwdMatches.map((dir) => (
-                              <button
-                                key={dir}
-                                type="button"
-                                onClick={() => onCwdChange(`/${dir}`)}
-                                className="flex h-8 w-full items-center gap-2 px-3 text-left text-[13px]"
-                                style={{ color: 'var(--fg-regular)' }}
-                              >
-                                <span style={{ color: 'var(--fg-dim)' }}>/</span>
-                                <span className="truncate">{dir}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
-                            {workspaceLoading
-                              ? '读取中...'
-                              : workspaceError
-                                ? '无法读取工作区目录，请重试后再创建。'
-                                : '没有匹配目录，创建时会按输入在工作区下使用新目录。'}
-                          </div>
-                        )}
+                          重试
+                        </button>
+                      )}
+                    </div>
+                    {cwdMatches.length > 0 ? (
+                      <div className="max-h-44 overflow-y-auto py-1">
+                        {cwdMatches.map((dir) => (
+                          <button
+                            key={dir}
+                            type="button"
+                            onClick={() => onCwdChange(`/${dir}`)}
+                            className="flex h-8 w-full items-center gap-2 px-3 text-left text-[13px]"
+                            style={{ color: 'var(--fg-regular)' }}
+                          >
+                            <span style={{ color: 'var(--fg-dim)' }}>/</span>
+                            <span className="truncate">{dir}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+                        {workspaceLoading
+                          ? '读取中...'
+                          : workspaceError
+                            ? '无法读取工作区目录，请重试后再创建。'
+                            : '没有匹配目录，创建时会按输入在工作区下使用新目录。'}
                       </div>
                     )}
                   </div>
-                </Field>
+                )}
               </div>
-            )}
+            </Field>
           </div>
         </div>
 
@@ -1249,51 +1234,6 @@ function SegmentedPill({ active, onClick, children }: { active: boolean; onClick
       }}
     >
       {children}
-    </button>
-  )
-}
-
-function RadioCard({
-  active,
-  title,
-  description,
-  onClick,
-  tone = 'default',
-}: {
-  active: boolean
-  title: string
-  description: string
-  onClick: () => void
-  tone?: 'default' | 'danger'
-}) {
-  const activeColor = tone === 'danger' ? '#FF8B82' : '#7CB6FF'
-  const activeBorder = tone === 'danger' ? 'rgba(255,69,58,.34)' : 'rgba(108,177,255,.34)'
-  const activeBg = tone === 'danger' ? 'rgba(255,69,58,.10)' : 'rgba(10,132,255,.12)'
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-start gap-3 rounded-2xl px-3.5 py-3 text-left transition-all"
-      style={{
-        background: active ? activeBg : 'rgba(0,0,0,.18)',
-        border: active ? `1px solid ${activeBorder}` : '1px solid var(--hairline)',
-      }}
-    >
-      <span
-        className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
-        style={{
-          border: `1px solid ${active ? activeColor : 'var(--hairline-2)'}`,
-          background: active ? activeColor : 'transparent',
-          boxShadow: active ? `0 0 12px ${activeColor}33` : 'none',
-        }}
-      >
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: active ? '#fff' : 'transparent' }} />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium" style={{ color: active ? 'var(--fg-strong)' : 'var(--fg-regular)' }}>{title}</span>
-        <span className="mt-1 block text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>{description}</span>
-      </span>
     </button>
   )
 }
