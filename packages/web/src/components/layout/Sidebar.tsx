@@ -751,6 +751,7 @@ export function Sidebar() {
               onClick={() => selectTopic(topic.id)}
               onDelete={(id, name) => setDeletingTopic({ id, name })}
               badgeCount={(artifactsByTopic[topic.id] ?? EMPTY_ARTIFACTS).length}
+              workspaceRoot={workspacePath}
             />
           ))}
         </div>

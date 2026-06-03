@@ -1,8 +1,24 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import type { Topic } from '@agent-chat/protocol'
 import { useIsMobile } from '@/hooks/use-is-mobile'
+
+function getTopicCwdDir(topic: Topic, workspaceRoot?: string | null): string | null {
+  if (!topic.programming_spec_json) return null
+  try {
+    const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+    const cwd = (parsed.cwd ?? '').trim().replace(/\/+$/, '') || '/'
+    if (cwd === '/' || !cwd) return null
+    // Strip workspace root prefix to get relative path
+    const root = (workspaceRoot ?? '').trim().replace(/\/+$/, '')
+    if (root && cwd.startsWith(root + '/')) return cwd.slice(root.length + 1)
+    if (root && cwd === root) return '/'
+    return cwd.startsWith('/') ? cwd.split('/').pop()! : cwd
+  } catch {
+    return null
+  }
+}
 
 interface TopicItemProps {
   topic: Topic
@@ -10,96 +26,158 @@ interface TopicItemProps {
   onClick: () => void
   onDelete?: (id: string, name: string) => void
   badgeCount?: number
+  workspaceRoot?: string | null
 }
 
-export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0 }: TopicItemProps) {
+export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, workspaceRoot }: TopicItemProps) {
   const isSystem = topic.kind !== 'normal'
   const isMobile = useIsMobile()
   const [hovered, setHovered] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const showDelete = !isSystem && onDelete && (hovered || isMobile)
+  const cwdDir = getTopicCwdDir(topic, workspaceRoot)
+
+  const toggleExpand = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpanded((v) => !v)
+  }, [])
+
+  const handleDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete?.(topic.id, topic.name)
+  }, [onDelete, topic.id, topic.name])
 
   return (
-    <button
-      onClick={onClick}
-      className="group/grid grid w-full grid-cols-[22px_1fr_auto] rounded-lg text-left transition-colors"
-      style={{
-        columnGap: 9, padding: '8px 9px 9px',
-        backgroundColor: active ? 'rgba(10,132,255,0.13)' : hovered ? 'var(--glass-1)' : 'transparent',
-        boxShadow: active ? 'inset 0 0 0 1px rgba(10,132,255,0.55)' : 'none',
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Icon */}
-      <span
-        className="flex h-[22px] w-[22px] items-center justify-center"
-        style={{ color: active ? '#6cb1ff' : isSystem ? 'var(--role-cron)' : 'var(--fg-regular)', marginTop: 1 }}
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={onClick}
+        className="group/grid grid w-full grid-cols-[22px_1fr_auto] rounded-lg text-left transition-colors"
+        style={{
+          columnGap: 9, padding: '8px 9px 9px',
+          backgroundColor: active ? 'rgba(10,132,255,0.13)' : hovered ? 'var(--glass-1)' : 'transparent',
+          boxShadow: active ? 'inset 0 0 0 1px rgba(10,132,255,0.55)' : 'none',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
-        <TopicIcon kind={topic.kind} agentType={topic.agent_type} />
-      </span>
-
-      {/* Body */}
-      <div className="min-w-0">
-        <div
-          className="truncate text-[13px]"
-          style={{
-            color: 'var(--fg-strong)',
-            fontWeight: isSystem ? 600 : 500,
-            letterSpacing: '-0.01em',
-          }}
+        {/* Icon */}
+        <span
+          className="flex h-[22px] w-[22px] items-center justify-center"
+          style={{ color: active ? '#6cb1ff' : isSystem ? 'var(--role-cron)' : 'var(--fg-regular)', marginTop: 1 }}
         >
-          {topic.name}
-        </div>
-        {topic.agent_type && topic.kind === 'normal' && (
-          <div className="flex items-center gap-2 truncate text-[11.5px]" style={{ color: 'var(--fg-dim)', letterSpacing: '-0.005em' }}>
-            <span>{topic.agent_type === 'programming' ? '编程' : '普通'}</span>
-            {topic.agent_type === 'programming' && topic.plan_mode && (
-              <span style={{ color: '#6cb1ff' }}>Plan</span>
-            )}
-          </div>
-        )}
-      </div>
+          <TopicIcon kind={topic.kind} agentType={topic.agent_type} />
+        </span>
 
-      {/* Meta — delete icon (hover on desktop, always on mobile), else timestamp */}
-      <div className="flex items-center gap-1 pt-0.5">
-        {badgeCount > 0 && (
-          <span
-            className="inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium"
-            style={{
-              height: 18,
-              background: active ? 'rgba(10,132,255,0.18)' : 'rgba(255,255,255,0.08)',
-              color: active ? '#6cb1ff' : 'var(--fg-regular)',
-              border: `1px solid ${active ? 'rgba(10,132,255,0.25)' : 'var(--hairline)'}`,
-              fontFeatureSettings: '"tnum"',
-            }}
-          >
-            {badgeCount}
-          </span>
-        )}
-        {showDelete ? (
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => { e.stopPropagation(); onDelete(topic.id, topic.name) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onDelete(topic.id, topic.name) } }}
-            className="flex h-5 w-5 items-center justify-center rounded transition-colors"
-            style={{ color: 'var(--fg-dim)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--state-danger)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--fg-dim)' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-              <path d="M10 11v6M14 11v6" />
-            </svg>
-          </span>
-        ) : (
-          <span className="text-[10.5px]" style={{ color: 'var(--fg-dim)', fontFeatureSettings: '"tnum"' }}>
-            {formatTime(topic.updated_at)}
-          </span>
-        )}
-      </div>
-    </button>
+        {/* Body */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            {cwdDir && (
+              <span
+                className="shrink-0 rounded-md px-1 text-[10px] font-medium"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--hairline)',
+                  color: 'var(--fg-dim)',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: '18px',
+                }}
+              >
+                {cwdDir}
+              </span>
+            )}
+            <span
+              className="truncate text-[13px]"
+              style={{
+                color: 'var(--fg-strong)',
+                fontWeight: isSystem ? 600 : 500,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {topic.name}
+            </span>
+          </div>
+          {expanded && (
+            <div className="mt-1.5 flex flex-col gap-1 pl-0.5" style={{ maxWidth: '100%' }}>
+              {topic.agent_type && topic.kind === 'normal' && (
+                <div className="flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
+                  <span>{topic.agent_type === 'programming' ? 'Programming' : 'General'}</span>
+                  {topic.plan_mode && <span style={{ color: '#6cb1ff' }}>Plan</span>}
+                </div>
+              )}
+              {cwdDir && (
+                <div className="text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+                  {topic.programming_spec_json
+                    ? (() => {
+                        try {
+                          const parsed = JSON.parse(topic.programming_spec_json) as { cwd?: string }
+                          return parsed.cwd || ''
+                        } catch { return '' }
+                      })()
+                    : ''}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Meta — expand toggle + delete icon (hover on desktop, always on mobile), else timestamp */}
+        <div className="flex items-center gap-1 pt-0.5">
+          {cwdDir && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={toggleExpand}
+              onKeyDown={(e) => { if (e.key === 'Enter') toggleExpand(e as unknown as React.MouseEvent) }}
+              className="flex h-4 w-4 items-center justify-center rounded transition-transform"
+              style={{
+                color: hovered ? 'var(--fg-regular)' : 'var(--fg-dim)',
+                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
+          )}
+          {badgeCount > 0 && (
+            <span
+              className="inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium"
+              style={{
+                height: 18,
+                background: active ? 'rgba(10,132,255,0.18)' : 'rgba(255,255,255,0.08)',
+                color: active ? '#6cb1ff' : 'var(--fg-regular)',
+                border: `1px solid ${active ? 'rgba(10,132,255,0.25)' : 'var(--hairline)'}`,
+                fontFeatureSettings: '"tnum"',
+              }}
+            >
+              {badgeCount}
+            </span>
+          )}
+          {showDelete ? (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={handleDelete}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleDelete(e as unknown as React.MouseEvent) }}
+              className="flex h-5 w-5 items-center justify-center rounded transition-colors"
+              style={{ color: 'var(--fg-dim)', zIndex: 1 }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--state-danger)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--fg-dim)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+              </svg>
+            </span>
+          ) : (
+            <span className="text-[10.5px]" style={{ color: 'var(--fg-dim)', fontFeatureSettings: '"tnum"' }}>
+              {formatTime(topic.updated_at)}
+            </span>
+          )}
+        </div>
+      </button>
+    </div>
   )
 }
 
