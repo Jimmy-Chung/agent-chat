@@ -9,6 +9,7 @@ import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
 import { PairingRequiredScreen } from './AdapterConnectionModal'
 import { HelmLogo, HelmWordmark } from '@/components/ui/HelmLogo'
+import { loadPairedDevice, exchangeToken, buildAdapterWsUrl } from '@/lib/pairing'
 
 interface AgentChatErrorDetail {
   code?: string
@@ -137,19 +138,40 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   const isPairRoute = (pathname ?? '').startsWith('/pair')
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY)
-    const wssUrl = localStorage.getItem(PI_WSS_URL_KEY)
-    const piToken = localStorage.getItem(PI_TOKEN_KEY)
+    const init = async () => {
+      const token = localStorage.getItem(TOKEN_KEY)
+      const wssUrl = localStorage.getItem(PI_WSS_URL_KEY)
+      const piToken = localStorage.getItem(PI_TOKEN_KEY)
 
-    if (token && wssUrl != null && piToken != null) {
-      setPiConfig({ wssUrl, piToken })
-      setStep('main')
-    } else if (token) {
-      setStep('pi-config')
-    } else {
-      setStep('auth')
+      if (token && wssUrl != null && piToken != null) {
+        // Refresh the pairing JWT on cold start so the DO's WS handshake to the
+        // adapter never uses an expired token (TTL=300s). HTTP proxy calls use
+        // JIT signing and are not affected, but WS uses the URL-embedded JWT.
+        const paired = loadPairedDevice()
+        if (paired) {
+          try {
+            const freshJwt = await exchangeToken(paired.deviceCredential, paired.adapterInstanceId)
+            const freshUrl = buildAdapterWsUrl(paired.adapterWssUrl, freshJwt)
+            localStorage.setItem(PI_WSS_URL_KEY, freshUrl)
+            setPiConfig({ wssUrl: freshUrl, piToken: '' })
+            setStep('main')
+            setMounted(true)
+            return
+          } catch {
+            // Token exchange failed — fall through to use the stored URL.
+            // The old JWT may still be valid if the page was refreshed quickly.
+          }
+        }
+        setPiConfig({ wssUrl, piToken })
+        setStep('main')
+      } else if (token) {
+        setStep('pi-config')
+      } else {
+        setStep('auth')
+      }
+      setMounted(true)
     }
-    setMounted(true)
+    init()
   }, [])
 
   useEffect(() => {
