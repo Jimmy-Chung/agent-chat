@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-04 [v1.9.3] — fix: Provider 错误提示友好化
+
+- 将 PI Agent 返回的 provider API key/OAuth/额度/账单类内部错误映射为用户可行动中文提示。
+- 避免把 `No API key found for undefined`、`node_modules` 文档路径等内部诊断直接作为聊天内容展示。
+
 ## 2026-06-04 [v1.9.2] — fix: 防止前端重复 WebSocket 连接
 
 - 修复 `WsClient.connect()` 在 WebSocket 仍处于 `CONNECTING` 时可再次创建连接的问题，避免同一页面同时收到两份实时 delta 导致回复显示双份。

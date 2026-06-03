@@ -14,6 +14,7 @@ import {
   setPiEventReorderWindowForTests,
   routePiEvents,
   mapAgentState,
+  toUserFacingAgentErrorMessage,
 } from '../pi/event-router'
 
 function createMockHub() {
@@ -56,6 +57,20 @@ describe('mapAgentState — adapter state → WS {state, phase}', () => {
 
   it('falls back to processing + thinking for unknown states', () => {
     expect(mapAgentState('something-new')).toEqual({ state: 'processing', phase: 'thinking' })
+  })
+})
+
+describe('toUserFacingAgentErrorMessage', () => {
+  it('maps provider auth errors to actionable copy', () => {
+    expect(toUserFacingAgentErrorMessage(
+      '[internal] No API key found for undefined. Use /login to log into a provider via OAuth or API key.',
+    )).toBe('模型 Provider 未完成认证或当前账号不可用。请在运行 Adapter 的机器上执行 /login，或配置对应 API key，并确认账号未欠费、额度未耗尽。')
+  })
+
+  it('maps billing and quota errors to actionable copy', () => {
+    expect(toUserFacingAgentErrorMessage('Payment required: insufficient_quota')).toBe(
+      '模型服务额度或账单不可用。请检查当前 Provider 的余额、套餐、额度或账单状态后重试。',
+    )
   })
 })
 

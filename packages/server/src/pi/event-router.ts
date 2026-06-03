@@ -33,6 +33,34 @@ export function mapAgentState(raw: string): {
   return { state: 'processing', phase: phaseMap[raw] ?? 'thinking' }
 }
 
+export function toUserFacingAgentErrorMessage(rawMessage: string): string {
+  const message = rawMessage.trim()
+  const lower = message.toLowerCase()
+
+  if (
+    lower.includes('billing') ||
+    lower.includes('quota') ||
+    lower.includes('insufficient_quota') ||
+    lower.includes('credit') ||
+    lower.includes('payment required') ||
+    lower.includes('402')
+  ) {
+    return '模型服务额度或账单不可用。请检查当前 Provider 的余额、套餐、额度或账单状态后重试。'
+  }
+
+  if (
+    lower.includes('no api key') ||
+    lower.includes('api key') ||
+    lower.includes('/login') ||
+    lower.includes('auth.json') ||
+    lower.includes('oauth')
+  ) {
+    return '模型 Provider 未完成认证或当前账号不可用。请在运行 Adapter 的机器上执行 /login，或配置对应 API key，并确认账号未欠费、额度未耗尽。'
+  }
+
+  return message
+}
+
 export interface EventBroadcaster {
   broadcast(type: string, data: unknown): void
 }
@@ -642,7 +670,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
       // If the SDK returned an error, inject the error text as a text part before finalizing
       if (payload.stopReason === 'error' && payload.errorMessage) {
-        const errorText = payload.errorMessage
+        const errorText = toUserFacingAgentErrorMessage(payload.errorMessage)
         await messageRepo.createMessagePart({
           messageId: payload.messageId,
           kind: 'text',
@@ -945,10 +973,10 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'error': {
       if (!topicId) {
-        hub.broadcast('error', { code: payload.code, message: payload.message })
+        hub.broadcast('error', { code: payload.code, message: toUserFacingAgentErrorMessage(payload.message) })
         break
       }
-      const errorText = `[${payload.code}] ${payload.message}`
+      const errorText = `[${payload.code}] ${toUserFacingAgentErrorMessage(payload.message)}`
       const errMsg = await messageRepo.createMessage({ topicId, role: 'system' })
       await messageRepo.createMessagePart({
         messageId: errMsg.id,
