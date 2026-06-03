@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-03 [v1.8.9] — fix: JWT 过期致 provider 401、创建话题失败、刷新后消息无响应
+
+### AIT-208
+- HTTP proxy（providers/workspace/mcp/plugins）改用 JIT JWT：每次请求使用 deviceCredential 即时签发 60s 短期 token，不再复用配对时 5 分钟过期 JWT。
+- 页面刷新时自动用 deviceCredential 换取新 JWT 写入 PI_ADAPTER_WSS_URL，WS 连接不再因旧 JWT 过期而被 adapter 拒绝。
+- DO 创建新话题 session 时同样即时刷新 JWT，避免长时间使用后新建话题失败（jwt_expired）。
+- JWT clock skew tolerance 方案已与 adapter 侧对齐（±30s），adapter 侧补 TC-AIT-208-12/13。
+- 版本显示更新为 `v1.8.9`。
+
 ## 2026-06-03 [v1.8.8] — rebrand: 应用更名 Helm + 舵轮 logo
 
 ### 品牌
