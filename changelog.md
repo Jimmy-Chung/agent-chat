@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-03 [v1.8.18] — fix: footer 显示完整 workspace 根路径
+
+- 侧边栏 footer 工作区路径从末段目录名改为完整绝对路径。
+- 版本显示更新为 `v1.8.18`。
+
 ## 2026-06-03 [v1.8.17] — fix: workspace 接口补 deviceCredential
 
 - `fetchWorkspaceBrowse` 补齐 `deviceCredential` + `adapterInstanceId`，配对路径下 workspace 数据正常加载。
