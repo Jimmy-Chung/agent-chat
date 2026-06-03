@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.4] — fix: session 重建保留 provider 绑定
+
+- 修复 General / PI Agent 话题在 session restore、select retry、message delivery recreate 后丢失 `providerId` 的问题。
+- 重建 session 时从 topic 的 `current_provider_id` 回填 provider，避免 adapter 只收到 model、无法解析 provider 而报 `No API key found for undefined`。
+- 补充回归测试覆盖 topic 绑定 provider/model 的 session params。
+- 版本显示更新为 `v1.9.4`。
+
 ## 2026-06-04 [v1.9.3] — fix: Provider 错误提示友好化
 
 - 将 PI Agent 返回的 provider API key/OAuth/额度/账单类内部错误映射为用户可行动中文提示。
