@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-03 [v1.8.14] — feat: 侧边栏 footer 显示工作区目录
+
+- WS 连接时自动从 `/workspace` 接口获取根路径，在 footer 显示最后一段目录名（hover 看完整路径）。
+- 版本显示更新为 `v1.8.14`。
+
 ## 2026-06-03 [v1.8.13] — UI polish: 状态条、model fallback、气泡样式
 
 - AgentStatusBar 闲时隐藏（idle + connected），仅活跃或异常时显示。
