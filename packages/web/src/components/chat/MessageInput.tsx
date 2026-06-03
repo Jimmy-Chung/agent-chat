@@ -99,7 +99,6 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const sessionLoading = sessionReady !== true
 
   const activeTopic = useTopicStore((s) => s.topics.find((t) => t.id === topicId))
-  const isProgramming = activeTopic?.agent_type === 'programming'
   const currentModel = activeTopic?.current_model
 
   const providerConfigs = useWsStore((s) => s.providerConfigs)
@@ -748,7 +747,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}
         >
-          {isProgramming && availableModels.length > 0 && (
+          {availableModels.length > 0 && (
             <ProviderModelSelect
               label="Model"
               value={selectedModel}
