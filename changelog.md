@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-03 [v1.8.17] — fix: workspace 接口补 deviceCredential
+
+- `fetchWorkspaceBrowse` 补齐 `deviceCredential` + `adapterInstanceId`，配对路径下 workspace 数据正常加载。
+- 修复：创建话题路径候选、footer 工作区根目录、话题 cwd 标签。
+- 版本显示更新为 `v1.8.17`。
+
 ## 2026-06-03 [v1.8.16] — feat: 话题项显示工作目录标签 + 展开/折叠
 
 - 每个话题项在名称左边显示相对工作目录标签（等宽字体 pill）。
