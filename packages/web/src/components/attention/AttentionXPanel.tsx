@@ -155,8 +155,10 @@ function MindMapDetail({
               <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>无直接关联 turn</div>
             ) : sourceTraceNodes.map((node) => (
               <div key={node.id} className="rounded-md p-2" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
-                <div className="text-[11px] font-medium" style={{ color: 'var(--fg-regular)' }}>{node.conclusion || node.user_message}</div>
-                <div className="mt-1 line-clamp-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>{node.user_message}</div>
+                <div className="text-[11px] font-medium" style={{ color: 'var(--fg-regular)' }}>{node.user_message}</div>
+                {node.conclusion && (
+                  <div className="mt-1 line-clamp-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>AI：{node.conclusion}</div>
+                )}
               </div>
             ))}
           </div>

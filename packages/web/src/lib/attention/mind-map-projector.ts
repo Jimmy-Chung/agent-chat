@@ -36,13 +36,10 @@ export interface MindMapProjection {
 const ROOT_X = 0
 const ROOT_Y = 0
 const TOPIC_X0 = 320
-const TOPIC_GAP_X = 310
+const ORDER_GAP_X = 260
 const TURN_Y = 170
-const TURN_GAP_X = 210
-const BRANCH_X = 260
-const BRANCH_GAP_Y = 210
 const ANNOTATION_Y = -150
-const TOPIC_DEPTH_Y = 260
+const TOPIC_DEPTH_Y = 240
 
 function isVisible(id: string, treeNodes: Record<string, ConversationTreeNode>): boolean {
   let current = treeNodes[id]
@@ -84,12 +81,10 @@ export function buildMindMapProjection(
   positionById.set(root.id, { x: ROOT_X, y: ROOT_Y })
 
   const rootTopics = root.childIds.map((id) => tree.nodes[id]).filter((node) => node?.kind === 'topic')
-  rootTopics.forEach((topic, index) => {
-    const position = { x: TOPIC_X0 + index * TOPIC_GAP_X, y: ROOT_Y }
+  rootTopics.forEach((topic) => {
+    const position = { x: TOPIC_X0 + Math.max(0, topic.order - 1) * ORDER_GAP_X, y: ROOT_Y }
     positionById.set(topic.id, position)
   })
-
-  const branchTopicLane = new Map<string, number>()
 
   for (const id of tree.orderedIds) {
     const node = tree.nodes[id]
@@ -99,18 +94,16 @@ export function buildMindMapProjection(
     const parentPosition = node.parentId ? positionById.get(node.parentId) : undefined
 
     if (!position) {
-      if (node.kind === 'topic' && node.relation === 'branch') {
-        const lane = branchTopicLane.size
-        branchTopicLane.set(node.id, lane)
+      if (node.kind === 'topic') {
         position = {
-          x: (parentPosition?.x ?? TOPIC_X0) + BRANCH_X,
-          y: (parentPosition?.y ?? ROOT_Y) + TOPIC_DEPTH_Y + lane * BRANCH_GAP_Y,
+          x: TOPIC_X0 + Math.max(0, node.order - 1) * ORDER_GAP_X,
+          y: node.relation === 'branch' ? (parentPosition?.y ?? ROOT_Y) + TOPIC_DEPTH_Y : ROOT_Y,
         }
       } else if (node.kind === 'turn') {
         const siblings = node.parentId ? tree.nodes[node.parentId].childIds.filter((childId) => tree.nodes[childId]?.kind === 'turn') : []
         const index = Math.max(0, siblings.indexOf(node.id))
         position = {
-          x: (parentPosition?.x ?? TOPIC_X0) + index * TURN_GAP_X,
+          x: TOPIC_X0 + Math.max(0, node.order - 1) * ORDER_GAP_X + (node.relation === 'branch' ? index * 28 : 0),
           y: (parentPosition?.y ?? ROOT_Y) + TURN_Y,
         }
       } else if (node.kind === 'plan' || node.kind === 'decision') {

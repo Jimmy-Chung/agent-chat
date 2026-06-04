@@ -72,6 +72,32 @@ describe('attention-x conversation tree governance', () => {
     expect(projection.edges.some((edge) => edge.kind === 'branch')).toBe(true)
   })
 
+  it('uses user messages as graph node subjects instead of assistant conclusions', () => {
+    const tree = governConversationTree([
+      node('n1', { user_message: '用户：我要修登录', conclusion: 'AI：定位 token 过期' }),
+    ], GOAL, [])
+
+    expect(tree.nodes.topic_main_n1.title).toContain('用户：我要修登录')
+    expect(tree.nodes.topic_main_n1.title).not.toContain('AI：定位')
+    expect(tree.nodes.turn_n1.title).toContain('用户：我要修登录')
+    expect(tree.nodes.turn_n1.title).not.toContain('AI：定位')
+  })
+
+  it('lays out branch and return turns left-to-right by event time', () => {
+    const projection = buildMindMapProjection([
+      node('n1', { goal_distance: 0.1, user_message: '讨论 A' }),
+      node('n2', { goal_distance: 0.8, user_kind: 'question', user_message: '突然讨论 B' }),
+      node('n3', { goal_distance: 0.82, user_message: '继续 B' }),
+      node('n4', { goal_distance: 0.15, user_kind: 'instruction', user_message: '回到 A' }),
+    ], GOAL, [])
+
+    const branch = projection.nodes.find((entry) => entry.id === 'topic_branch_n2')
+    const n4 = projection.nodes.find((entry) => entry.id === 'turn_n4')
+    expect(branch?.position.x).toBeLessThan(n4?.position.x ?? 0)
+    expect(branch?.position.y).toBeGreaterThan(projection.nodes.find((entry) => entry.id === 'turn_n1')?.position.y ?? 0)
+    expect(branch?.title).toContain('突然讨论 B')
+  })
+
   it('archives a resolved child topic and marks the latest turn as current', () => {
     const tree = governConversationTree([
       node('n1', { goal_distance: 0.1 }),

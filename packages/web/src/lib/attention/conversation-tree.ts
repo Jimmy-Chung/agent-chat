@@ -53,6 +53,10 @@ function compact(text: string | null | undefined, max = 52): string {
   return `${value.slice(0, max - 1)}…`
 }
 
+function userTitle(node: TraceNode, max = 52): string {
+  return compact(node.user_message || node.intent || '用户输入', max)
+}
+
 function isSubtopicStart(prev: TraceNode | null, next: TraceNode, currentTopicTurnCount: number): boolean {
   if (!prev) return true
   if (currentTopicTurnCount >= DEFAULT_TOPIC_TURN_LIMIT) return true
@@ -130,7 +134,7 @@ function aggregateTopicMetadata(tree: ConversationTree): void {
     node.sourceNodeIds = sourceNodeIds
     node.goalDistance = children.length ? Math.max(...children.map((child) => child.goalDistance)) : node.goalDistance
     node.status = children.some((child) => child.status === 'running') ? 'running' : node.status
-    node.summary = `${children.filter((child) => child.kind === 'turn').length} 轮 · ${compact(children.at(-1)?.title, 28)}`
+    node.summary = `${children.filter((child) => child.kind === 'turn').length} 轮用户输入 · ${compact(children.at(-1)?.title, 28)}`
     const turnChildren = children.filter((child) => child.kind === 'turn')
     const childToolCount = turnChildren.reduce((sum, child) => sum + child.sourceNodeIds.length, 0)
     node.aggregation = node.aggregation
@@ -220,7 +224,7 @@ export function governConversationTree(
         kind: 'topic',
         parentId: parentTopic?.id ?? rootId,
         relation,
-        title: parentTopic ? `子话题：${compact(traceNode.user_message, 34)}` : compact(traceNode.conclusion || traceNode.user_message, 42),
+        title: parentTopic ? `子话题：${userTitle(traceNode, 34)}` : userTitle(traceNode, 42),
         summary: '0 轮',
         sourceNodeIds: [],
         goalDistance: traceNode.goal_distance,
@@ -243,7 +247,7 @@ export function governConversationTree(
       kind: 'turn',
       parentId: topicId,
       relation: topic.relation,
-      title: compact(traceNode.conclusion || traceNode.user_message, 46),
+      title: userTitle(traceNode, 46),
       summary: compact(traceNode.user_message, 64),
       sourceNodeIds: [traceNode.id],
       goalDistance: traceNode.goal_distance,
