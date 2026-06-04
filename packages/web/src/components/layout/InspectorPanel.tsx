@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useTopicStore } from '@/stores/topic-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore } from '@/stores/message-store'
@@ -36,9 +35,7 @@ export function InspectorPanel() {
     () => (activeTopicId ? allCrons.filter((cron) => cron.originTopicId === activeTopicId) : []),
     [activeTopicId, allCrons],
   )
-  const hasContent = todos.length > 0 || artifacts.length > 0 || crons.length > 0 || tab === 'attention'
-
-  if (inspectorCollapsed && !hasContent) {
+  if (inspectorCollapsed) {
     return (
       <div
         className="flex h-full flex-col items-center gap-2 py-3"
@@ -50,7 +47,7 @@ export function InspectorPanel() {
           backdropFilter: 'blur(40px) saturate(180%)',
         }}
       >
-        <StripIcon label="Attention" active={false} onClick={() => { setTab('attention'); toggleInspector?.() }}>
+        <StripIcon label="Attention" active={tab === 'attention'} onClick={() => { setTab('attention'); toggleInspector?.() }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
         </StripIcon>
         <StripIcon label="Todo" active={tab === 'todo'} onClick={() => { setTab('todo'); toggleInspector?.() }}>
@@ -68,7 +65,7 @@ export function InspectorPanel() {
 
   return (
     <div
-      className="flex h-full flex-col"
+      className="relative flex h-full flex-col"
       style={{
         borderLeft: '1px solid var(--hairline)',
         background: 'rgba(21,23,28,0.5)',
@@ -99,20 +96,16 @@ export function InspectorPanel() {
         <button
           onClick={() => {
             if (tab === 'attention') {
-              setAttentionExpanded(true)
+              toggleInspector?.()
               return
             }
             toggleInspector?.()
           }}
           className="ml-auto flex h-[22px] w-[22px] shrink-0 items-center justify-center"
           style={{ color: 'var(--fg-dim)' }}
-          title={tab === 'attention' ? '展开 Attention' : '折叠'}
+          title="折叠"
         >
-          {tab === 'attention' ? (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-          ) : (
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-          )}
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
         </button>
       </div>
 
@@ -131,7 +124,7 @@ export function InspectorPanel() {
 }
 
 function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpand: () => void }) {
-  const { nodes, goalAnchor, planItems, isAnalyzing } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems } = useAttentionTrace(topicId)
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
   const currentNode =
     projection.nodes.find((node) => node.current) ??
@@ -141,21 +134,10 @@ function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpan
 
   return (
     <div className="relative flex min-h-full flex-col overflow-hidden">
-      <div className="shrink-0 px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}>
-            Attention
-          </div>
-          <div className="text-[10.5px]" style={{ color: isAnalyzing ? '#F7C26B' : 'var(--fg-muted)' }}>
-            {isAnalyzing ? '分析中' : `${nodes.length} nodes`}
-          </div>
-        </div>
-      </div>
-
       <button
         type="button"
         onClick={onExpand}
-        className="relative mx-3 flex min-h-[360px] flex-1 items-center justify-center overflow-hidden rounded-lg text-left"
+        className="relative mx-3 mt-3 flex min-h-[360px] flex-1 items-center justify-center overflow-hidden rounded-lg text-left"
         style={{ border: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}
       >
         <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
@@ -213,7 +195,7 @@ function AttentionMiniNode({ node }: { node: MindMapNode }) {
 }
 
 function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, rawEvents } = useAttentionTrace(topicId)
 
   useEffect(() => {
     const h = (event: KeyboardEvent) => {
@@ -223,49 +205,38 @@ function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onCl
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
-  if (typeof document === 'undefined') return null
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end" style={{ pointerEvents: 'none' }}>
-      <div
-        className="mr-4 mt-4 flex h-[calc(100dvh-32px)] w-[min(1180px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl"
-        style={{
-          pointerEvents: 'auto',
-          background: 'var(--glass-modal, rgba(20,22,27,0.88))',
-          WebkitBackdropFilter: 'blur(60px) saturate(200%)',
-          backdropFilter: 'blur(60px) saturate(200%)',
-          border: '1px solid var(--hairline-2)',
-          boxShadow: '0 24px 90px rgba(0,0,0,.56)',
-        }}
+  return (
+    <div
+      className="absolute bottom-0 right-0 top-0 z-30 flex w-[min(1180px,calc(100vw-260px))] flex-col overflow-hidden"
+      style={{
+        background: 'var(--glass-modal, rgba(20,22,27,0.90))',
+        WebkitBackdropFilter: 'blur(60px) saturate(200%)',
+        backdropFilter: 'blur(60px) saturate(200%)',
+        borderLeft: '1px solid var(--hairline-2)',
+        boxShadow: '-28px 0 80px rgba(0,0,0,.50)',
+        animation: 'attention-inspector-expand 220ms cubic-bezier(0.22,1,0.36,1) both',
+      }}
+    >
+      <button
+        onClick={onClose}
+        className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+        style={{ color: 'var(--fg-dim)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hairline)' }}
+        title="缩小"
       >
-        <header className="flex h-12 shrink-0 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid var(--hairline)' }}>
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded" style={{ background: 'rgba(111,227,154,0.12)', color: '#6FE39A', border: '1px solid rgba(111,227,154,0.32)' }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
-          </span>
-          <span className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>Attention</span>
-          {isAnalyzing && <span className="text-[11px]" style={{ color: '#F7C26B' }}>分析中</span>}
-          <button
-            onClick={onClose}
-            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
-            style={{ color: 'var(--fg-dim)' }}
-            title="缩小"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-          </button>
-        </header>
-        <div className="min-h-0 flex-1">
-          <AttentionXPanel
-            topicId={topicId}
-            nodes={nodes}
-            goalAnchor={goalAnchor}
-            planItems={planItems}
-            rawEvents={rawEvents}
-            focusCurrent
-          />
-        </div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+      </button>
+      <div className="min-h-0 flex-1">
+        <AttentionXPanel
+          topicId={topicId}
+          nodes={nodes}
+          goalAnchor={goalAnchor}
+          planItems={planItems}
+          rawEvents={rawEvents}
+          focusCurrent
+          chrome={false}
+        />
       </div>
-    </div>,
-    document.body,
+    </div>
   )
 }
 

@@ -304,6 +304,7 @@ export function AttentionXPanel({
   planItems,
   rawEvents,
   focusCurrent = false,
+  chrome = true,
 }: {
   topicId: string
   nodes: TraceNode[]
@@ -311,6 +312,7 @@ export function AttentionXPanel({
   planItems: PlanItem[]
   rawEvents: RawEvent[]
   focusCurrent?: boolean
+  chrome?: boolean
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
@@ -335,21 +337,23 @@ export function AttentionXPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
-        <button
-          onClick={reloadHistory}
-          className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-80"
-          style={{ background: 'var(--glass-2)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
-        >
-          重新加载历史
-        </button>
-        <div className="rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}>
-          动态树
+      {chrome && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
+          <button
+            onClick={reloadHistory}
+            className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-80"
+            style={{ background: 'var(--glass-2)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
+          >
+            重新加载历史
+          </button>
+          <div className="rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}>
+            动态树
+          </div>
+          <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+            {nodes.length} nodes · {planItems.length} plan/todo
+          </div>
         </div>
-        <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
-          {nodes.length} nodes · {planItems.length} plan/todo
-        </div>
-      </div>
+      )}
       <div className="min-h-0 flex-1">
         <div className="flex h-full min-h-0">
           <div className="min-w-0 flex-1">
