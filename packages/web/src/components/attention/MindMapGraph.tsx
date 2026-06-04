@@ -159,7 +159,7 @@ export default function MindMapGraph({
       fitView
       fitViewOptions={{ padding: 0.18, maxZoom: 0.95 }}
       proOptions={{ hideAttribution: true }}
-      nodesDraggable={false}
+      nodesDraggable
       nodesConnectable={false}
       elementsSelectable
       minZoom={0.18}

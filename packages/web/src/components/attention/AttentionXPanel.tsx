@@ -67,10 +67,99 @@ function eventPreview(event: RawEvent): string {
   const text = event.kind === 'tool_use' || event.kind === 'todo'
     ? String(event.payload.output ?? JSON.stringify(event.payload.input ?? {}))
     : String(event.payload.text ?? '')
-  return text.replace(/\s+/g, ' ').slice(0, 120)
+  return text.replace(/\s+/g, ' ').trim()
 }
 
-function DetailEventRow({ event }: { event: RawEvent }) {
+type MessageDetailItem = {
+  id: string
+  role: 'user' | 'assistant'
+  ts: number
+  text: string
+}
+
+type ExecutionDetailItem = {
+  id: string
+  kind: 'thinking' | 'tool_use' | 'todo' | 'plan'
+  title: string
+  preview: string
+  payload: unknown
+  ts: number
+}
+
+type DetailBadgeTone = 'user' | 'assistant' | 'thinking' | 'tool' | 'todo' | 'plan'
+
+function DetailBadge({ label, tone }: { label: string; tone: DetailBadgeTone }) {
+  const styleByTone: Record<DetailBadgeTone, { background: string; border: string; color: string }> = {
+    user: { background: 'rgba(111,227,154,0.12)', border: '1px solid rgba(111,227,154,0.34)', color: '#6FE39A' },
+    assistant: { background: 'rgba(125,183,255,0.12)', border: '1px solid rgba(125,183,255,0.34)', color: '#7DB7FF' },
+    thinking: { background: 'rgba(247,194,107,0.12)', border: '1px solid rgba(247,194,107,0.34)', color: '#F7C26B' },
+    tool: { background: 'rgba(247,162,107,0.12)', border: '1px solid rgba(247,162,107,0.34)', color: '#F7A26B' },
+    todo: { background: 'rgba(207,151,255,0.12)', border: '1px solid rgba(207,151,255,0.34)', color: '#CF97FF' },
+    plan: { background: 'rgba(126,232,219,0.12)', border: '1px solid rgba(126,232,219,0.34)', color: '#7EE8DB' },
+  }
+  return (
+    <span
+      className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded px-1 text-[9.5px] font-semibold"
+      style={styleByTone[tone]}
+    >
+      {label}
+    </span>
+  )
+}
+
+function CollapsibleText({ text, className = '' }: { text: string; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const isLong = text.length > 220 || text.split('\n').length > 5
+  return (
+    <div>
+      <div
+        className={`${open ? 'max-h-72 overflow-auto' : 'max-h-24 overflow-hidden'} whitespace-pre-wrap break-words leading-snug ${className}`}
+        style={{ color: 'var(--fg-regular)' }}
+      >
+        {text}
+      </div>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="mt-1 text-[10.5px]"
+          style={{ color: '#7DB7FF' }}
+        >
+          {open ? '收起' : '查看详情'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function MessageDetailRow({ item }: { item: MessageDetailItem }) {
+  const isUser = item.role === 'user'
+  return (
+    <div className="rounded-md p-2.5" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
+      <div className="mb-1.5 flex items-center gap-2">
+        <DetailBadge label={isUser ? 'U' : 'AI'} tone={isUser ? 'user' : 'assistant'} />
+        <span className="text-[11px] font-medium" style={{ color: 'var(--fg-strong)' }}>
+          {isUser ? '用户' : 'AI'}
+        </span>
+      </div>
+      <CollapsibleText text={item.text} className="text-[11px]" />
+    </div>
+  )
+}
+
+function executionTone(kind: ExecutionDetailItem['kind']): 'thinking' | 'tool' | 'todo' | 'plan' {
+  if (kind === 'tool_use') return 'tool'
+  return kind
+}
+
+function executionBadgeLabel(kind: ExecutionDetailItem['kind']): string {
+  if (kind === 'thinking') return 'TH'
+  if (kind === 'tool_use') return 'TOOL'
+  if (kind === 'todo') return 'TODO'
+  return 'PLAN'
+}
+
+function ExecutionDetailRow({ item }: { item: ExecutionDetailItem }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="overflow-hidden rounded-md" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
@@ -79,16 +168,17 @@ function DetailEventRow({ event }: { event: RawEvent }) {
         className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px]"
         style={{ color: 'var(--fg-regular)' }}
       >
-        <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
-          {event.kind}
-        </span>
-        <span className="shrink-0 font-medium">{eventTitle(event)}</span>
-        <span className="truncate" style={{ color: 'var(--fg-muted)' }}>{eventPreview(event)}</span>
+        <DetailBadge label={executionBadgeLabel(item.kind)} tone={executionTone(item.kind)} />
+        <span className="shrink-0 font-medium">{item.title}</span>
+        <span className="truncate" style={{ color: 'var(--fg-muted)' }}>{item.preview.slice(0, 120)}</span>
       </button>
       {open && (
-        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all px-2.5 pb-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>
-          {JSON.stringify(event.payload, null, 2)}
-        </pre>
+        <div className="px-2.5 pb-2">
+          <CollapsibleText
+            text={typeof item.payload === 'string' ? item.payload : JSON.stringify(item.payload, null, 2)}
+            className="text-[10.5px] text-[var(--fg-dim)]"
+          />
+        </div>
       )}
     </div>
   )
@@ -133,22 +223,63 @@ function MindMapDetail({
   const events = selected.kind === 'goal'
     ? rawEvents
     : rawEvents.filter((event) => eventIds.has(event.id))
-  const textEvents = events.filter((event) => event.kind === 'message')
-  const thinkingEvents = events.filter((event) => event.kind === 'thinking')
-  const toolEvents = events.filter((event) => event.kind === 'tool_use' || event.kind === 'todo')
-  const planEvents = events.filter((event) => event.kind === 'plan')
+  const toolEvents = events.filter((event) => event.kind === 'tool_use')
   const relevantPlanItems = selected.kind === 'goal'
     ? planItems
     : projectPlanGraph(planItems, sourceTraceNodes).items.filter((item) => item.nodeIds.length > 0)
-  const userMessages = sourceTraceNodes.flatMap((node) =>
-    node.exchanges?.length
-      ? node.exchanges.map((exchange) => exchange.user_message)
-      : [node.user_message],
-  ).filter(Boolean)
-  const aiSummaries = sourceTraceNodes.flatMap((node) => {
-    const summaries = node.exchanges?.map((exchange) => exchange.assistant_summary).filter(Boolean) ?? []
-    return summaries.length ? summaries : [node.conclusion].filter(Boolean)
-  })
+  const messageItems = sourceTraceNodes.flatMap((node): MessageDetailItem[] => {
+    const exchanges = node.exchanges ?? []
+    if (exchanges.length) {
+      return exchanges.flatMap((exchange, index): MessageDetailItem[] => {
+        const items: MessageDetailItem[] = []
+        if (exchange.user_message) {
+          items.push({
+            id: `${node.id}-${exchange.id}-user-${index}`,
+            role: 'user',
+            ts: exchange.ts_start,
+            text: exchange.user_message,
+          })
+        }
+        if (exchange.assistant_summary) {
+          items.push({
+            id: `${node.id}-${exchange.id}-assistant-${index}`,
+            role: 'assistant',
+            ts: exchange.ts_end,
+            text: exchange.assistant_summary,
+          })
+        }
+        return items
+      })
+    }
+    const items: MessageDetailItem[] = []
+    if (node.user_message) {
+      items.push({ id: `${node.id}-user`, role: 'user', ts: node.ts_start, text: node.user_message })
+    }
+    if (node.conclusion) {
+      items.push({ id: `${node.id}-assistant`, role: 'assistant', ts: node.ts_end ?? node.ts_start, text: node.conclusion })
+    }
+    return items
+  }).sort((a, b) => a.ts - b.ts)
+  const executionItems: ExecutionDetailItem[] = [
+    ...events
+      .filter((event) => event.kind === 'thinking' || event.kind === 'tool_use' || event.kind === 'todo' || event.kind === 'plan')
+      .map((event): ExecutionDetailItem => ({
+        id: event.id,
+        kind: event.kind as ExecutionDetailItem['kind'],
+        title: eventTitle(event),
+        preview: eventPreview(event),
+        payload: event.payload,
+        ts: event.ts,
+      })),
+    ...relevantPlanItems.map((item, index): ExecutionDetailItem => ({
+      id: `plan-item-${item.id}`,
+      kind: 'plan',
+      title: `Plan · ${item.status}`,
+      preview: item.text,
+      payload: item,
+      ts: Number.MAX_SAFE_INTEGER - relevantPlanItems.length + index,
+    })),
+  ].sort((a, b) => a.ts - b.ts)
 
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
@@ -186,65 +317,15 @@ function MindMapDetail({
           </section>
         )}
 
-        <DetailSection title="用户信息" empty={userMessages.length === 0}>
+        <DetailSection title="消息明细" empty={messageItems.length === 0}>
           <div className="flex flex-col gap-2">
-            {userMessages.map((message, index) => (
-              <div key={`${message}-${index}`} className="rounded-md p-2 text-[11px]" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-regular)' }}>
-                {message}
-              </div>
-            ))}
+            {messageItems.map((item) => <MessageDetailRow key={item.id} item={item} />)}
           </div>
         </DetailSection>
 
-        <DetailSection title="AI 信息概要" empty={aiSummaries.length === 0}>
+        <DetailSection title={`执行明细 · ${toolEvents.length} 个工具`} empty={executionItems.length === 0}>
           <div className="flex flex-col gap-2">
-            {aiSummaries.map((summary, index) => (
-              <div key={`${summary}-${index}`} className="rounded-md p-2 text-[10.5px] leading-snug" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-dim)' }}>
-                {summary}
-              </div>
-            ))}
-          </div>
-        </DetailSection>
-
-        <DetailSection title="Plan / Todo" empty={relevantPlanItems.length === 0 && planEvents.length === 0}>
-          <div className="flex flex-col gap-2">
-            {relevantPlanItems.slice(0, 12).map((item) => (
-              <div key={item.id} className="rounded-md p-2 text-[10.5px]" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-dim)' }}>
-                <span style={{ color: 'var(--fg-regular)' }}>{item.status}</span> · {item.text}
-              </div>
-            ))}
-            {planEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
-          </div>
-        </DetailSection>
-
-        <DetailSection title="包含的对话节点" empty={sourceTraceNodes.length === 0}>
-          <div className="flex flex-col gap-2">
-            {sourceTraceNodes.map((node) => (
-              <div key={node.id} className="rounded-md p-2" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
-                <div className="text-[11px] font-medium" style={{ color: 'var(--fg-regular)' }}>{node.user_message}</div>
-                {node.conclusion && (
-                  <div className="mt-1 line-clamp-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>AI：{node.conclusion}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </DetailSection>
-
-        <DetailSection title="Text 明细" empty={textEvents.length === 0}>
-          <div className="flex flex-col gap-2">
-            {textEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
-          </div>
-        </DetailSection>
-
-        <DetailSection title="Thinking 明细" empty={thinkingEvents.length === 0}>
-          <div className="flex flex-col gap-2">
-            {thinkingEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
-          </div>
-        </DetailSection>
-
-        <DetailSection title="工具调用 / Todo 明细" empty={toolEvents.length === 0}>
-          <div className="flex flex-col gap-2">
-            {toolEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
+            {executionItems.map((item) => <ExecutionDetailRow key={item.id} item={item} />)}
           </div>
         </DetailSection>
       </div>

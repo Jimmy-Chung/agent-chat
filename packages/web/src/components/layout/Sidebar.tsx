@@ -842,14 +842,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.5-alpha.11</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.9.5-alpha.12</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.5-alpha.11</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.5-alpha.12</span>
               </Tooltip>
             </div>
           </div>

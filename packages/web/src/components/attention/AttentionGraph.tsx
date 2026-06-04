@@ -67,7 +67,7 @@ export default function AttentionGraph({
       fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
       proOptions={{ hideAttribution: true }}
       onNodeClick={(_, n) => onSelect(n.id)}
-      nodesDraggable={false}
+      nodesDraggable
       nodesConnectable={false}
       elementsSelectable
       minZoom={0.3}
