@@ -169,4 +169,45 @@ describe('attention-x conversation tree governance', () => {
     expect(edge('user_n4', 'agg_topic_branch_n5')?.kind).toBe('branch')
     expect(projection.nodes.find((entry) => entry.id === 'agg_topic_branch_n5')?.title).toContain('今天天气怎样')
   })
+
+  it('keeps follow-up questions about the previous assistant answer on the mainline', () => {
+    const goal: GoalAnchor = {
+      raw_query: '我想调研一下关于中国人境外投资的一些现状',
+      normalized_goal: '中国人境外投资现状调研',
+      ts: 0,
+    }
+    const projection = buildMindMapProjection([
+      node('n1', {
+        user_message: '我想调研一下关于中国人境外投资的一些现状',
+        goal_distance: 0.08,
+        conclusion: '整理中国境外投资现状、主要目的地、个人境外投资渠道和政策环境',
+        exchanges: [{
+          id: 'e1',
+          user_message: '我想调研一下关于中国人境外投资的一些现状',
+          user_kind: 'instruction',
+          assistant_summary: '中国境外投资现状包含主要投资方向、代表国家、资金规模、ODI、东南亚、欧洲、中东和个人境外投资渠道',
+          assistant_actions: ['solve'],
+          event_ids: ['n1'],
+          tool_count: 0,
+          ts_start: 1000,
+          ts_end: 1001,
+        }],
+      }),
+      node('n2', {
+        user_message: '可以把投资的主要国家跟著要资金画成一张图吗',
+        user_kind: 'question',
+        goal_distance: 0.74,
+        conclusion: '绘制中国 ODI 主要目的地和年均资金规模条形图',
+      }),
+      node('n3', {
+        user_message: '现在这个项目的目录是在哪里的',
+        user_kind: 'question',
+        goal_distance: 0.86,
+      }),
+    ], goal, [])
+
+    const edge = (source: string, target: string) => projection.edges.find((entry) => entry.source === source && entry.target === target)
+    expect(edge('user_n1', 'user_n2')?.kind).toBe('main')
+    expect(edge('user_n2', 'user_n3')?.kind).toBe('branch')
+  })
 })

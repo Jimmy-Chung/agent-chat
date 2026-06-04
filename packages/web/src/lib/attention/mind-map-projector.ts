@@ -7,6 +7,7 @@ export type MindMapEdgeKind = 'main' | 'branch'
 export interface MindMapNode {
   id: string
   kind: MindMapNodeKind
+  treeNodeId: string
   title: string
   subtitle: string
   relation: 'main' | 'branch'
@@ -72,6 +73,7 @@ export function buildMindMapProjection(
   const outputNodes: MindMapNode[] = [{
     id: tree.rootId,
     kind: 'goal',
+    treeNodeId: tree.rootId,
     title: compact(goalAnchor?.normalized_goal || goalAnchor?.raw_query || '当前目标', 64),
     subtitle: `${traceNodes.length} 轮轨迹`,
     relation: 'main',
@@ -130,6 +132,7 @@ export function buildMindMapProjection(
     outputNodes.push({
       id,
       kind: 'user',
+      treeNodeId: `turn_${traceNode.id}`,
       title: compact(traceNode.user_message || traceNode.intent || '用户输入'),
       subtitle: traceNode.user_message_count && traceNode.user_message_count > 1 ? `${traceNode.user_message_count} 条用户输入` : '',
       relation,
@@ -160,6 +163,7 @@ export function buildMindMapProjection(
     outputNodes.push({
       id,
       kind: 'aggregate',
+      treeNodeId: topicId,
       title: firstUserTitle(traceNodes, topic.sourceNodeIds),
       subtitle: `${sourceSummary(traceNodes, topic.sourceNodeIds)} · 已聚合`,
       relation: topic.relation,
@@ -180,17 +184,22 @@ export function buildMindMapProjection(
     emittedByTopic.add(id)
 
     if (expandedIds.has(id)) {
-      const turnChildren = topicChildren(topicId).filter((node) => node.kind === 'turn')
       let previousNested: string | null = null
-      for (const turn of turnChildren) {
-        const source = traceNodes.find((node) => node.id === turn.sourceNodeIds[0])
-        if (!source) continue
-        const nestedId = emitUserNode(source, { nested: true })
+      for (const child of topicChildren(topicId).filter((node) => node.kind === 'turn' || node.kind === 'topic')) {
+        let nestedId: string | null = null
+        if (child.kind === 'turn') {
+          const source = traceNodes.find((node) => node.id === child.sourceNodeIds[0])
+          if (!source) continue
+          nestedId = emitUserNode(source, { nested: true })
+        } else {
+          nestedId = emitAggregateNode(child.id)
+        }
+        if (!nestedId) continue
         outputEdges.push({
           id: previousNested ? `nested_${previousNested}_${nestedId}` : `expand_${id}_${nestedId}`,
           source: previousNested ?? id,
           target: nestedId,
-          kind: turn.relation === 'branch' ? 'branch' : 'main',
+          kind: child.relation === 'branch' ? 'branch' : 'main',
         })
         previousNested = nestedId
       }

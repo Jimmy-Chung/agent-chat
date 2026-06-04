@@ -64,9 +64,21 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
           {node.relation === 'branch' ? `支线${KIND_LABEL[node.kind]}` : KIND_LABEL[node.kind]}
         </span>
         {node.collapsed && <span className="text-[10px]" style={{ color: 'var(--fg-muted)' }}>已聚合</span>}
-        {node.hasChildren && <span className="text-[10px]" style={{ color: 'var(--fg-muted)' }}>{node.collapsed ? '可展开' : '已展开'}</span>}
         {node.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前</span>}
         {node.status === 'running' && <span className="ml-auto text-[10px]" style={{ color: '#F7C26B' }}>运行中</span>}
+        {node.hasChildren && (
+          <span
+            className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-[13px] font-semibold"
+            style={{
+              background: node.collapsed ? 'rgba(10,132,255,0.18)' : 'rgba(111,227,154,0.16)',
+              border: node.collapsed ? '1px solid rgba(10,132,255,0.45)' : '1px solid rgba(111,227,154,0.38)',
+              color: node.collapsed ? '#7DB7FF' : '#6FE39A',
+            }}
+            title={node.collapsed ? '展开聚合节点' : '收起聚合节点'}
+          >
+            {node.collapsed ? '+' : '-'}
+          </span>
+        )}
       </div>
       <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
         {node.title}

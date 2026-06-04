@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
 import { getWsClient } from '@/lib/ws-client'
@@ -94,14 +94,35 @@ function DetailEventRow({ event }: { event: RawEvent }) {
   )
 }
 
+function DetailSection({
+  title,
+  children,
+  empty,
+}: {
+  title: string
+  children: ReactNode
+  empty?: boolean
+}) {
+  return (
+    <section className="mb-4">
+      <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>{title}</div>
+      {empty ? (
+        <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无</div>
+      ) : children}
+    </section>
+  )
+}
+
 function MindMapDetail({
   selected,
   traceNodes,
   rawEvents,
+  planItems,
 }: {
   selected: MindMapNode | null
   traceNodes: TraceNode[]
   rawEvents: RawEvent[]
+  planItems: PlanItem[]
 }) {
   if (!selected) {
     return <EmptyHint text="选择一个节点查看治理过程" />
@@ -109,8 +130,25 @@ function MindMapDetail({
   const traceById = new Map(traceNodes.map((node) => [node.id, node]))
   const sourceTraceNodes = selected.sourceNodeIds.map((id) => traceById.get(id)).filter(Boolean) as TraceNode[]
   const eventIds = new Set(sourceTraceNodes.flatMap((node) => node.event_ids))
-  const events = rawEvents.filter((event) => eventIds.has(event.id))
+  const events = selected.kind === 'goal'
+    ? rawEvents
+    : rawEvents.filter((event) => eventIds.has(event.id))
+  const textEvents = events.filter((event) => event.kind === 'message')
+  const thinkingEvents = events.filter((event) => event.kind === 'thinking')
   const toolEvents = events.filter((event) => event.kind === 'tool_use' || event.kind === 'todo')
+  const planEvents = events.filter((event) => event.kind === 'plan')
+  const relevantPlanItems = selected.kind === 'goal'
+    ? planItems
+    : projectPlanGraph(planItems, sourceTraceNodes).items.filter((item) => item.nodeIds.length > 0)
+  const userMessages = sourceTraceNodes.flatMap((node) =>
+    node.exchanges?.length
+      ? node.exchanges.map((exchange) => exchange.user_message)
+      : [node.user_message],
+  ).filter(Boolean)
+  const aiSummaries = sourceTraceNodes.flatMap((node) => {
+    const summaries = node.exchanges?.map((exchange) => exchange.assistant_summary).filter(Boolean) ?? []
+    return summaries.length ? summaries : [node.conclusion].filter(Boolean)
+  })
 
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
@@ -148,12 +186,40 @@ function MindMapDetail({
           </section>
         )}
 
-        <section className="mb-4">
-          <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>包含的对话节点</div>
+        <DetailSection title="用户信息" empty={userMessages.length === 0}>
           <div className="flex flex-col gap-2">
-            {sourceTraceNodes.length === 0 ? (
-              <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>无直接关联 turn</div>
-            ) : sourceTraceNodes.map((node) => (
+            {userMessages.map((message, index) => (
+              <div key={`${message}-${index}`} className="rounded-md p-2 text-[11px]" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-regular)' }}>
+                {message}
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="AI 信息概要" empty={aiSummaries.length === 0}>
+          <div className="flex flex-col gap-2">
+            {aiSummaries.map((summary, index) => (
+              <div key={`${summary}-${index}`} className="rounded-md p-2 text-[10.5px] leading-snug" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-dim)' }}>
+                {summary}
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Plan / Todo" empty={relevantPlanItems.length === 0 && planEvents.length === 0}>
+          <div className="flex flex-col gap-2">
+            {relevantPlanItems.slice(0, 12).map((item) => (
+              <div key={item.id} className="rounded-md p-2 text-[10.5px]" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', color: 'var(--fg-dim)' }}>
+                <span style={{ color: 'var(--fg-regular)' }}>{item.status}</span> · {item.text}
+              </div>
+            ))}
+            {planEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="包含的对话节点" empty={sourceTraceNodes.length === 0}>
+          <div className="flex flex-col gap-2">
+            {sourceTraceNodes.map((node) => (
               <div key={node.id} className="rounded-md p-2" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
                 <div className="text-[11px] font-medium" style={{ color: 'var(--fg-regular)' }}>{node.user_message}</div>
                 {node.conclusion && (
@@ -162,16 +228,25 @@ function MindMapDetail({
               </div>
             ))}
           </div>
-        </section>
+        </DetailSection>
 
-        <section>
-          <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>工具调用 / 原始事件</div>
+        <DetailSection title="Text 明细" empty={textEvents.length === 0}>
           <div className="flex flex-col gap-2">
-            {events.length === 0 ? (
-              <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无关联事件</div>
-            ) : events.map((event) => <DetailEventRow key={event.id} event={event} />)}
+            {textEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
           </div>
-        </section>
+        </DetailSection>
+
+        <DetailSection title="Thinking 明细" empty={thinkingEvents.length === 0}>
+          <div className="flex flex-col gap-2">
+            {thinkingEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="工具调用 / Todo 明细" empty={toolEvents.length === 0}>
+          <div className="flex flex-col gap-2">
+            {toolEvents.map((event) => <DetailEventRow key={event.id} event={event} />)}
+          </div>
+        </DetailSection>
       </div>
     </aside>
   )
@@ -393,7 +468,7 @@ export function AttentionXPanel({
                 expandedIds={expandedMindIds}
               />
             </div>
-            <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} />
+            <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} planItems={planItems} />
           </div>
         )}
         {mode === 'phase' && <PhaseView nodes={nodes} />}

@@ -71,6 +71,9 @@ const STOP_WORDS = new Set([
   'with',
 ])
 
+const PREVIOUS_AI_FOLLOW_UP_THRESHOLD = 0.12
+const PREVIOUS_AI_FOLLOW_UP_MAX_DISTANCE = 0.78
+
 type RouteDecision =
   | { type: 'continue_main'; targetTopicId: string }
   | { type: 'continue_branch'; targetTopicId: string }
@@ -167,8 +170,19 @@ function topicText(tree: ConversationTree, topicId: string | null, traceById: Ma
 
 function latestAssistantContext(node: TraceNode | null): string {
   if (!node) return ''
-  const exchange = node.exchanges?.at(-1)
-  return [node.conclusion, exchange?.assistant_summary, exchange?.prev_ai_summary, node.assistant_actions?.join(' ')].filter(Boolean).join(' ')
+  const exchanges = node.exchanges ?? []
+  return [
+    node.user_message,
+    node.intent,
+    node.conclusion,
+    node.assistant_actions?.join(' '),
+    ...exchanges.flatMap((exchange) => [
+      exchange.user_message,
+      exchange.assistant_summary,
+      exchange.prev_ai_summary ?? '',
+      exchange.assistant_actions.join(' '),
+    ]),
+  ].filter(Boolean).join(' ')
 }
 
 function resolveBranch(tree: ConversationTree, branchId: string | null): void {
@@ -225,6 +239,9 @@ function decideRoute(input: {
   const activeTopic = activeTopicId ? tree.nodes[activeTopicId] : null
   const activeIsBranch = activeTopic?.relation === 'branch'
   const stronglyMain = mainScore >= 0.16 || next.goal_distance <= 0.35
+  const followsPreviousAi =
+    previousAiScore >= PREVIOUS_AI_FOLLOW_UP_THRESHOLD &&
+    next.goal_distance < PREVIOUS_AI_FOLLOW_UP_MAX_DISTANCE
   const stronglyBranch = !!activeBranchTopicId && (branchScore >= 0.18 || (activeIsBranch && previousAiScore >= 0.12))
 
   if (next.user_kind === 'choice' && activeTopicId) {
@@ -248,11 +265,15 @@ function decideRoute(input: {
     return { type: 'continue_branch', targetTopicId: activeBranchTopicId }
   }
 
+  if (followsPreviousAi) {
+    return { type: 'continue_main', targetTopicId: mainTopicId }
+  }
+
   if (currentTopicTurnCount >= topicTurnLimit && stronglyMain) {
     return { type: 'start_new_main_phase', afterTopicId: mainTopicId }
   }
 
-  if (stronglyMain || previousAiScore >= 0.12) {
+  if (stronglyMain) {
     return { type: 'continue_main', targetTopicId: mainTopicId }
   }
 
