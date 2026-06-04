@@ -180,7 +180,11 @@ function titleSummary(text: string | null | undefined, fallback: string): string
 
 function userTitle(node: TraceNode): string {
   if (node.user_message_count && node.user_message_count > 1) {
-    return `${node.user_message_count} 条用户输入`
+    const combined = (node.exchanges ?? [])
+      .map((exchange) => exchange.user_message)
+      .filter(Boolean)
+      .join('；')
+    return titleSummary(node.intent || combined || node.user_message, '用户输入聚合')
   }
   if (node.intent?.trim()) return titleSummary(node.intent, '用户意图')
   return titleSummary(node.user_message, '用户输入')
