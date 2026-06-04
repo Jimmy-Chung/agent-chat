@@ -80,10 +80,10 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
           </span>
         )}
       </div>
-      <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+      <div className="mt-1 text-[12px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
         {node.title}
       </div>
-      <div className="mt-1 line-clamp-2 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+      <div className="mt-1 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
         {node.subtitle}
       </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />

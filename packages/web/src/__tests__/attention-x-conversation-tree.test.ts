@@ -298,4 +298,38 @@ describe('attention-x conversation tree governance', () => {
     })
     expect(expanded.nodes.some((entry) => entry.id.startsWith('nested_n'))).toBe(true)
   })
+
+  it('uses summary titles for long user and aggregate nodes instead of truncating raw text', () => {
+    const longMessage = '我想系统性调研一下中国高净值人群境外投资的主要国家、资金规模、合规路径、政策风险、资产配置偏好以及未来趋势'
+    const projection = buildMindMapProjection([
+      node('n1', {
+        user_message: longMessage,
+        goal_distance: 0.08,
+      }),
+      node('n2', {
+        user_message: '顺便问一下今天天气怎样',
+        user_kind: 'question',
+        goal_distance: 0.9,
+      }),
+      node('n3', {
+        user_message: '今天会下雨吗',
+        user_kind: 'question',
+        goal_distance: 0.88,
+      }),
+      node('n4', {
+        user_message: '回到境外投资合规路径，帮我继续整理',
+        goal_distance: 0.12,
+      }),
+    ], {
+      raw_query: longMessage,
+      normalized_goal: longMessage,
+      ts: 0,
+    }, [])
+
+    const user = projection.nodes.find((entry) => entry.id === 'user_n1')
+    const aggregate = projection.nodes.find((entry) => entry.id === 'agg_topic_branch_n2')
+    expect(user?.title).not.toContain('…')
+    expect(user?.title).not.toBe(longMessage.slice(0, user?.title.length ?? 0))
+    expect(aggregate?.title).not.toContain('…')
+  })
 })

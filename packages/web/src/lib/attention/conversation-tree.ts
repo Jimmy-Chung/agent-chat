@@ -94,8 +94,30 @@ function compact(text: string | null | undefined, max = 52): string {
   return `${value.slice(0, max - 1)}…`
 }
 
-function userTitle(node: TraceNode, max = 52): string {
-  return compact(node.user_message || node.intent || '用户输入', max)
+function titleSummary(text: string | null | undefined, fallback: string): string {
+  const value = (text ?? '').replace(/\s+/g, ' ').trim()
+  if (!value) return fallback
+  if (value.length <= 30) return value
+  const terms: string[] = []
+  const lower = value.toLowerCase()
+  for (const match of lower.matchAll(/[a-z][a-z0-9-]{2,}/g)) {
+    if (!STOP_WORDS.has(match[0])) terms.push(match[0])
+  }
+  const han = value.match(/[一-鿿]/g) ?? []
+  for (let i = 0; i < han.length - 1; i += 1) {
+    const pair = `${han[i]}${han[i + 1]}`
+    if (!STOP_WORDS.has(pair)) terms.push(pair)
+  }
+  const unique = [...new Set(terms)].slice(0, 6)
+  return unique.length ? unique.join(' / ') : fallback
+}
+
+function userTitle(node: TraceNode): string {
+  if (node.user_message_count && node.user_message_count > 1) {
+    return `${node.user_message_count} 条用户输入`
+  }
+  if (node.intent?.trim()) return titleSummary(node.intent, '用户意图')
+  return titleSummary(node.user_message, '用户输入')
 }
 
 function makeNode(input: Omit<ConversationTreeNode, 'childIds'>): ConversationTreeNode {
@@ -249,8 +271,8 @@ function makeCapacityCompactNode(
     kind: 'topic',
     parentId: parent.id,
     relation: parent.relation,
-    title: `已 compact：${compact(first?.title || '旧上下文', 28)}`,
-    summary: `${turnCount} 轮用户输入 · ${compact(last?.title, 28)}`,
+    title: `已 compact：${titleSummary(first?.title, '旧上下文')}`,
+    summary: `${turnCount} 轮用户输入 · ${titleSummary(last?.title, '最近上下文')}`,
     sourceNodeIds,
     goalDistance: children.length ? Math.max(...children.map((child) => child.goalDistance)) : parent.goalDistance,
     status: children.some((child) => child.status === 'running') ? 'running' : parent.status,
@@ -559,7 +581,7 @@ export function governConversationTree(
         kind: 'topic',
         parentId: parentTopic?.id ?? rootId,
         relation,
-        title: relation === 'branch' ? `支线：${userTitle(traceNode, 34)}` : userTitle(traceNode, 42),
+        title: relation === 'branch' ? `支线：${userTitle(traceNode)}` : userTitle(traceNode),
         summary: '0 轮',
         sourceNodeIds: [],
         goalDistance: traceNode.goal_distance,
@@ -584,7 +606,7 @@ export function governConversationTree(
       kind: 'turn',
       parentId: topicId,
       relation: topic.relation,
-      title: userTitle(traceNode, 46),
+      title: userTitle(traceNode),
       summary: compact(traceNode.user_message, 64),
       sourceNodeIds: [traceNode.id],
       goalDistance: traceNode.goal_distance,

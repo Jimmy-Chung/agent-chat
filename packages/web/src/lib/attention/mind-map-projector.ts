@@ -43,16 +43,55 @@ const MAIN_Y = 0
 const BRANCH_Y = 230
 const SUBGRAPH_Y = 210
 
-function compact(text: string | null | undefined, max = 54): string {
+const TITLE_STOP_WORDS = new Set([
+  '可以',
+  '帮我',
+  '一下',
+  '这个',
+  '那个',
+  '现在',
+  '今天',
+  '什么',
+  '怎么',
+  '如何',
+  '看看',
+  '用户',
+])
+
+function keywordSummary(text: string | null | undefined, fallback: string): string {
   const value = (text ?? '').replace(/\s+/g, ' ').trim()
-  if (value.length <= max) return value
-  return `${value.slice(0, max - 1)}…`
+  if (!value) return fallback
+  if (value.length <= 28) return value
+  const words: string[] = []
+  const lower = value.toLowerCase()
+  for (const match of lower.matchAll(/[a-z][a-z0-9-]{2,}/g)) {
+    if (!TITLE_STOP_WORDS.has(match[0])) words.push(match[0])
+  }
+  const han = value.match(/[一-鿿]/g) ?? []
+  for (let i = 0; i < han.length - 1; i += 1) {
+    const pair = `${han[i]}${han[i + 1]}`
+    if (!TITLE_STOP_WORDS.has(pair)) words.push(pair)
+  }
+  const unique = [...new Set(words)].slice(0, 6)
+  if (!unique.length) return fallback
+  return unique.join(' / ')
 }
 
-function firstUserTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
+function traceTitle(node: TraceNode): string {
+  if (node.user_message_count && node.user_message_count > 1) {
+    return `${node.user_message_count} 条用户输入`
+  }
+  if (node.intent?.trim()) return keywordSummary(node.intent, '用户意图')
+  return keywordSummary(node.user_message, '用户输入')
+}
+
+function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
   const sourceSet = new Set(sourceNodeIds)
-  const first = traceNodes.find((node) => sourceSet.has(node.id))
-  return compact(first?.user_message || '用户输入')
+  const sources = traceNodes.filter((node) => sourceSet.has(node.id))
+  if (!sources.length) return '聚合上下文'
+  if (sources.length === 1) return traceTitle(sources[0])
+  const topicTerms = keywordSummary(sources.map((node) => node.user_message).join(' '), '聚合上下文')
+  return `${topicTerms} · ${sources.length} 轮`
 }
 
 function sourceSummary(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
@@ -75,7 +114,7 @@ export function buildMindMapProjection(
     id: tree.rootId,
     kind: 'goal',
     treeNodeId: tree.rootId,
-    title: compact(goalAnchor?.normalized_goal || goalAnchor?.raw_query || '当前目标', 64),
+    title: keywordSummary(goalAnchor?.normalized_goal || goalAnchor?.raw_query, '当前目标'),
     subtitle: `${traceNodes.length} 轮轨迹`,
     relation: 'main',
     goalDistance: 0,
@@ -134,7 +173,7 @@ export function buildMindMapProjection(
       id,
       kind: 'user',
       treeNodeId: `turn_${traceNode.id}`,
-      title: compact(traceNode.user_message || traceNode.intent || '用户输入'),
+      title: traceTitle(traceNode),
       subtitle: traceNode.user_message_count && traceNode.user_message_count > 1 ? `${traceNode.user_message_count} 条用户输入` : '',
       relation,
       goalDistance: traceNode.goal_distance,
@@ -165,7 +204,7 @@ export function buildMindMapProjection(
       id,
       kind: 'aggregate',
       treeNodeId: topicId,
-      title: firstUserTitle(traceNodes, topic.sourceNodeIds),
+      title: aggregateTitle(traceNodes, topic.sourceNodeIds),
       subtitle: `${sourceSummary(traceNodes, topic.sourceNodeIds)} · 已聚合`,
       relation: topic.relation,
       goalDistance: topic.goalDistance,
