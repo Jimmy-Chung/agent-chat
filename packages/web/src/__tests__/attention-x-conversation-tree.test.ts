@@ -59,15 +59,14 @@ describe('attention-x conversation tree governance', () => {
     expect(branchTopic?.childIds).toContain('turn_n2')
   })
 
-  it('projects governed tree into a connected mind map with goal/topic/turn nodes', () => {
+  it('projects governed tree into a connected user-node mind map', () => {
     const projection = buildMindMapProjection([
       node('n1', { goal_distance: 0.1 }),
       node('n2', { goal_distance: 0.72, user_kind: 'question' }),
     ], GOAL, [])
 
     expect(projection.nodes.map((entry) => entry.kind)).toContain('goal')
-    expect(projection.nodes.map((entry) => entry.kind)).toContain('topic')
-    expect(projection.nodes.map((entry) => entry.kind)).toContain('turn')
+    expect(projection.nodes.map((entry) => entry.kind)).toContain('user')
     expect(projection.edges.length).toBeGreaterThan(0)
     expect(projection.edges.some((edge) => edge.kind === 'branch')).toBe(true)
   })
@@ -91,11 +90,30 @@ describe('attention-x conversation tree governance', () => {
       node('n4', { goal_distance: 0.15, user_kind: 'instruction', user_message: '回到 A' }),
     ], GOAL, [])
 
-    const branch = projection.nodes.find((entry) => entry.id === 'topic_branch_n2')
-    const n4 = projection.nodes.find((entry) => entry.id === 'turn_n4')
+    const branch = projection.nodes.find((entry) => entry.id === 'agg_topic_branch_n2')
+    const n4 = projection.nodes.find((entry) => entry.id === 'user_n4')
     expect(branch?.position.x).toBeLessThan(n4?.position.x ?? 0)
-    expect(branch?.position.y).toBeGreaterThan(projection.nodes.find((entry) => entry.id === 'turn_n1')?.position.y ?? 0)
+    expect(branch?.position.y).toBeGreaterThan(projection.nodes.find((entry) => entry.id === 'user_n1')?.position.y ?? 0)
     expect(branch?.title).toContain('突然讨论 B')
+  })
+
+  it('expands an aggregate node into a local user-message subgraph', () => {
+    const collapsed = buildMindMapProjection([
+      node('n1', { goal_distance: 0.1, user_message: '讨论 A' }),
+      node('n2', { goal_distance: 0.8, user_kind: 'question', user_message: '突然讨论 B' }),
+      node('n3', { goal_distance: 0.82, user_message: '继续 B' }),
+      node('n4', { goal_distance: 0.15, user_kind: 'instruction', user_message: '回到 A' }),
+    ], GOAL, [])
+    expect(collapsed.nodes.some((entry) => entry.id === 'nested_n2')).toBe(false)
+
+    const expanded = buildMindMapProjection([
+      node('n1', { goal_distance: 0.1, user_message: '讨论 A' }),
+      node('n2', { goal_distance: 0.8, user_kind: 'question', user_message: '突然讨论 B' }),
+      node('n3', { goal_distance: 0.82, user_message: '继续 B' }),
+      node('n4', { goal_distance: 0.15, user_kind: 'instruction', user_message: '回到 A' }),
+    ], GOAL, [], new Set(['agg_topic_branch_n2']))
+    expect(expanded.nodes.find((entry) => entry.id === 'nested_n2')?.title).toBe('突然讨论 B')
+    expect(expanded.edges.some((edge) => edge.source === 'agg_topic_branch_n2' && edge.target === 'nested_n2')).toBe(true)
   })
 
   it('archives a resolved child topic and marks the latest turn as current', () => {

@@ -331,13 +331,25 @@ export function AttentionXPanel({
 }) {
   const [mode, setMode] = useState<ViewMode>('mind')
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
-  const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
+  const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
+  const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
     mindProjection.nodes.find((node) => node.current) ??
     mindProjection.nodes[0] ??
     null
   const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
+  const selectMindNode = (id: string) => {
+    setSelectedMindId(id)
+    const node = mindProjection.nodes.find((entry) => entry.id === id)
+    if (!node?.hasChildren) return
+    setExpandedMindIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -377,7 +389,8 @@ export function AttentionXPanel({
                 goalAnchor={goalAnchor}
                 planItems={planItems}
                 selectedId={selectedMindNode?.id ?? null}
-                onSelect={setSelectedMindId}
+                onSelect={selectMindNode}
+                expandedIds={expandedMindIds}
               />
             </div>
             <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} />
