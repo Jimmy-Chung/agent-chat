@@ -232,6 +232,19 @@ async function _doFlushParts(): Promise<void> {
 
   const db = getDb()
   for (const p of entries) {
+    // Idempotency guard: once a message is finalized ('done'), any further
+    // buffered deltas are a replay — e.g. a session recreate re-streamed an
+    // already-completed turn. Accumulating them would duplicate the visible
+    // content (the "double assistant message" bug), so drop them. The normal
+    // streaming path always flushes before message.end marks the message done,
+    // so this never discards live content.
+    const owner = await db
+      .select({ status: messages.status })
+      .from(messages)
+      .where(eq(messages.id, p.messageId))
+      .get()
+    if (owner?.status === 'done') continue
+
     // For text/thinking kinds, check if a DB part already exists to accumulate into
     if (p.kind === 'text' || p.kind === 'thinking') {
       const dbParts = await getMessageParts(p.messageId)

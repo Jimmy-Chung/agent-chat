@@ -451,7 +451,14 @@ export class PiClient extends EventEmitter {
       const result = await conn.rpc('recreateSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
 
-      await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
+      // Resume from the seq we already persisted instead of replaying from
+      // scratch. lastSeq:0 forced the adapter to re-send the entire event
+      // stream; combined with session.recreated clearing seq-dedup and the
+      // non-idempotent part accumulation, the replayed deltas got appended onto
+      // already-finalized messages → duplicated assistant content. Using the
+      // tracked lastSeq makes recreate resume like reconnect. (Belt-and-braces:
+      // message.repo also drops deltas for messages already marked 'done'.)
+      await conn.rpc('attachSession', { sessionId, lastSeq: this.getLastSeq(sessionId) })
       this.adoptSessionConn(conn, sessionId, 'recreated')
       this.emit('session.recreated', { sessionId })
 
