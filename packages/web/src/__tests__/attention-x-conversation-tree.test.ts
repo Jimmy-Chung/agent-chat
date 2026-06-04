@@ -46,7 +46,7 @@ describe('attention-x conversation tree governance', () => {
     expect(topics.at(-1)?.collapsed).toBe(false)
   })
 
-  it('attaches off-goal work as a branch topic under the nearest main turn', () => {
+  it('attaches off-goal work as a child topic under the active topic', () => {
     const tree = governConversationTree([
       node('n1', { goal_distance: 0.1 }),
       node('n2', { goal_distance: 0.8, user_kind: 'question' }),
@@ -55,7 +55,7 @@ describe('attention-x conversation tree governance', () => {
     ], GOAL, [])
 
     const branchTopic = tree.orderedIds.map((id) => tree.nodes[id]).find((entry) => entry.kind === 'topic' && entry.relation === 'branch')
-    expect(branchTopic?.parentId).toBe('turn_n1')
+    expect(branchTopic?.parentId).toBe('topic_main_n1')
     expect(branchTopic?.childIds).toContain('turn_n2')
   })
 
@@ -70,5 +70,20 @@ describe('attention-x conversation tree governance', () => {
     expect(projection.nodes.map((entry) => entry.kind)).toContain('turn')
     expect(projection.edges.length).toBeGreaterThan(0)
     expect(projection.edges.some((edge) => edge.kind === 'branch')).toBe(true)
+  })
+
+  it('archives a resolved child topic and marks the latest turn as current', () => {
+    const tree = governConversationTree([
+      node('n1', { goal_distance: 0.1 }),
+      node('n2', { goal_distance: 0.78, user_kind: 'question' }),
+      node('n3', { goal_distance: 0.82 }),
+      node('n4', { goal_distance: 0.18, user_kind: 'instruction' }),
+    ], GOAL, [], { topicTurnLimit: 3, keepExpandedRecentTopics: 1 })
+
+    const branchTopic = tree.orderedIds.map((id) => tree.nodes[id]).find((entry) => entry.kind === 'topic' && entry.relation === 'branch')
+    expect(branchTopic?.collapsed).toBe(true)
+    expect(branchTopic?.aggregation?.reason).toBe('resolved')
+    expect(tree.nodes.turn_n4.current).toBe(true)
+    expect(tree.nodes.turn_n4.active).toBe(true)
   })
 })

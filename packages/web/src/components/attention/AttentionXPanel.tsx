@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
-import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
+import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
 import { getWsClient } from '@/lib/ws-client'
 import { projectBranches } from '@/lib/attention/branch-projector'
 import { projectChoices } from '@/lib/attention/choice-projector'
@@ -10,6 +10,7 @@ import { projectPhases } from '@/lib/attention/phase-projector'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildAttentionTree } from '@/lib/attention/tree-projector'
 import { goalDistanceColor } from '@/lib/attention'
+import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 
 type ViewMode = 'mind' | 'phase' | 'tree' | 'branches' | 'plan' | 'choice'
 
@@ -52,6 +53,125 @@ function EmptyHint({ text }: { text: string }) {
     <div className="flex h-full items-center justify-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
       {text}
     </div>
+  )
+}
+
+function eventTitle(event: RawEvent): string {
+  if (event.kind === 'tool_use' || event.kind === 'todo') return String(event.payload.name ?? '工具调用')
+  if (event.kind === 'thinking') return '思考'
+  if (event.kind === 'plan') return '计划'
+  return event.role === 'user' ? '用户消息' : '助手消息'
+}
+
+function eventPreview(event: RawEvent): string {
+  const text = event.kind === 'tool_use' || event.kind === 'todo'
+    ? String(event.payload.output ?? JSON.stringify(event.payload.input ?? {}))
+    : String(event.payload.text ?? '')
+  return text.replace(/\s+/g, ' ').slice(0, 120)
+}
+
+function DetailEventRow({ event }: { event: RawEvent }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="overflow-hidden rounded-md" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px]"
+        style={{ color: 'var(--fg-regular)' }}
+      >
+        <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
+          {event.kind}
+        </span>
+        <span className="shrink-0 font-medium">{eventTitle(event)}</span>
+        <span className="truncate" style={{ color: 'var(--fg-muted)' }}>{eventPreview(event)}</span>
+      </button>
+      {open && (
+        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all px-2.5 pb-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>
+          {JSON.stringify(event.payload, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+function MindMapDetail({
+  selected,
+  traceNodes,
+  rawEvents,
+}: {
+  selected: MindMapNode | null
+  traceNodes: TraceNode[]
+  rawEvents: RawEvent[]
+}) {
+  if (!selected) {
+    return <EmptyHint text="选择一个节点查看治理过程" />
+  }
+  const traceById = new Map(traceNodes.map((node) => [node.id, node]))
+  const sourceTraceNodes = selected.sourceNodeIds.map((id) => traceById.get(id)).filter(Boolean) as TraceNode[]
+  const eventIds = new Set(sourceTraceNodes.flatMap((node) => node.event_ids))
+  const events = rawEvents.filter((event) => eventIds.has(event.id))
+  const toolEvents = events.filter((event) => event.kind === 'tool_use' || event.kind === 'todo')
+
+  return (
+    <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
+      <div className="shrink-0 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
+        <div className="flex items-center gap-2">
+          <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
+            {selected.kind}
+          </span>
+          {selected.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前节点</span>}
+          {selected.collapsed && <span className="text-[10px]" style={{ color: '#F7C26B' }}>聚合节点</span>}
+        </div>
+        <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+          {selected.title}
+        </div>
+        <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+          {selected.subtitle}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {selected.aggregation && (
+          <section className="mb-4 rounded-lg p-3" style={{ border: '1px solid rgba(247,194,107,0.32)', background: 'rgba(247,194,107,0.08)' }}>
+            <div className="text-[11px] font-semibold" style={{ color: '#F7C26B' }}>聚合过程</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>
+              <div>原因：{selected.aggregation.reason ?? '手动/默认'}</div>
+              <div>子节点：{selected.aggregation.childCount}</div>
+              <div>回合：{selected.aggregation.turnCount}</div>
+              <div>工具：{toolEvents.length}</div>
+            </div>
+            <div className="mt-2 flex flex-col gap-1">
+              {selected.aggregation.sourceTitles.map((title) => (
+                <div key={title} className="truncate text-[10.5px]" style={{ color: 'var(--fg-regular)' }}>• {title}</div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="mb-4">
+          <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>包含的对话节点</div>
+          <div className="flex flex-col gap-2">
+            {sourceTraceNodes.length === 0 ? (
+              <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>无直接关联 turn</div>
+            ) : sourceTraceNodes.map((node) => (
+              <div key={node.id} className="rounded-md p-2" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
+                <div className="text-[11px] font-medium" style={{ color: 'var(--fg-regular)' }}>{node.conclusion || node.user_message}</div>
+                <div className="mt-1 line-clamp-2 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>{node.user_message}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>工具调用 / 原始事件</div>
+          <div className="flex flex-col gap-2">
+            {events.length === 0 ? (
+              <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无关联事件</div>
+            ) : events.map((event) => <DetailEventRow key={event.id} event={event} />)}
+          </div>
+        </section>
+      </div>
+    </aside>
   )
 }
 
@@ -199,13 +319,22 @@ export function AttentionXPanel({
   nodes,
   goalAnchor,
   planItems,
+  rawEvents,
 }: {
   topicId: string
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
+  rawEvents: RawEvent[]
 }) {
   const [mode, setMode] = useState<ViewMode>('mind')
+  const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
+  const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
+  const selectedMindNode =
+    mindProjection.nodes.find((node) => node.id === selectedMindId) ??
+    mindProjection.nodes.find((node) => node.current) ??
+    mindProjection.nodes[0] ??
+    null
   const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
 
   return (
@@ -238,7 +367,20 @@ export function AttentionXPanel({
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        {mode === 'mind' && <MindMapGraph nodes={nodes} goalAnchor={goalAnchor} planItems={planItems} />}
+        {mode === 'mind' && (
+          <div className="flex h-full min-h-0">
+            <div className="min-w-0 flex-1">
+              <MindMapGraph
+                nodes={nodes}
+                goalAnchor={goalAnchor}
+                planItems={planItems}
+                selectedId={selectedMindNode?.id ?? null}
+                onSelect={setSelectedMindId}
+              />
+            </div>
+            <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} />
+          </div>
+        )}
         {mode === 'phase' && <PhaseView nodes={nodes} />}
         {mode === 'tree' && <TreeView nodes={nodes} goalAnchor={goalAnchor} />}
         {mode === 'branches' && <BranchView nodes={nodes} />}

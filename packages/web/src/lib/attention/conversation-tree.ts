@@ -4,6 +4,15 @@ import { projectPlanGraph } from './plan-projector'
 
 export type ConversationTreeNodeKind = 'goal' | 'topic' | 'turn' | 'plan' | 'decision'
 export type ConversationRelation = 'main' | 'branch'
+export type CollapseReason = 'resolved' | 'topic_shift' | 'too_long' | 'inactive' | null
+
+export interface AggregationInfo {
+  reason: CollapseReason
+  childCount: number
+  turnCount: number
+  toolCount: number
+  sourceTitles: string[]
+}
 
 export interface ConversationTreeNode {
   id: string
@@ -18,6 +27,9 @@ export interface ConversationTreeNode {
   status: TraceNode['status']
   collapsed: boolean
   active: boolean
+  current: boolean
+  depth: number
+  aggregation: AggregationInfo | null
   order: number
 }
 
@@ -41,20 +53,20 @@ function compact(text: string | null | undefined, max = 52): string {
   return `${value.slice(0, max - 1)}…`
 }
 
-function isBranchTurn(node: TraceNode): boolean {
-  if (node.branch_id !== 'main') return true
-  if (node.goal_distance >= 0.68) return true
-  if ((node.user_kind === 'question' || node.user_kind === 'proposal') && node.goal_distance >= 0.48) return true
-  return false
-}
-
-function startsNewTopic(prev: TraceNode | null, next: TraceNode, currentTopicTurnCount: number): boolean {
+function isSubtopicStart(prev: TraceNode | null, next: TraceNode, currentTopicTurnCount: number): boolean {
   if (!prev) return true
   if (currentTopicTurnCount >= DEFAULT_TOPIC_TURN_LIMIT) return true
   if (next.user_kind === 'proposal') return true
   if (next.user_kind === 'question' && currentTopicTurnCount >= 2) return true
-  if (Math.abs(next.goal_distance - prev.goal_distance) >= 0.45) return true
+  if (next.goal_distance >= 0.68 && prev.goal_distance < 0.55) return true
   if ((next.ts_start ?? 0) - (prev.ts_end ?? prev.ts_start ?? 0) > 20 * 60 * 1000) return true
+  return false
+}
+
+function shouldReturnToParent(prev: TraceNode | null, next: TraceNode): boolean {
+  if (!prev) return false
+  if (next.goal_distance <= 0.35 && prev.goal_distance >= 0.62) return true
+  if (next.user_kind === 'instruction' && prev.user_kind === 'question' && next.goal_distance < 0.5) return true
   return false
 }
 
@@ -87,11 +99,25 @@ function markActivePath(tree: ConversationTree, id: string | null): void {
 
 function collapseFinishedTopics(tree: ConversationTree, opts: Required<ConversationTreeOptions>): void {
   const topics = tree.orderedIds.map((id) => tree.nodes[id]).filter((node) => node.kind === 'topic')
-  const activeTopics = new Set(topics.filter((node) => node.active).map((node) => node.id))
   const recentTopics = new Set(topics.slice(-opts.keepExpandedRecentTopics).map((node) => node.id))
   for (const topic of topics) {
+    if (topic.aggregation?.reason === 'resolved' || topic.aggregation?.reason === 'topic_shift') {
+      topic.collapsed = !topic.active
+      continue
+    }
     const turnCount = topic.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length
-    topic.collapsed = turnCount > opts.topicTurnLimit || (!activeTopics.has(topic.id) && !recentTopics.has(topic.id))
+    const tooLong = turnCount > opts.topicTurnLimit
+    const inactive = !topic.active && !recentTopics.has(topic.id)
+    topic.collapsed = tooLong || inactive
+    if (topic.collapsed) {
+      topic.aggregation = {
+        reason: tooLong ? 'too_long' : 'inactive',
+        childCount: topic.childIds.length,
+        turnCount,
+        toolCount: 0,
+        sourceTitles: topic.childIds.map((id) => tree.nodes[id]?.title).filter(Boolean).slice(0, 8),
+      }
+    }
   }
 }
 
@@ -105,6 +131,11 @@ function aggregateTopicMetadata(tree: ConversationTree): void {
     node.goalDistance = children.length ? Math.max(...children.map((child) => child.goalDistance)) : node.goalDistance
     node.status = children.some((child) => child.status === 'running') ? 'running' : node.status
     node.summary = `${children.filter((child) => child.kind === 'turn').length} 轮 · ${compact(children.at(-1)?.title, 28)}`
+    const turnChildren = children.filter((child) => child.kind === 'turn')
+    const childToolCount = turnChildren.reduce((sum, child) => sum + child.sourceNodeIds.length, 0)
+    node.aggregation = node.aggregation
+      ? { ...node.aggregation, toolCount: childToolCount }
+      : null
   }
 }
 
@@ -136,57 +167,82 @@ export function governConversationTree(
     status: traceNodes.some((node) => node.status === 'running') ? 'running' : 'done',
     collapsed: false,
     active: false,
+    current: false,
+    depth: 0,
+    aggregation: null,
     order: 0,
   }))
 
-  let currentMainTopicId: string | null = null
-  let currentBranchTopicId: string | null = null
-  let lastMainTurnId: string | null = null
+  let activeTopicId: string | null = null
   let lastTurn: TraceNode | null = null
-  let mainTopicTurnCount = 0
-  let branchTopicTurnCount = 0
+  let currentTopicTurnCount = 0
 
   traceNodes.forEach((traceNode, index) => {
-    const branch = isBranchTurn(traceNode)
-    const relation: ConversationRelation = branch ? 'branch' : 'main'
-    const currentTopicId = branch ? currentBranchTopicId : currentMainTopicId
-    const currentCount = branch ? branchTopicTurnCount : mainTopicTurnCount
-    const needNewTopic = startsNewTopic(lastTurn, traceNode, currentCount)
-    const topicParentId = branch ? (lastMainTurnId ?? currentMainTopicId ?? rootId) : rootId
+    if (activeTopicId && shouldReturnToParent(lastTurn, traceNode)) {
+      const activeTopic = tree.nodes[activeTopicId]
+      if (activeTopic && !activeTopic.active) {
+        activeTopic.collapsed = true
+        activeTopic.aggregation = {
+          reason: 'resolved',
+          childCount: activeTopic.childIds.length,
+          turnCount: activeTopic.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length,
+          toolCount: 0,
+          sourceTitles: activeTopic.childIds.map((id) => tree.nodes[id]?.title).filter(Boolean).slice(0, 8),
+        }
+      }
+      const parentTopic = nearestTopic(tree, activeTopic?.parentId ?? null)
+      activeTopicId = parentTopic?.id ?? null
+      currentTopicTurnCount = activeTopicId
+        ? tree.nodes[activeTopicId].childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length
+        : 0
+    }
 
-    let topicId = currentTopicId
+    const activeTopic = activeTopicId ? tree.nodes[activeTopicId] : null
+    const capacitySplit = !!activeTopic && currentTopicTurnCount >= opts.topicTurnLimit
+    const needNewTopic = !activeTopicId || isSubtopicStart(lastTurn, traceNode, currentTopicTurnCount)
+    let topicId = activeTopicId
     if (!topicId || needNewTopic) {
+      const parentTopic = capacitySplit ? nearestTopic(tree, activeTopic?.parentId ?? null) : activeTopic
+      const relation: ConversationRelation = parentTopic ? 'branch' : 'main'
       topicId = `topic_${relation}_${traceNode.id}`
+      if (activeTopic && !activeTopic.active) {
+        activeTopic.collapsed = true
+        activeTopic.aggregation = {
+          reason: capacitySplit ? 'too_long' : 'topic_shift',
+          childCount: activeTopic.childIds.length,
+          turnCount: activeTopic.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length,
+          toolCount: 0,
+          sourceTitles: activeTopic.childIds.map((id) => tree.nodes[id]?.title).filter(Boolean).slice(0, 8),
+        }
+      }
       appendNode(tree, makeNode({
         id: topicId,
         kind: 'topic',
-        parentId: topicParentId,
+        parentId: parentTopic?.id ?? rootId,
         relation,
-        title: branch ? `支线：${compact(traceNode.user_message, 34)}` : compact(traceNode.conclusion || traceNode.user_message, 42),
+        title: parentTopic ? `子话题：${compact(traceNode.user_message, 34)}` : compact(traceNode.conclusion || traceNode.user_message, 42),
         summary: '0 轮',
         sourceNodeIds: [],
         goalDistance: traceNode.goal_distance,
         status: traceNode.status,
         collapsed: false,
         active: false,
+        current: false,
+        depth: parentTopic ? parentTopic.depth + 1 : 1,
+        aggregation: null,
         order: index + 1,
       }))
-      if (branch) {
-        currentBranchTopicId = topicId
-        branchTopicTurnCount = 0
-      } else {
-        currentMainTopicId = topicId
-        currentBranchTopicId = null
-        mainTopicTurnCount = 0
-      }
+      activeTopicId = topicId
+      currentTopicTurnCount = 0
     }
 
     const turnId = `turn_${traceNode.id}`
+    const topic = tree.nodes[topicId]
     appendNode(tree, makeNode({
       id: turnId,
       kind: 'turn',
       parentId: topicId,
-      relation,
+      relation: topic.relation,
       title: compact(traceNode.conclusion || traceNode.user_message, 46),
       summary: compact(traceNode.user_message, 64),
       sourceNodeIds: [traceNode.id],
@@ -194,16 +250,13 @@ export function governConversationTree(
       status: traceNode.status,
       collapsed: false,
       active: false,
+      current: false,
+      depth: topic.depth + 1,
+      aggregation: null,
       order: index + 1,
     }))
 
-    if (branch) {
-      branchTopicTurnCount += 1
-    } else {
-      lastMainTurnId = turnId
-      currentBranchTopicId = null
-      mainTopicTurnCount += 1
-    }
+    currentTopicTurnCount += 1
     lastTurn = traceNode
   })
 
@@ -223,6 +276,9 @@ export function governConversationTree(
       status: item.status === 'completed' ? 'done' : item.status === 'in_progress' ? 'running' : 'pending',
       collapsed: false,
       active: false,
+      current: false,
+      depth: (tree.nodes[parentId]?.depth ?? 0) + 1,
+      aggregation: null,
       order: tree.orderedIds.length,
     }))
   }
@@ -243,12 +299,16 @@ export function governConversationTree(
       status: 'done',
       collapsed: false,
       active: false,
+      current: false,
+      depth: (tree.nodes[parentId]?.depth ?? 0) + 1,
+      aggregation: null,
       order: tree.orderedIds.length,
     }))
   }
 
   aggregateTopicMetadata(tree)
   const lastTurnId = [...tree.orderedIds].reverse().find((id) => tree.nodes[id]?.kind === 'turn') ?? null
+  if (lastTurnId) tree.nodes[lastTurnId].current = true
   markActivePath(tree, lastTurnId)
   collapseFinishedTopics(tree, opts)
 

@@ -7,7 +7,7 @@ import { AttentionXPanel } from './AttentionXPanel'
 
 /** 宽 drawer：左窄列表 + 右 React Flow 实时图。仅在打开时挂载（hook 随之运行）。 */
 export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, isAnalyzing } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing } = useAttentionTrace(topicId)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -66,6 +66,7 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             nodes={nodes}
             goalAnchor={goalAnchor}
             planItems={planItems}
+            rawEvents={rawEvents}
           />
         </div>
       </div>

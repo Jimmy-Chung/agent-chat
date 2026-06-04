@@ -14,12 +14,13 @@ import {
   callInterpret,
   type InterpretResult,
 } from './orchestrator'
-import type { GoalAnchor, PlanItem, TraceNode } from './types'
+import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from './types'
 
 export interface AttentionTrace {
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
+  rawEvents: RawEvent[]
   isAnalyzing: boolean
 }
 
@@ -76,5 +77,5 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     [candidates, goalAnchor, interpret, inProgress],
   )
 
-  return { nodes, goalAnchor, planItems, isAnalyzing: inProgress }
+  return { nodes, goalAnchor, planItems, rawEvents, isAnalyzing: inProgress }
 }

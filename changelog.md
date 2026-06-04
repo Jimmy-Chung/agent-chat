@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.03] — experiment: 动态树支线关系与聚合详情
+
+- 重构 Attention X 动态树治理：使用 active topic stack 维护子话题层级，支线不再全部平铺为独立分支。
+- 支持子话题解决/切换后归档聚合，保留聚合原因、子节点、回合数和工具事件，并在右侧详情栏展示。
+- 动态树默认选中最新 turn，当前节点在图上高亮闪烁；聚合节点可作为单层入口查看被聚合内容。
+- 版本显示更新为 `v1.9.5-alpha.03`。
+
 ## 2026-06-04 [v1.9.5-alpha.02] — experiment: 动态聊天树治理模型
 
 - 将 Attention X 从卡片/列表式投影改为 `chat history -> evolving topic tree` 治理模型，先生成稳定的 `goal / topic / turn / plan / decision` 树，再由图层渲染。

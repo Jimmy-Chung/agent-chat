@@ -12,7 +12,11 @@ export interface MindMapNode {
   relation: ConversationTreeNode['relation']
   goalDistance: number
   active: boolean
+  current: boolean
   collapsed: boolean
+  depth: number
+  sourceNodeIds: string[]
+  aggregation: ConversationTreeNode['aggregation']
   status?: TraceNode['status']
   position: { x: number; y: number }
 }
@@ -36,9 +40,9 @@ const TOPIC_GAP_X = 310
 const TURN_Y = 170
 const TURN_GAP_X = 210
 const BRANCH_X = 260
-const BRANCH_Y = 250
 const BRANCH_GAP_Y = 210
 const ANNOTATION_Y = -150
+const TOPIC_DEPTH_Y = 260
 
 function isVisible(id: string, treeNodes: Record<string, ConversationTreeNode>): boolean {
   let current = treeNodes[id]
@@ -69,7 +73,11 @@ export function buildMindMapProjection(
     relation: root.relation,
     goalDistance: root.goalDistance,
     active: root.active,
+    current: root.current,
     collapsed: root.collapsed,
+    depth: root.depth,
+    sourceNodeIds: root.sourceNodeIds,
+    aggregation: root.aggregation,
     status: root.status,
     position: { x: ROOT_X, y: ROOT_Y },
   })
@@ -96,7 +104,7 @@ export function buildMindMapProjection(
         branchTopicLane.set(node.id, lane)
         position = {
           x: (parentPosition?.x ?? TOPIC_X0) + BRANCH_X,
-          y: (parentPosition?.y ?? ROOT_Y) + BRANCH_Y + lane * BRANCH_GAP_Y,
+          y: (parentPosition?.y ?? ROOT_Y) + TOPIC_DEPTH_Y + lane * BRANCH_GAP_Y,
         }
       } else if (node.kind === 'turn') {
         const siblings = node.parentId ? tree.nodes[node.parentId].childIds.filter((childId) => tree.nodes[childId]?.kind === 'turn') : []
@@ -124,7 +132,11 @@ export function buildMindMapProjection(
       relation: node.relation,
       goalDistance: node.goalDistance,
       active: node.active,
+      current: node.current,
       collapsed: node.collapsed,
+      depth: node.depth,
+      sourceNodeIds: node.sourceNodeIds,
+      aggregation: node.aggregation,
       status: node.status,
       position,
     })
