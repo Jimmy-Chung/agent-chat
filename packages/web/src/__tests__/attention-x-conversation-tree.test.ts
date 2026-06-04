@@ -349,4 +349,60 @@ describe('attention-x conversation tree governance', () => {
     expect(title).not.toContain(' / 那边 / 边已')
     expect(title).not.toContain('边已 / 已经 / 经编')
   })
+
+  it('renders compacted multi-user trace nodes as expandable aggregate nodes with content titles', () => {
+    const compacted = node('n1', {
+      user_message: '帮我做一个 todo web 应用',
+      user_message_count: 3,
+      exchanges: [
+        {
+          id: 'ex1',
+          user_message: '帮我做一个 todo web 应用',
+          user_kind: 'instruction',
+          assistant_summary: '确认 todo 应用需求',
+          assistant_actions: ['ask'],
+          event_ids: ['e1'],
+          tool_count: 0,
+          ts_start: 1000,
+          ts_end: 1001,
+        },
+        {
+          id: 'ex2',
+          user_message: '选 vue',
+          user_kind: 'choice',
+          assistant_summary: '采用 Vue 实现',
+          assistant_actions: ['solve'],
+          event_ids: ['e2'],
+          tool_count: 1,
+          ts_start: 1002,
+          ts_end: 1003,
+        },
+        {
+          id: 'ex3',
+          user_message: '帮我修改按钮样式',
+          user_kind: 'instruction',
+          assistant_summary: '修改按钮样式',
+          assistant_actions: ['solve'],
+          event_ids: ['e3'],
+          tool_count: 1,
+          ts_start: 1004,
+          ts_end: 1005,
+        },
+      ],
+    })
+
+    const collapsed = buildMindMapProjection([compacted], GOAL, [])
+    const aggregate = collapsed.nodes.find((entry) => entry.id === 'user_n1')
+    expect(aggregate?.kind).toBe('aggregate')
+    expect(aggregate?.hasChildren).toBe(true)
+    expect(aggregate?.collapsed).toBe(true)
+    expect(aggregate?.title).not.toBe('3 条用户输入')
+    expect(aggregate?.title).toContain('todo web 应用')
+
+    const expanded = buildMindMapProjection([compacted], GOAL, [], new Set(['user_n1']))
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1')?.collapsed).toBe(false)
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex1')?.title).toContain('todo web 应用')
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex2')?.title).toBe('选 vue')
+    expect(expanded.edges.some((entry) => entry.source === 'user_n1' && entry.target === 'user_n1_exchange_ex1')).toBe(true)
+  })
 })

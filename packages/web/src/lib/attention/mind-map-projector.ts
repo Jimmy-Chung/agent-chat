@@ -64,10 +64,18 @@ function readableSummary(text: string | null | undefined, fallback: string): str
 
 function traceTitle(node: TraceNode): string {
   if (node.user_message_count && node.user_message_count > 1) {
-    return `${node.user_message_count} 条用户输入`
+    const combined = (node.exchanges ?? [])
+      .map((exchange) => exchange.user_message)
+      .filter(Boolean)
+      .join('；')
+    return readableSummary(node.intent || combined || node.user_message, '用户输入聚合')
   }
   if (node.intent?.trim()) return readableSummary(node.intent, '用户意图')
   return readableSummary(node.user_message, '用户输入')
+}
+
+function traceMessageCount(node: TraceNode): number {
+  return Math.max(node.user_message_count ?? 0, node.exchanges?.length ?? 0)
 }
 
 function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
@@ -85,7 +93,7 @@ function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): strin
 function sourceSummary(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
   const sourceSet = new Set(sourceNodeIds)
   const sources = traceNodes.filter((node) => sourceSet.has(node.id))
-  const turnCount = sources.length
+  const turnCount = sources.reduce((sum, node) => sum + Math.max(1, traceMessageCount(node)), 0)
   const toolCount = sources.reduce((sum, node) => sum + node.step_count, 0)
   return `${turnCount} 轮用户输入${toolCount ? ` · ${toolCount} 工具` : ''}`
 }
@@ -146,41 +154,87 @@ export function buildMindMapProjection(
     return anchor ? `user_${anchor.id}` : lastMainId
   }
 
+  const multiTraceAggregation = (traceNode: TraceNode): AggregationInfo => ({
+    reason: 'too_long',
+    childCount: traceMessageCount(traceNode),
+    turnCount: traceMessageCount(traceNode),
+    toolCount: traceNode.step_count,
+    sourceTitles: (traceNode.exchanges ?? [])
+      .map((exchange) => readableSummary(exchange.user_message, '用户输入'))
+      .filter(Boolean),
+  })
+
   const emitUserNode = (traceNode: TraceNode, opts: { nested?: boolean } = {}): string => {
     const id = opts.nested ? `nested_${traceNode.id}` : `user_${traceNode.id}`
     if (emittedBySource.has(id)) return id
     const topicId = topicByTurn.get(traceNode.id)
     const topic = topicId ? tree.nodes[topicId] : null
     const relation = topic?.relation ?? 'main'
+    const messageCount = traceMessageCount(traceNode)
+    const isMultiTrace = messageCount > 1
     const y = opts.nested
       ? SUBGRAPH_Y + (topic?.relation === 'branch' ? BRANCH_Y : 0)
       : relation === 'branch'
         ? BRANCH_Y + Math.max(0, (topic?.depth ?? 1) - 1) * 90
         : MAIN_Y
+    const x = opts.nested
+      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 120
+      : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X
     outputNodes.push({
       id,
-      kind: 'user',
+      kind: isMultiTrace ? 'aggregate' : 'user',
       treeNodeId: `turn_${traceNode.id}`,
       title: traceTitle(traceNode),
-      subtitle: traceNode.user_message_count && traceNode.user_message_count > 1 ? `${traceNode.user_message_count} 条用户输入` : '',
+      subtitle: isMultiTrace ? `${messageCount} 条消息 · 已聚合` : '',
       relation,
       goalDistance: traceNode.goal_distance,
       active: false,
       current: !!tree.nodes[`turn_${traceNode.id}`]?.current,
-      collapsed: false,
+      collapsed: isMultiTrace ? !expandedIds.has(id) : false,
       depth: topic?.depth ?? 1,
       sourceNodeIds: [traceNode.id],
-      aggregation: null,
-      hasChildren: false,
+      aggregation: isMultiTrace ? multiTraceAggregation(traceNode) : null,
+      hasChildren: isMultiTrace,
       status: traceNode.status,
-      position: {
-        x: opts.nested
-          ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 120
-          : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X,
-        y,
-      },
+      position: { x, y },
     })
     emittedBySource.add(id)
+
+    if (isMultiTrace && expandedIds.has(id)) {
+      let previousNested: string | null = null
+      const exchanges = traceNode.exchanges ?? []
+      exchanges.forEach((exchange, index) => {
+        const nestedId = `${id}_exchange_${exchange.id}`
+        outputNodes.push({
+          id: nestedId,
+          kind: 'user',
+          treeNodeId: `turn_${traceNode.id}_${exchange.id}`,
+          title: readableSummary(exchange.user_message, '用户输入'),
+          subtitle: exchange.assistant_summary ? readableSummary(exchange.assistant_summary, 'AI 概要') : '',
+          relation,
+          goalDistance: traceNode.goal_distance,
+          active: false,
+          current: false,
+          collapsed: false,
+          depth: (topic?.depth ?? 1) + 1,
+          sourceNodeIds: [traceNode.id],
+          aggregation: null,
+          hasChildren: false,
+          status: traceNode.status,
+          position: {
+            x: x + index * 180,
+            y: y + SUBGRAPH_Y,
+          },
+        })
+        outputEdges.push({
+          id: previousNested ? `multi_${previousNested}_${nestedId}` : `multi_${id}_${nestedId}`,
+          source: previousNested ?? id,
+          target: nestedId,
+          kind: relation === 'branch' ? 'branch' : 'main',
+        })
+        previousNested = nestedId
+      })
+    }
     return id
   }
 
