@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Background,
   BezierEdge,
@@ -8,9 +8,11 @@ import {
   Position,
   ReactFlow,
   type EdgeProps,
+  type NodeChange,
   type NodeProps,
   type NodeTypes,
   type EdgeTypes,
+  type XYPosition,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
@@ -127,6 +129,7 @@ export default function MindMapGraph({
   onSelect: (id: string) => void
   expandedIds: ReadonlySet<string>
 }) {
+  const [draggedPositions, setDraggedPositions] = useState<Record<string, XYPosition>>({})
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedIds), [nodes, goalAnchor, planItems, expandedIds])
   const rfNodes = useMemo(
     () => projection.nodes.map((node) => ({
@@ -137,6 +140,28 @@ export default function MindMapGraph({
       selected: node.id === selectedId,
     })),
     [projection.nodes, selectedId],
+  )
+  useEffect(() => {
+    const visibleIds = new Set(rfNodes.map((node) => node.id))
+    setDraggedPositions((prev) => {
+      let changed = false
+      const next: Record<string, XYPosition> = {}
+      for (const [id, position] of Object.entries(prev)) {
+        if (!visibleIds.has(id)) {
+          changed = true
+          continue
+        }
+        next[id] = position
+      }
+      return changed ? next : prev
+    })
+  }, [rfNodes])
+  const displayNodes = useMemo(
+    () => rfNodes.map((node) => ({
+      ...node,
+      position: draggedPositions[node.id] ?? node.position,
+    })),
+    [draggedPositions, rfNodes],
   )
   const rfEdges = useMemo(
     () => projection.edges.map((edge) => ({
@@ -149,10 +174,22 @@ export default function MindMapGraph({
     })),
     [projection.edges],
   )
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setDraggedPositions((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const change of changes) {
+        if (change.type !== 'position' || !change.position) continue
+        next[change.id] = change.position
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [])
 
   return (
     <ReactFlow
-      nodes={rfNodes}
+      nodes={displayNodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
@@ -164,6 +201,7 @@ export default function MindMapGraph({
       elementsSelectable
       minZoom={0.18}
       maxZoom={1.35}
+      onNodesChange={onNodesChange}
       onNodeClick={(_, node) => onSelect(node.id)}
     >
       <Background gap={28} size={1} color="rgba(255,255,255,0.05)" />

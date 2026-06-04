@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { ReactFlow, Background, Handle, Position, type NodeProps, type NodeTypes } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ReactFlow, Background, Handle, Position, type NodeChange, type NodeProps, type NodeTypes, type XYPosition } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { TraceNode } from '@/lib/attention'
 import { buildGraphData, NODE_W } from '@/lib/attention/graph-projector'
@@ -52,11 +52,39 @@ export default function AttentionGraph({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
+  const [draggedPositions, setDraggedPositions] = useState<Record<string, XYPosition>>({})
   const { nodes: rfNodes, edges } = useMemo(() => buildGraphData(nodes), [nodes])
+  useEffect(() => {
+    const visibleIds = new Set(rfNodes.map((node) => node.id))
+    setDraggedPositions((prev) => {
+      let changed = false
+      const next: Record<string, XYPosition> = {}
+      for (const [id, position] of Object.entries(prev)) {
+        if (!visibleIds.has(id)) {
+          changed = true
+          continue
+        }
+        next[id] = position
+      }
+      return changed ? next : prev
+    })
+  }, [rfNodes])
   const styledNodes = useMemo(
-    () => rfNodes.map((n) => ({ ...n, selected: n.id === selectedId })),
-    [rfNodes, selectedId],
+    () => rfNodes.map((n) => ({ ...n, position: draggedPositions[n.id] ?? n.position, selected: n.id === selectedId })),
+    [draggedPositions, rfNodes, selectedId],
   )
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setDraggedPositions((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const change of changes) {
+        if (change.type !== 'position' || !change.position) continue
+        next[change.id] = change.position
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [])
 
   return (
     <ReactFlow
@@ -72,6 +100,7 @@ export default function AttentionGraph({
       elementsSelectable
       minZoom={0.3}
       maxZoom={1.5}
+      onNodesChange={onNodesChange}
     >
       <Background gap={20} size={1} color="rgba(255,255,255,0.05)" />
     </ReactFlow>
