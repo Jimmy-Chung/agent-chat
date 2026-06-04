@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTopicStore } from '@/stores/topic-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore } from '@/stores/message-store'
@@ -196,20 +196,31 @@ function AttentionMiniNode({ node }: { node: MindMapNode }) {
 
 function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onClose: () => void }) {
   const { nodes, goalAnchor, planItems, rawEvents } = useAttentionTrace(topicId)
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    const h = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
+    const handlePointerDown = (event: PointerEvent) => {
+      const panel = panelRef.current
+      if (!panel || panel.contains(event.target as Node)) return
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
   }, [onClose])
 
   return (
     <div
+      ref={panelRef}
       className="absolute bottom-0 right-0 top-0 z-30 flex w-[min(1180px,calc(100vw-260px))] flex-col overflow-hidden"
       style={{
-        background: 'var(--glass-modal, rgba(20,22,27,0.90))',
+        background: 'rgba(16,18,23,0.98)',
         WebkitBackdropFilter: 'blur(60px) saturate(200%)',
         backdropFilter: 'blur(60px) saturate(200%)',
         borderLeft: '1px solid var(--hairline-2)',
