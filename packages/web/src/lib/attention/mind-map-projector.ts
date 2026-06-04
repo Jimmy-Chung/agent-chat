@@ -103,6 +103,19 @@ export function buildMindMapProjection(
   const topicChildren = (topicId: string) =>
     tree.nodes[topicId]?.childIds.map((id) => tree.nodes[id]).filter(Boolean) ?? []
 
+  const branchAnchorId = (topicId: string | null | undefined): string => {
+    const topic = topicId ? tree.nodes[topicId] : null
+    if (!topic) return lastMainId
+    const anchor = [...traceNodes]
+      .reverse()
+      .find((node) => {
+        const nodeOrder = orderByTraceId.get(node.id) ?? 0
+        const nodeTopic = topicByTurn.get(node.id)
+        return nodeOrder < topic.order && tree.nodes[nodeTopic ?? '']?.relation === 'main'
+      })
+    return anchor ? `user_${anchor.id}` : lastMainId
+  }
+
   const emitUserNode = (traceNode: TraceNode, opts: { nested?: boolean } = {}): string => {
     const id = opts.nested ? `nested_${traceNode.id}` : `user_${traceNode.id}`
     if (emittedBySource.has(id)) return id
@@ -191,9 +204,7 @@ export function buildMindMapProjection(
     if (topic?.collapsed && !topic.active) {
       const aggregateId = emitAggregateNode(topic.id)
       if (topic.relation === 'branch') {
-        const parentTopic = topic.parentId ? tree.nodes[topic.parentId] : null
-        const parentSourceId = parentTopic?.sourceNodeIds[0]
-        const parentId = parentSourceId ? `user_${parentSourceId}` : lastMainId
+        const parentId = branchAnchorId(topic.id)
         outputEdges.push({ id: `branch_${parentId}_${aggregateId}`, source: parentId, target: aggregateId, kind: 'branch' })
         lastBranchByTopic = new Map(lastBranchByTopic).set(topic.id, aggregateId)
       } else if (lastMainId !== aggregateId) {
@@ -206,9 +217,7 @@ export function buildMindMapProjection(
     const nodeId = emitUserNode(traceNode)
     if (topic?.relation === 'branch') {
       const previousBranch = topic.id ? lastBranchByTopic.get(topic.id) : undefined
-      const parentTopic = topic.parentId ? tree.nodes[topic.parentId] : null
-      const parentSourceId = parentTopic?.sourceNodeIds[0]
-      const sourceId = previousBranch ?? (parentSourceId ? `user_${parentSourceId}` : lastMainId)
+      const sourceId = previousBranch ?? branchAnchorId(topic.id)
       outputEdges.push({ id: `branch_${sourceId}_${nodeId}`, source: sourceId, target: nodeId, kind: 'branch' })
       lastBranchByTopic = new Map(lastBranchByTopic).set(topic.id, nodeId)
     } else {

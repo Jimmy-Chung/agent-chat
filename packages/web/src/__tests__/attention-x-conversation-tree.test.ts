@@ -130,4 +130,43 @@ describe('attention-x conversation tree governance', () => {
     expect(tree.nodes.turn_n4.current).toBe(true)
     expect(tree.nodes.turn_n4.active).toBe(true)
   })
+
+  it('keeps a single mainline and routes unrelated weather questions into one dashed branch', () => {
+    const goal: GoalAnchor = { raw_query: '帮我做一个 todo web 应用', normalized_goal: '做 todo web 应用', ts: 0 }
+    const projection = buildMindMapProjection([
+      node('n1', { user_message: '帮我做一个 todo web 应用', goal_distance: 0.05 }),
+      node('n2', {
+        user_message: '选 vue',
+        user_kind: 'choice',
+        goal_distance: 0.12,
+        exchanges: [{
+          id: 'e2',
+          user_message: '选 vue',
+          user_kind: 'choice',
+          prev_ai_summary: '你要怎么做？给出选项：vue、react、svelte',
+          assistant_summary: '采用 vue 实现 todo web 应用',
+          assistant_actions: ['options', 'solve'],
+          event_ids: ['n2'],
+          tool_count: 0,
+          ts_start: 2000,
+          ts_end: 2001,
+        }],
+      }),
+      node('n3', { user_message: '好的我试一下', goal_distance: 0.22, conclusion: '实现完成，用户准备试用' }),
+      node('n4', { user_message: '帮我修改一个页面的按钮', goal_distance: 0.18, conclusion: '按钮页面已修改' }),
+      node('n5', { user_message: '今天天气怎样', user_kind: 'question', goal_distance: 0.86, conclusion: '今天 17 度' }),
+      node('n6', { user_message: '今天会下雨吗', user_kind: 'question', goal_distance: 0.88, conclusion: '不会下雨' }),
+      node('n7', { user_message: '帮我刷新一下页面，看看修改按钮的效果', goal_distance: 0.24 }),
+    ], goal, [])
+
+    const edge = (source: string, target: string) => projection.edges.find((entry) => entry.source === source && entry.target === target)
+
+    expect(edge('tree_goal', 'user_n1')?.kind).toBe('main')
+    expect(edge('user_n1', 'user_n2')?.kind).toBe('main')
+    expect(edge('user_n2', 'user_n3')?.kind).toBe('main')
+    expect(edge('user_n3', 'user_n4')?.kind).toBe('main')
+    expect(edge('user_n4', 'user_n7')?.kind).toBe('main')
+    expect(edge('user_n4', 'agg_topic_branch_n5')?.kind).toBe('branch')
+    expect(projection.nodes.find((entry) => entry.id === 'agg_topic_branch_n5')?.title).toContain('今天天气怎样')
+  })
 })
