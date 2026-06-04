@@ -1,5 +1,4 @@
-import type { GoalAnchor, PlanItem, TraceNode } from './types'
-import { projectChoices } from './choice-projector'
+import type { GoalAnchor, PlanItem, TraceExchange, TraceNode } from './types'
 import { projectPlanGraph } from './plan-projector'
 
 export type ConversationTreeNodeKind = 'goal' | 'topic' | 'turn' | 'plan' | 'decision'
@@ -37,6 +36,73 @@ export interface ConversationTree {
   rootId: string
   nodes: Record<string, ConversationTreeNode>
   orderedIds: string[]
+}
+
+interface DecisionOption {
+  id: string
+  label: string
+  selected: boolean
+}
+
+interface DecisionNode {
+  id: string
+  question: string
+  selectedOptionId: string | null
+  affectedNodeIds: string[]
+}
+
+function inferDecisionOptions(exchange: TraceExchange): DecisionOption[] {
+  const explicit = (exchange as unknown as { options?: string[] }).options
+  if (explicit?.length) {
+    return explicit.map((label, index) => ({ id: `opt_${index + 1}`, label, selected: false }))
+  }
+
+  const optionMatches = [...exchange.assistant_summary.matchAll(/([ABC123])[\).、:：]\s*([\s\S]*?)(?=\s+[ABC123][\).、:：]|$)/g)]
+  return optionMatches.map((match) => ({ id: String(match[1]), label: match[2].trim(), selected: false }))
+}
+
+function decisionChoiceMatchesOption(choice: string, option: DecisionOption): boolean {
+  const normalized = choice.trim().toLowerCase()
+  return normalized.includes(option.id.toLowerCase()) || normalized.includes(option.label.toLowerCase())
+}
+
+function findDecisionQuestionExchange(exchanges: TraceExchange[], choiceIndex: number): TraceExchange | null {
+  for (let i = choiceIndex - 1; i >= 0; i--) {
+    const exchange = exchanges[i]
+    if (exchange.assistant_actions.includes('ask') || exchange.assistant_actions.includes('options')) return exchange
+  }
+  return null
+}
+
+function inferDecisionNodes(nodes: TraceNode[]): DecisionNode[] {
+  const decisions: DecisionNode[] = []
+  const allExchanges = nodes.flatMap((node) => (node.exchanges ?? []).map((exchange) => ({ node, exchange })))
+
+  for (let i = 0; i < allExchanges.length; i++) {
+    const { exchange } = allExchanges[i]
+    if (exchange.user_kind !== 'choice') continue
+    const questionExchange = findDecisionQuestionExchange(allExchanges.map((entry) => entry.exchange), i)
+    if (!questionExchange) continue
+
+    const options = inferDecisionOptions(questionExchange).map((option) => ({
+      ...option,
+      selected: decisionChoiceMatchesOption(exchange.user_message, option),
+    }))
+    const selected = options.find((option) => option.selected) ?? null
+    const affectedNodeIds = allExchanges
+      .slice(i)
+      .map((entry) => entry.node.id)
+      .filter((id, index, array) => array.indexOf(id) === index)
+
+    decisions.push({
+      id: `decision_${questionExchange.id}_${exchange.id}`,
+      question: questionExchange.assistant_summary || questionExchange.user_message,
+      selectedOptionId: selected?.id ?? null,
+      affectedNodeIds,
+    })
+  }
+
+  return decisions
 }
 
 export interface ConversationTreeOptions {
@@ -647,8 +713,7 @@ export function governConversationTree(
     }))
   }
 
-  const choiceProjection = projectChoices(traceNodes)
-  for (const decision of choiceProjection.decisions) {
+  for (const decision of inferDecisionNodes(traceNodes)) {
     const targetTurnId = `turn_${decision.affectedNodeIds[0]}`
     const parentId = tree.nodes[targetTurnId] ? targetTurnId : rootId
     appendNode(tree, makeNode({

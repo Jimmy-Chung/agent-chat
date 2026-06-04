@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.16] — experiment: 移除旧注意力图方案
+
+- 移除 Attention X 中除动态树以外的旧方案入口：阶段聚合、多层树、目标支链、Plan/Todo 图、选项决策图。
+- 删除对应的独立 projector 原型和回归测试，减少实验代码分支。
+- 保留动态树治理仍需要的 Plan/Todo 关联和选择决策识别；选择决策逻辑内联进 conversation-tree。
+- 版本显示更新为 `v1.9.5-alpha.16`。
+
 ## 2026-06-04 [v1.9.5-alpha.15] — experiment: 右侧 Attention Tab
 
 - 右侧 Inspector 第一个 tab 改为 Attention，并暂时隐藏原 Plan tab 入口。
