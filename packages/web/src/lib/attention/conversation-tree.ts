@@ -65,6 +65,7 @@ const STOP_WORDS = new Set([
   '怎么',
   '什么',
   '如何',
+  '讨论',
   'the',
   'and',
   'for',
@@ -72,6 +73,7 @@ const STOP_WORDS = new Set([
 ])
 
 const PREVIOUS_AI_FOLLOW_UP_THRESHOLD = 0.12
+const STRONG_PREVIOUS_AI_FOLLOW_UP_THRESHOLD = 0.14
 const PREVIOUS_AI_FOLLOW_UP_MAX_DISTANCE = 0.78
 
 type RouteDecision =
@@ -143,7 +145,9 @@ function tokenSimilarity(a: Set<string>, b: Set<string>): number {
   for (const token of a) {
     if (b.has(token)) overlap += 1
   }
-  return overlap / Math.sqrt(a.size * b.size)
+  const cosine = overlap / Math.sqrt(a.size * b.size)
+  const shortInputCoverage = overlap / a.size
+  return Math.max(cosine, shortInputCoverage)
 }
 
 function topicText(tree: ConversationTree, topicId: string | null, traceById: Map<string, TraceNode>): string {
@@ -241,7 +245,8 @@ function decideRoute(input: {
   const stronglyMain = mainScore >= 0.16 || next.goal_distance <= 0.35
   const followsPreviousAi =
     previousAiScore >= PREVIOUS_AI_FOLLOW_UP_THRESHOLD &&
-    next.goal_distance < PREVIOUS_AI_FOLLOW_UP_MAX_DISTANCE
+    (next.goal_distance < PREVIOUS_AI_FOLLOW_UP_MAX_DISTANCE ||
+      previousAiScore >= STRONG_PREVIOUS_AI_FOLLOW_UP_THRESHOLD)
   const stronglyBranch = !!activeBranchTopicId && (branchScore >= 0.18 || (activeIsBranch && previousAiScore >= 0.12))
 
   if (next.user_kind === 'choice' && activeTopicId) {

@@ -210,4 +210,43 @@ describe('attention-x conversation tree governance', () => {
     expect(edge('user_n1', 'user_n2')?.kind).toBe('main')
     expect(edge('user_n2', 'user_n3')?.kind).toBe('branch')
   })
+
+  it('keeps follow-ups on the mainline when the previous AI answer has a long preface', () => {
+    const goal: GoalAnchor = {
+      raw_query: '我想调研一下关于中国人境外投资的一些现状',
+      normalized_goal: '中国人境外投资现状调研',
+      ts: 0,
+    }
+    const longAssistantSummary = [
+      '很抱歉，目前 web_search 工具因 API 密钥问题暂时不可用。不过，我可以根据已有知识先整理综合调研框架和核心要点。',
+      '宏观规模与趋势包括 ODI 流量、存量、结构变化和政策监管。',
+      '主要投资方向包含代表国家、主要目的地、投资资金规模、年均 ODI 流量、东南亚、欧洲、中东、巴西、美国和澳大利亚。',
+    ].join('')
+    const projection = buildMindMapProjection([
+      node('n1', {
+        user_message: '我想调研一下关于中国人境外投资的一些现状',
+        goal_distance: 0.08,
+        conclusion: '境外投资调研框架',
+        exchanges: [{
+          id: 'e1-long',
+          user_message: '我想调研一下关于中国人境外投资的一些现状',
+          user_kind: 'instruction',
+          assistant_summary: longAssistantSummary,
+          assistant_actions: ['solve'],
+          event_ids: ['n1'],
+          tool_count: 0,
+          ts_start: 1000,
+          ts_end: 1001,
+        }],
+      }),
+      node('n2', {
+        user_message: '可以把投资的主要国家跟著要资金画成一张图吗',
+        user_kind: 'question',
+        goal_distance: 0.9,
+        conclusion: '生成主要国家和资金图表',
+      }),
+    ], goal, [])
+
+    expect(projection.edges.find((entry) => entry.source === 'user_n1' && entry.target === 'user_n2')?.kind).toBe('main')
+  })
 })
