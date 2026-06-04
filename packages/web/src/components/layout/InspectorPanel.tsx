@@ -1,20 +1,25 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTopicStore } from '@/stores/topic-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore } from '@/stores/message-store'
 import { useUiStore } from '@/stores/ui-store'
 import { useCronStore } from '@/stores/cron-store'
 import { getWsClient } from '@/lib/ws-client'
+import { useAttentionTrace } from '@/lib/attention'
+import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
+import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
 
 const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
-type TabId = 'todo' | 'plan' | 'artifacts' | 'cron'
+type TabId = 'attention' | 'todo' | 'plan' | 'artifacts' | 'cron'
 
 export function InspectorPanel() {
-  const [tab, setTab] = useState<TabId>('todo')
+  const [tab, setTab] = useState<TabId>('attention')
+  const [attentionExpanded, setAttentionExpanded] = useState(false)
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const artifacts = useArtifactStore((s) =>
     activeTopicId ? (s.byTopic[activeTopicId] ?? EMPTY_ARTIFACTS) : EMPTY_ARTIFACTS,
@@ -31,7 +36,7 @@ export function InspectorPanel() {
     () => (activeTopicId ? allCrons.filter((cron) => cron.originTopicId === activeTopicId) : []),
     [activeTopicId, allCrons],
   )
-  const hasContent = todos.length > 0 || !!plan || artifacts.length > 0 || crons.length > 0
+  const hasContent = todos.length > 0 || artifacts.length > 0 || crons.length > 0 || tab === 'attention'
 
   if (inspectorCollapsed && !hasContent) {
     return (
@@ -45,11 +50,11 @@ export function InspectorPanel() {
           backdropFilter: 'blur(40px) saturate(180%)',
         }}
       >
+        <StripIcon label="Attention" active={false} onClick={() => { setTab('attention'); toggleInspector?.() }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
+        </StripIcon>
         <StripIcon label="Todo" active={tab === 'todo'} onClick={() => { setTab('todo'); toggleInspector?.() }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-        </StripIcon>
-        <StripIcon label="Plan" active={tab === 'plan'} onClick={() => { setTab('plan'); toggleInspector?.() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11h6M9 7h6M9 15h4" /><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
         </StripIcon>
         <StripIcon label="Artifacts" active={tab === 'artifacts'} onClick={() => { setTab('artifacts'); toggleInspector?.() }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4" /><path d="M12 11v10" /></svg>
@@ -75,13 +80,13 @@ export function InspectorPanel() {
         className="flex items-center px-1.5"
         style={{ height: 44, borderBottom: '1px solid var(--hairline)' }}
       >
+        <TabBtn active={tab === 'attention'} onClick={() => setTab('attention')}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
+          Attention
+        </TabBtn>
         <TabBtn active={tab === 'todo'} onClick={() => setTab('todo')} count={todos.length}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
           Todo
-        </TabBtn>
-        <TabBtn active={tab === 'plan'} onClick={() => setTab('plan')}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11h6M9 7h6M9 15h4" /><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
-          Plan
         </TabBtn>
         <TabBtn active={tab === 'artifacts'} onClick={() => setTab('artifacts')} count={artifacts.length}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4" /><path d="M12 11v10" /></svg>
@@ -92,22 +97,175 @@ export function InspectorPanel() {
           Cron
         </TabBtn>
         <button
-          onClick={() => toggleInspector?.()}
+          onClick={() => {
+            if (tab === 'attention') {
+              setAttentionExpanded(true)
+              return
+            }
+            toggleInspector?.()
+          }}
           className="ml-auto flex h-[22px] w-[22px] shrink-0 items-center justify-center"
           style={{ color: 'var(--fg-dim)' }}
-          title="折叠"
+          title={tab === 'attention' ? '展开 Attention' : '折叠'}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          {tab === 'attention' ? (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          )}
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
+        {tab === 'attention' && activeTopicId && <AttentionInspectorTab topicId={activeTopicId} onExpand={() => setAttentionExpanded(true)} />}
         {tab === 'todo' && <TodoTab todos={todos} />}
         {tab === 'plan' && <PlanTab plan={plan} />}
         {tab === 'artifacts' && <ArtifactsTab artifacts={artifacts} />}
         {tab === 'cron' && <CronTab topicId={activeTopicId} />}
       </div>
+      {attentionExpanded && activeTopicId && (
+        <AttentionInspectorOverlay topicId={activeTopicId} onClose={() => setAttentionExpanded(false)} />
+      )}
     </div>
+  )
+}
+
+function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpand: () => void }) {
+  const { nodes, goalAnchor, planItems, isAnalyzing } = useAttentionTrace(topicId)
+  const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
+  const currentNode =
+    projection.nodes.find((node) => node.current) ??
+    [...projection.nodes].reverse().find((node) => node.kind !== 'goal') ??
+    projection.nodes[0] ??
+    null
+
+  return (
+    <div className="relative flex min-h-full flex-col overflow-hidden">
+      <div className="shrink-0 px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}>
+            Attention
+          </div>
+          <div className="text-[10.5px]" style={{ color: isAnalyzing ? '#F7C26B' : 'var(--fg-muted)' }}>
+            {isAnalyzing ? '分析中' : `${nodes.length} nodes`}
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onExpand}
+        className="relative mx-3 flex min-h-[360px] flex-1 items-center justify-center overflow-hidden rounded-lg text-left"
+        style={{ border: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}
+      >
+        <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
+        <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(270deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
+        <div className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(111,227,154,0.16), transparent 32%), radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '100% 100%, 24px 24px' }} />
+        {currentNode ? (
+          <AttentionMiniNode key={currentNode.id} node={currentNode} />
+        ) : (
+          <div className="relative z-[3] px-5 text-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+            暂无注意力节点
+          </div>
+        )}
+      </button>
+      <div className="px-4 py-3 text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
+        点击展开查看完整动态树和消息明细
+      </div>
+    </div>
+  )
+}
+
+function AttentionMiniNode({ node }: { node: MindMapNode }) {
+  const color = node.kind === 'goal'
+    ? '#6FE39A'
+    : node.relation === 'branch'
+      ? '#F7A26B'
+      : '#7DB7FF'
+
+  return (
+    <div
+      className="relative z-[3] w-[230px] rounded-lg px-3 py-3"
+      style={{
+        background: node.kind === 'goal' ? 'rgba(111,227,154,0.12)' : 'var(--glass-modal, rgba(20,22,27,0.92))',
+        border: `1px solid ${node.current ? 'rgba(111,227,154,0.52)' : 'var(--hairline-2)'}`,
+        boxShadow: node.current
+          ? '0 0 0 2px rgba(111,227,154,0.38), 0 0 34px rgba(111,227,154,0.22), 0 16px 42px rgba(0,0,0,0.42)'
+          : '0 16px 42px rgba(0,0,0,0.42)',
+        animation: 'attention-mini-enter 260ms cubic-bezier(0.22,1,0.36,1) both, attention-pulse 1.6s ease-in-out infinite',
+      }}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+        <span className="text-[10px]" style={{ color }}>
+          {node.current ? '当前节点' : node.kind === 'aggregate' ? '聚合节点' : '注意力节点'}
+        </span>
+        {node.relation === 'branch' && <span className="ml-auto text-[10px]" style={{ color: '#F7A26B' }}>支线</span>}
+      </div>
+      <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+        {node.title}
+      </div>
+      <div className="mt-1 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+        {node.subtitle}
+      </div>
+    </div>
+  )
+}
+
+function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onClose: () => void }) {
+  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing } = useAttentionTrace(topicId)
+
+  useEffect(() => {
+    const h = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ pointerEvents: 'none' }}>
+      <div
+        className="mr-4 mt-4 flex h-[calc(100dvh-32px)] w-[min(1180px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl"
+        style={{
+          pointerEvents: 'auto',
+          background: 'var(--glass-modal, rgba(20,22,27,0.88))',
+          WebkitBackdropFilter: 'blur(60px) saturate(200%)',
+          backdropFilter: 'blur(60px) saturate(200%)',
+          border: '1px solid var(--hairline-2)',
+          boxShadow: '0 24px 90px rgba(0,0,0,.56)',
+        }}
+      >
+        <header className="flex h-12 shrink-0 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid var(--hairline)' }}>
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded" style={{ background: 'rgba(111,227,154,0.12)', color: '#6FE39A', border: '1px solid rgba(111,227,154,0.32)' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
+          </span>
+          <span className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>Attention</span>
+          {isAnalyzing && <span className="text-[11px]" style={{ color: '#F7C26B' }}>分析中</span>}
+          <button
+            onClick={onClose}
+            className="ml-auto flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+            style={{ color: 'var(--fg-dim)' }}
+            title="缩小"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+        </header>
+        <div className="min-h-0 flex-1">
+          <AttentionXPanel
+            topicId={topicId}
+            nodes={nodes}
+            goalAnchor={goalAnchor}
+            planItems={planItems}
+            rawEvents={rawEvents}
+            focusCurrent
+          />
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

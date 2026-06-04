@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { ReactFlow, Background, Handle, Position, type NodeProps, type NodeTypes } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ReactFlow, Background, Handle, Position, applyNodeChanges, type Node, type NodeChange, type NodeProps, type NodeTypes, type XYPosition } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { TraceNode } from '@/lib/attention'
 import { buildGraphData, NODE_W } from '@/lib/attention/graph-projector'
@@ -42,6 +42,7 @@ function AttentionFlowNode({ data, selected }: NodeProps) {
 }
 
 const nodeTypes: NodeTypes = { attention: AttentionFlowNode }
+type AttentionFlowNodeType = Node<{ node: TraceNode; index: number }, 'attention'>
 
 export default function AttentionGraph({
   nodes,
@@ -52,26 +53,59 @@ export default function AttentionGraph({
   selectedId: string | null
   onSelect: (id: string) => void
 }) {
+  const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
+  const didFitViewRef = useRef(false)
   const { nodes: rfNodes, edges } = useMemo(() => buildGraphData(nodes), [nodes])
-  const styledNodes = useMemo(
-    () => rfNodes.map((n) => ({ ...n, selected: n.id === selectedId })),
+  const projectedNodes = useMemo(
+    (): AttentionFlowNodeType[] => rfNodes.map((node) => ({
+      ...node,
+      position: draggedPositionsRef.current[node.id] ?? node.position,
+      selected: node.id === selectedId,
+    })) as AttentionFlowNodeType[],
     [rfNodes, selectedId],
   )
+  const [displayNodes, setDisplayNodes] = useState<AttentionFlowNodeType[]>(projectedNodes)
+  useEffect(() => {
+    const visibleIds = new Set(projectedNodes.map((node) => node.id))
+    draggedPositionsRef.current = Object.fromEntries(
+      Object.entries(draggedPositionsRef.current).filter(([id]) => visibleIds.has(id)),
+    )
+    setDisplayNodes(projectedNodes)
+  }, [projectedNodes])
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setDisplayNodes((current) => {
+      const next = applyNodeChanges(changes, current) as AttentionFlowNodeType[]
+      for (const change of changes) {
+        if (change.type !== 'position') continue
+        const node = next.find((entry) => entry.id === change.id)
+        if (node) {
+          draggedPositionsRef.current[change.id] = node.position
+        }
+      }
+      return next
+    })
+  }, [])
 
   return (
     <ReactFlow
-      nodes={styledNodes}
+      nodes={displayNodes}
       edges={edges}
       nodeTypes={nodeTypes}
-      fitView
-      fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+      onInit={(instance) => {
+        if (didFitViewRef.current) return
+        didFitViewRef.current = true
+        window.requestAnimationFrame(() => {
+          instance.fitView({ padding: 0.2, maxZoom: 1 })
+        })
+      }}
       proOptions={{ hideAttribution: true }}
       onNodeClick={(_, n) => onSelect(n.id)}
-      nodesDraggable={false}
+      nodesDraggable
       nodesConnectable={false}
       elementsSelectable
       minZoom={0.3}
       maxZoom={1.5}
+      onNodesChange={onNodesChange}
     >
       <Background gap={20} size={1} color="rgba(255,255,255,0.05)" />
     </ReactFlow>

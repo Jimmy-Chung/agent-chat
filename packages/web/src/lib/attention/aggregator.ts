@@ -237,7 +237,7 @@ function summarizeAssistantActivity(messages: RawEvent[], tools: RawEvent[]): st
     .filter((t) => t.trim().length > 0)
   if (texts.length > 0) {
     const combined = texts.join(' ')
-    return compactText(combined, 120)
+    return compactText(combined, 520)
   }
   if (tools.length) {
     const names = tools

@@ -14,11 +14,13 @@ import {
   callInterpret,
   type InterpretResult,
 } from './orchestrator'
-import type { GoalAnchor, TraceNode } from './types'
+import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from './types'
 
 export interface AttentionTrace {
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
+  planItems: PlanItem[]
+  rawEvents: RawEvent[]
   isAnalyzing: boolean
 }
 
@@ -35,7 +37,9 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     () => storeToRawEvents({ messages, partsByMessage, todos, plan }),
     [messages, partsByMessage, todos, plan],
   )
-  const candidates = useMemo(() => aggregate(rawEvents).candidates, [rawEvents])
+  const aggregated = useMemo(() => aggregate(rawEvents), [rawEvents])
+  const candidates = aggregated.candidates
+  const planItems = aggregated.planItems
   const goalAnchor = useMemo(
     () => extractGoalAnchor({ messages, partsByMessage }),
     [messages, partsByMessage],
@@ -73,5 +77,5 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     [candidates, goalAnchor, interpret, inProgress],
   )
 
-  return { nodes, goalAnchor, isAnalyzing: inProgress }
+  return { nodes, goalAnchor, planItems, rawEvents, isAnalyzing: inProgress }
 }
