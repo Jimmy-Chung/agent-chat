@@ -249,4 +249,53 @@ describe('attention-x conversation tree governance', () => {
 
     expect(projection.edges.find((entry) => entry.source === 'user_n1' && entry.target === 'user_n2')?.kind).toBe('main')
   })
+
+  it('compacts direct children before a layer exceeds the attention limit', () => {
+    const nodes = Array.from({ length: 14 }, (_, index) =>
+      node(`n${index + 1}`, {
+        user_message: `继续修复登录问题 ${index + 1}`,
+        goal_distance: 0.1,
+      }),
+    )
+    const tree = governConversationTree(nodes, GOAL, [], {
+      topicTurnLimit: 30,
+      compactSoftLimit: 8,
+      maxDirectChildren: 10,
+    })
+    const topic = tree.nodes.topic_main_n1
+    const visibleChildren = topic.childIds.filter((id) => {
+      const child = tree.nodes[id]
+      return child?.kind === 'turn' || child?.kind === 'topic'
+    })
+    const compactTopic = visibleChildren.map((id) => tree.nodes[id]).find((entry) => entry.kind === 'topic' && entry.aggregation?.reason === 'capacity_compact')
+
+    expect(visibleChildren.length).toBeLessThanOrEqual(10)
+    expect(compactTopic?.collapsed).toBe(true)
+    expect(compactTopic?.childIds.length).toBeGreaterThan(1)
+    expect(compactTopic?.aggregation?.turnCount).toBeGreaterThan(1)
+  })
+
+  it('renders capacity compact groups as expandable aggregate nodes', () => {
+    const nodes = Array.from({ length: 14 }, (_, index) =>
+      node(`n${index + 1}`, {
+        user_message: `继续修复登录问题 ${index + 1}`,
+        goal_distance: 0.1,
+      }),
+    )
+    const collapsed = buildMindMapProjection(nodes, GOAL, [], new Set(), {
+      topicTurnLimit: 30,
+      compactSoftLimit: 8,
+      maxDirectChildren: 10,
+    })
+    const aggregate = collapsed.nodes.find((entry) => entry.kind === 'aggregate' && entry.aggregation?.reason === 'capacity_compact')
+    expect(aggregate?.hasChildren).toBe(true)
+    expect(aggregate?.collapsed).toBe(true)
+
+    const expanded = buildMindMapProjection(nodes, GOAL, [], new Set([aggregate?.id ?? '']), {
+      topicTurnLimit: 30,
+      compactSoftLimit: 8,
+      maxDirectChildren: 10,
+    })
+    expect(expanded.nodes.some((entry) => entry.id.startsWith('nested_n'))).toBe(true)
+  })
 })

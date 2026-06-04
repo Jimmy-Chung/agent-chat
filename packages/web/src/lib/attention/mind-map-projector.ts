@@ -1,5 +1,5 @@
 import type { GoalAnchor, PlanItem, TraceNode } from './types'
-import { governConversationTree, type AggregationInfo } from './conversation-tree'
+import { governConversationTree, type AggregationInfo, type ConversationTreeOptions } from './conversation-tree'
 
 export type MindMapNodeKind = 'goal' | 'user' | 'aggregate'
 export type MindMapEdgeKind = 'main' | 'branch'
@@ -68,8 +68,9 @@ export function buildMindMapProjection(
   goalAnchor: GoalAnchor | null,
   planItems: PlanItem[],
   expandedIds: ReadonlySet<string> = new Set(),
+  treeOptions: ConversationTreeOptions = {},
 ): MindMapProjection {
-  const tree = governConversationTree(traceNodes, goalAnchor, planItems)
+  const tree = governConversationTree(traceNodes, goalAnchor, planItems, treeOptions)
   const outputNodes: MindMapNode[] = [{
     id: tree.rootId,
     kind: 'goal',
@@ -211,7 +212,9 @@ export function buildMindMapProjection(
     const topicId = topicByTurn.get(traceNode.id)
     const topic = topicId ? tree.nodes[topicId] : null
     if (topic?.collapsed && !topic.active) {
+      const aggregateAlreadyEmitted = outputNodes.some((node) => node.id === `agg_${topic.id}`)
       const aggregateId = emitAggregateNode(topic.id)
+      if (aggregateAlreadyEmitted) continue
       if (topic.relation === 'branch') {
         const parentId = branchAnchorId(topic.id)
         outputEdges.push({ id: `branch_${parentId}_${aggregateId}`, source: parentId, target: aggregateId, kind: 'branch' })

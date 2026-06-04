@@ -4,7 +4,7 @@ import { projectPlanGraph } from './plan-projector'
 
 export type ConversationTreeNodeKind = 'goal' | 'topic' | 'turn' | 'plan' | 'decision'
 export type ConversationRelation = 'main' | 'branch'
-export type CollapseReason = 'resolved' | 'topic_shift' | 'too_long' | 'inactive' | null
+export type CollapseReason = 'resolved' | 'topic_shift' | 'too_long' | 'inactive' | 'capacity_compact' | null
 
 export interface AggregationInfo {
   reason: CollapseReason
@@ -42,10 +42,15 @@ export interface ConversationTree {
 export interface ConversationTreeOptions {
   topicTurnLimit?: number
   keepExpandedRecentTopics?: number
+  maxDirectChildren?: number
+  compactSoftLimit?: number
 }
 
 const DEFAULT_TOPIC_TURN_LIMIT = 4
 const DEFAULT_KEEP_EXPANDED_RECENT_TOPICS = 2
+const DEFAULT_MAX_DIRECT_CHILDREN = 10
+const DEFAULT_COMPACT_SOFT_LIMIT = 8
+const COMPACT_GROUP_TARGET_SIZE = 6
 const STOP_WORDS = new Set([
   '一下',
   '一个',
@@ -202,6 +207,137 @@ function resolveBranch(tree: ConversationTree, branchId: string | null): void {
   }
 }
 
+function countTurns(tree: ConversationTree, nodeId: string): number {
+  const node = tree.nodes[nodeId]
+  if (!node) return 0
+  if (node.kind === 'turn') return 1
+  return node.childIds.reduce((sum, childId) => sum + countTurns(tree, childId), 0)
+}
+
+function collectSourceTitles(tree: ConversationTree, childIds: string[]): string[] {
+  return childIds
+    .map((id) => tree.nodes[id]?.title)
+    .filter(Boolean)
+    .slice(0, 8)
+}
+
+function compactId(parentId: string, childIds: string[]): string {
+  const first = childIds[0]?.replace(/[^a-zA-Z0-9_-]/g, '_') ?? 'group'
+  return `topic_compact_${parentId}_${first}`
+}
+
+function shiftDepth(tree: ConversationTree, nodeId: string, delta: number): void {
+  const node = tree.nodes[nodeId]
+  if (!node) return
+  node.depth += delta
+  for (const childId of node.childIds) shiftDepth(tree, childId, delta)
+}
+
+function makeCapacityCompactNode(
+  tree: ConversationTree,
+  parent: ConversationTreeNode,
+  childIds: string[],
+): ConversationTreeNode {
+  const children = childIds.map((id) => tree.nodes[id]).filter(Boolean)
+  const first = children[0]
+  const last = children[children.length - 1]
+  const sourceNodeIds = children.flatMap((child) => child.sourceNodeIds)
+  const turnCount = childIds.reduce((sum, childId) => sum + countTurns(tree, childId), 0)
+  const id = compactId(parent.id, childIds)
+  return makeNode({
+    id,
+    kind: 'topic',
+    parentId: parent.id,
+    relation: parent.relation,
+    title: `已 compact：${compact(first?.title || '旧上下文', 28)}`,
+    summary: `${turnCount} 轮用户输入 · ${compact(last?.title, 28)}`,
+    sourceNodeIds,
+    goalDistance: children.length ? Math.max(...children.map((child) => child.goalDistance)) : parent.goalDistance,
+    status: children.some((child) => child.status === 'running') ? 'running' : parent.status,
+    collapsed: true,
+    active: children.some((child) => child.active),
+    current: children.some((child) => child.current),
+    depth: parent.depth + 1,
+    aggregation: {
+      reason: 'capacity_compact',
+      childCount: childIds.length,
+      turnCount,
+      toolCount: 0,
+      sourceTitles: collectSourceTitles(tree, childIds),
+    },
+    order: first?.order ?? parent.order,
+  })
+}
+
+function replaceChildrenWithCompactGroup(
+  tree: ConversationTree,
+  parent: ConversationTreeNode,
+  childIds: string[],
+): void {
+  if (childIds.length < 2) return
+  const groupId = compactId(parent.id, childIds)
+  if (tree.nodes[groupId]) return
+  const group = makeCapacityCompactNode(tree, parent, childIds)
+  tree.nodes[group.id] = group
+  tree.orderedIds.push(group.id)
+  const childSet = new Set(childIds)
+  const nextChildIds: string[] = []
+  let inserted = false
+  for (const childId of parent.childIds) {
+    if (!childSet.has(childId)) {
+      nextChildIds.push(childId)
+      continue
+    }
+    if (!inserted) {
+      nextChildIds.push(group.id)
+      inserted = true
+    }
+    const child = tree.nodes[childId]
+    if (child) {
+      child.parentId = group.id
+      shiftDepth(tree, child.id, 1)
+      group.childIds.push(child.id)
+    }
+  }
+  parent.childIds = nextChildIds
+}
+
+function chunkForCompact(ids: string[]): string[][] {
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += COMPACT_GROUP_TARGET_SIZE) {
+    const chunk = ids.slice(i, i + COMPACT_GROUP_TARGET_SIZE)
+    if (chunk.length > 1) chunks.push(chunk)
+  }
+  return chunks
+}
+
+function enforceLayerLimits(tree: ConversationTree, parentId: string, opts: Required<ConversationTreeOptions>): void {
+  const parent = tree.nodes[parentId]
+  if (!parent) return
+  const visibleChildIds = parent.childIds.filter((id) => {
+    const child = tree.nodes[id]
+    return child?.kind === 'turn' || child?.kind === 'topic'
+  })
+  if (visibleChildIds.length > opts.compactSoftLimit) {
+    const protectedIds = new Set(
+      visibleChildIds
+        .filter((id) => tree.nodes[id]?.active || tree.nodes[id]?.current)
+        .concat(visibleChildIds.slice(-2)),
+    )
+    const compactableIds = visibleChildIds.filter((id) => !protectedIds.has(id))
+    const projectedCount = protectedIds.size + Math.ceil(compactableIds.length / COMPACT_GROUP_TARGET_SIZE)
+    if (visibleChildIds.length > opts.maxDirectChildren || projectedCount <= opts.compactSoftLimit) {
+      for (const chunk of chunkForCompact(compactableIds)) {
+        replaceChildrenWithCompactGroup(tree, parent, chunk)
+      }
+    }
+  }
+  for (const childId of [...parent.childIds]) {
+    const child = tree.nodes[childId]
+    if (child?.kind === 'topic') enforceLayerLimits(tree, child.id, opts)
+  }
+}
+
 function decideRoute(input: {
   tree: ConversationTree
   traceById: Map<string, TraceNode>
@@ -293,7 +429,11 @@ function collapseFinishedTopics(tree: ConversationTree, opts: Required<Conversat
   const topics = tree.orderedIds.map((id) => tree.nodes[id]).filter((node) => node.kind === 'topic')
   const recentTopics = new Set(topics.slice(-opts.keepExpandedRecentTopics).map((node) => node.id))
   for (const topic of topics) {
-    if (topic.aggregation?.reason === 'resolved' || topic.aggregation?.reason === 'topic_shift') {
+    if (
+      topic.aggregation?.reason === 'resolved' ||
+      topic.aggregation?.reason === 'topic_shift' ||
+      topic.aggregation?.reason === 'capacity_compact'
+    ) {
       topic.collapsed = !topic.active
       continue
     }
@@ -340,6 +480,8 @@ export function governConversationTree(
   const opts: Required<ConversationTreeOptions> = {
     topicTurnLimit: options.topicTurnLimit ?? DEFAULT_TOPIC_TURN_LIMIT,
     keepExpandedRecentTopics: options.keepExpandedRecentTopics ?? DEFAULT_KEEP_EXPANDED_RECENT_TOPICS,
+    maxDirectChildren: options.maxDirectChildren ?? DEFAULT_MAX_DIRECT_CHILDREN,
+    compactSoftLimit: options.compactSoftLimit ?? DEFAULT_COMPACT_SOFT_LIMIT,
   }
   const rootId = 'tree_goal'
   const tree: ConversationTree = {
@@ -506,10 +648,11 @@ export function governConversationTree(
     }))
   }
 
-  aggregateTopicMetadata(tree)
   const lastTurnId = [...tree.orderedIds].reverse().find((id) => tree.nodes[id]?.kind === 'turn') ?? null
   if (lastTurnId) tree.nodes[lastTurnId].current = true
   markActivePath(tree, lastTurnId)
+  enforceLayerLimits(tree, rootId, opts)
+  aggregateTopicMetadata(tree)
   collapseFinishedTopics(tree, opts)
 
   for (const node of tree.orderedIds.map((id) => tree.nodes[id])) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.09] — experiment: 分层容量 compact
+
+- 为 Attention X 动态树增加同层容量治理：直接可见子节点软阈值 8、上限 10，超过后生成 `capacity_compact` 聚合 topic。
+- 容量 compact 会保护当前路径和最近节点，只聚合旧的同层上下文；compact 节点仍可展开，内部继续遵守同层上限。
+- 修复聚合 topic 含多条 trace 时投影重复连边的问题。
+- 版本显示更新为 `v1.9.5-alpha.09`。
+
 ## 2026-06-04 [v1.9.5-alpha.08] — experiment: 长回复追问路由兜底
 
 - 修复长 AI 回复场景下，用户短追问因摘要截断和 cosine 被长文本稀释而误判成支线的问题。
