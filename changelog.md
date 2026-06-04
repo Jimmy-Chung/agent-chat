@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.15] — experiment: 右侧 Attention Tab
+
+- 右侧 Inspector 第一个 tab 改为 Attention，并暂时隐藏原 Plan tab 入口。
+- Attention 窄态只展示当前进行中的注意力节点，使用左右遮罩收束视线，不默认展开完整图。
+- Attention tab 的右上角按钮改为展开箭头，点击后以悬浮 overlay 打开全尺寸动态树，不挤压聊天窗口。
+- 全尺寸动态树打开时聚焦当前节点，并保留右侧消息/执行详情栏；再次点击箭头可缩回右栏窄态。
+- 桌面顶部原独立 Attention 按钮隐藏，移动端仍保留入口。
+- 版本显示更新为 `v1.9.5-alpha.15`。
+
 ## 2026-06-04 [v1.9.5-alpha.14] — experiment: 优化节点拖拽闪烁
 
 - 修复节点拖动时闪烁/抖动严重的问题：拖拽变更改为通过 React Flow `applyNodeChanges` 更新现有节点，不再每帧重建整张图节点。

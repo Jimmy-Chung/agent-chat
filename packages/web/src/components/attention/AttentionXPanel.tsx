@@ -478,12 +478,14 @@ export function AttentionXPanel({
   goalAnchor,
   planItems,
   rawEvents,
+  focusCurrent = false,
 }: {
   topicId: string
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
   rawEvents: RawEvent[]
+  focusCurrent?: boolean
 }) {
   const [mode, setMode] = useState<ViewMode>('mind')
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
@@ -547,6 +549,7 @@ export function AttentionXPanel({
                 selectedId={selectedMindNode?.id ?? null}
                 onSelect={selectMindNode}
                 expandedIds={expandedMindIds}
+                focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
               />
             </div>
             <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} planItems={planItems} />

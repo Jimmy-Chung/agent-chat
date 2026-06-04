@@ -357,6 +357,11 @@ code, pre {
 }
 .attention-pulse { animation: attention-pulse 1.6s ease-in-out infinite; }
 
+@keyframes attention-mini-enter {
+  0% { opacity: 0; transform: translateX(18px) scale(.96); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+
 /* ───── InteractionCard choice mode ───── */
 
 @keyframes interaction-choice-pulse {

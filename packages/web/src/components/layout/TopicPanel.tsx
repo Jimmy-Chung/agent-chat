@@ -275,7 +275,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           )}
           <button
             onClick={() => setShowAttention(true)}
-            className="flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+            className="flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80 lg:hidden"
             style={{ color: 'var(--fg-dim)' }}
             aria-label="注意力"
             title="注意力 — 决策轨迹"

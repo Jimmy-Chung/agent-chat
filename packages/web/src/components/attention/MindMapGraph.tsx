@@ -124,6 +124,7 @@ export default function MindMapGraph({
   selectedId,
   onSelect,
   expandedIds,
+  focusNodeId,
 }: {
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
@@ -131,6 +132,7 @@ export default function MindMapGraph({
   selectedId: string | null
   onSelect: (id: string) => void
   expandedIds: ReadonlySet<string>
+  focusNodeId?: string | null
 }) {
   const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
   const didFitViewRef = useRef(false)
@@ -188,6 +190,15 @@ export default function MindMapGraph({
         if (didFitViewRef.current) return
         didFitViewRef.current = true
         window.requestAnimationFrame(() => {
+          const focused = focusNodeId ? projection.nodes.find((node) => node.id === focusNodeId) : null
+          if (focused) {
+            instance.setCenter(
+              focused.position.x + WIDTH[focused.kind] / 2,
+              focused.position.y + 70,
+              { zoom: 0.9, duration: 320 },
+            )
+            return
+          }
           instance.fitView({ padding: 0.18, maxZoom: 0.95 })
         })
       }}
