@@ -92,7 +92,7 @@ export function ChatLayout() {
         </main>
 
         {/* Inspector panel */}
-        <aside className="hidden lg:block overflow-hidden">
+        <aside className="relative z-[5] hidden overflow-visible lg:block">
           {activeTopicId && <InspectorPanel />}
         </aside>
       </div>
