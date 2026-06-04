@@ -1,14 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   BezierEdge,
   Handle,
   Position,
   ReactFlow,
+  applyNodeChanges,
   type EdgeProps,
   type NodeChange,
+  type Node,
   type NodeProps,
   type NodeTypes,
   type EdgeTypes,
@@ -113,6 +115,7 @@ function MindMapEdge(props: EdgeProps) {
 
 const nodeTypes: NodeTypes = { mind: MindMapFlowNode }
 const edgeTypes: EdgeTypes = { mind: MindMapEdge }
+type MindFlowNode = Node<Record<string, unknown>, 'mind'>
 
 export default function MindMapGraph({
   nodes,
@@ -129,61 +132,49 @@ export default function MindMapGraph({
   onSelect: (id: string) => void
   expandedIds: ReadonlySet<string>
 }) {
-  const [draggedPositions, setDraggedPositions] = useState<Record<string, XYPosition>>({})
+  const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
+  const didFitViewRef = useRef(false)
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedIds), [nodes, goalAnchor, planItems, expandedIds])
-  const rfNodes = useMemo(
-    () => projection.nodes.map((node) => ({
+  const projectedNodes = useMemo(
+    (): MindFlowNode[] => projection.nodes.map((node) => ({
       id: node.id,
       type: 'mind',
-      position: node.position,
+      position: draggedPositionsRef.current[node.id] ?? node.position,
       data: node as unknown as Record<string, unknown>,
       selected: node.id === selectedId,
     })),
     [projection.nodes, selectedId],
   )
+  const [displayNodes, setDisplayNodes] = useState<MindFlowNode[]>(projectedNodes)
   useEffect(() => {
-    const visibleIds = new Set(rfNodes.map((node) => node.id))
-    setDraggedPositions((prev) => {
-      let changed = false
-      const next: Record<string, XYPosition> = {}
-      for (const [id, position] of Object.entries(prev)) {
-        if (!visibleIds.has(id)) {
-          changed = true
-          continue
-        }
-        next[id] = position
-      }
-      return changed ? next : prev
-    })
-  }, [rfNodes])
-  const displayNodes = useMemo(
-    () => rfNodes.map((node) => ({
-      ...node,
-      position: draggedPositions[node.id] ?? node.position,
-    })),
-    [draggedPositions, rfNodes],
-  )
+    const visibleIds = new Set(projectedNodes.map((node) => node.id))
+    draggedPositionsRef.current = Object.fromEntries(
+      Object.entries(draggedPositionsRef.current).filter(([id]) => visibleIds.has(id)),
+    )
+    setDisplayNodes(projectedNodes)
+  }, [projectedNodes])
   const rfEdges = useMemo(
     () => projection.edges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      type: 'mind',
+      type: 'mind' as const,
       data: { kind: edge.kind },
       animated: false,
     })),
     [projection.edges],
   )
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setDraggedPositions((prev) => {
-      let changed = false
-      const next = { ...prev }
+    setDisplayNodes((current) => {
+      const next = applyNodeChanges(changes, current) as MindFlowNode[]
       for (const change of changes) {
-        if (change.type !== 'position' || !change.position) continue
-        next[change.id] = change.position
-        changed = true
+        if (change.type !== 'position') continue
+        const node = next.find((entry) => entry.id === change.id)
+        if (node) {
+          draggedPositionsRef.current[change.id] = node.position
+        }
       }
-      return changed ? next : prev
+      return next
     })
   }, [])
 
@@ -193,8 +184,13 @@ export default function MindMapGraph({
       edges={rfEdges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
-      fitView
-      fitViewOptions={{ padding: 0.18, maxZoom: 0.95 }}
+      onInit={(instance) => {
+        if (didFitViewRef.current) return
+        didFitViewRef.current = true
+        window.requestAnimationFrame(() => {
+          instance.fitView({ padding: 0.18, maxZoom: 0.95 })
+        })
+      }}
       proOptions={{ hideAttribution: true }}
       nodesDraggable
       nodesConnectable={false}

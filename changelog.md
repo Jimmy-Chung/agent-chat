@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-04 [v1.9.5-alpha.14] — experiment: 优化节点拖拽闪烁
+
+- 修复节点拖动时闪烁/抖动严重的问题：拖拽变更改为通过 React Flow `applyNodeChanges` 更新现有节点，不再每帧重建整张图节点。
+- `fitView` 从持续 prop 改为初始化时执行一次，避免拖动期间视口反复参与布局计算。
+- 版本显示更新为 `v1.9.5-alpha.14`。
+
 ## 2026-06-04 [v1.9.5-alpha.13] — experiment: 修复节点拖拽受控状态
 
 - 修复动态图节点仍无法拖拽的问题：React Flow 受控节点现在通过 `onNodesChange` 写回本地坐标。
