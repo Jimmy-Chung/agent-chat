@@ -43,46 +43,31 @@ const MAIN_Y = 0
 const BRANCH_Y = 230
 const SUBGRAPH_Y = 210
 
-const TITLE_STOP_WORDS = new Set([
-  '可以',
-  '帮我',
-  '一下',
-  '这个',
-  '那个',
-  '现在',
-  '今天',
-  '什么',
-  '怎么',
-  '如何',
-  '看看',
-  '用户',
-])
+function cleanTitleText(text: string | null | undefined): string {
+  return (text ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^(帮我|请|可以|能不能|麻烦你|你帮我)/, '')
+    .replace(/[?？。,.，、:：;；!！]+$/g, '')
+    .trim()
+}
 
-function keywordSummary(text: string | null | undefined, fallback: string): string {
-  const value = (text ?? '').replace(/\s+/g, ' ').trim()
+function readableSummary(text: string | null | undefined, fallback: string): string {
+  const value = cleanTitleText(text)
   if (!value) return fallback
-  if (value.length <= 28) return value
-  const words: string[] = []
-  const lower = value.toLowerCase()
-  for (const match of lower.matchAll(/[a-z][a-z0-9-]{2,}/g)) {
-    if (!TITLE_STOP_WORDS.has(match[0])) words.push(match[0])
-  }
-  const han = value.match(/[一-鿿]/g) ?? []
-  for (let i = 0; i < han.length - 1; i += 1) {
-    const pair = `${han[i]}${han[i + 1]}`
-    if (!TITLE_STOP_WORDS.has(pair)) words.push(pair)
-  }
-  const unique = [...new Set(words)].slice(0, 6)
-  if (!unique.length) return fallback
-  return unique.join(' / ')
+  if (value.length <= 34) return value
+  const separators = /[，,。；;：:\n]/
+  const firstClause = value.split(separators).map((part) => part.trim()).find(Boolean)
+  if (firstClause && firstClause.length <= 34) return firstClause
+  const nouns = value.match(/[\p{L}\p{N}][\p{L}\p{N}_-]{1,11}/gu) ?? []
+  return nouns.slice(0, 3).join(' / ') || fallback
 }
 
 function traceTitle(node: TraceNode): string {
   if (node.user_message_count && node.user_message_count > 1) {
     return `${node.user_message_count} 条用户输入`
   }
-  if (node.intent?.trim()) return keywordSummary(node.intent, '用户意图')
-  return keywordSummary(node.user_message, '用户输入')
+  if (node.intent?.trim()) return readableSummary(node.intent, '用户意图')
+  return readableSummary(node.user_message, '用户输入')
 }
 
 function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
@@ -90,7 +75,10 @@ function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): strin
   const sources = traceNodes.filter((node) => sourceSet.has(node.id))
   if (!sources.length) return '聚合上下文'
   if (sources.length === 1) return traceTitle(sources[0])
-  const topicTerms = keywordSummary(sources.map((node) => node.user_message).join(' '), '聚合上下文')
+  const topicTerms = readableSummary(
+    sources.map((node) => node.intent || node.user_message).join('；'),
+    '聚合上下文',
+  )
   return `${topicTerms} · ${sources.length} 轮`
 }
 
@@ -114,7 +102,7 @@ export function buildMindMapProjection(
     id: tree.rootId,
     kind: 'goal',
     treeNodeId: tree.rootId,
-    title: keywordSummary(goalAnchor?.normalized_goal || goalAnchor?.raw_query, '当前目标'),
+    title: readableSummary(goalAnchor?.normalized_goal || goalAnchor?.raw_query, '当前目标'),
     subtitle: `${traceNodes.length} 轮轨迹`,
     relation: 'main',
     goalDistance: 0,

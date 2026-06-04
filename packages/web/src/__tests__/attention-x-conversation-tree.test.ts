@@ -332,4 +332,21 @@ describe('attention-x conversation tree governance', () => {
     expect(user?.title).not.toBe(longMessage.slice(0, user?.title.length ?? 0))
     expect(aggregate?.title).not.toContain('…')
   })
+
+  it('does not render overlapping token fragments as node summaries', () => {
+    const projection = buildMindMapProjection([
+      node('n1', {
+        user_message: 'adapter 那边已经经编辑，现在需要继续确认 mirror 版本',
+        goal_distance: 0.08,
+      }),
+    ], {
+      raw_query: 'adapter 那边已经经编辑，现在需要继续确认 mirror 版本',
+      normalized_goal: 'adapter 那边已经经编辑，现在需要继续确认 mirror 版本',
+      ts: 0,
+    }, [])
+
+    const title = projection.nodes.find((entry) => entry.id === 'user_n1')?.title ?? ''
+    expect(title).not.toContain(' / 那边 / 边已')
+    expect(title).not.toContain('边已 / 已经 / 经编')
+  })
 })
