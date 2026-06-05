@@ -68,6 +68,7 @@ export const messageStartSchema = z.object({
 export const messageDeltaSchema = z.object({
   topicId: z.string(),
   messageId: z.string(),
+  partId: z.string().optional(),
   part: partDeltaSchema,
 })
 
@@ -95,6 +96,7 @@ export const toolCallSchema = z.object({
   topicId: z.string(),
   toolUseId: z.string(),
   messageId: z.string(),
+  partId: z.string().optional(),
   name: z.string(),
   input: z.unknown(),
 })
@@ -103,6 +105,7 @@ export const toolResultSchema = z.object({
   topicId: z.string(),
   toolUseId: z.string(),
   messageId: z.string(),
+  partId: z.string().optional(),
   output: z.unknown(),
   isError: z.boolean(),
 })
@@ -110,6 +113,7 @@ export const toolResultSchema = z.object({
 export const fileDiffSchema = z.object({
   topicId: z.string(),
   messageId: z.string(),
+  partId: z.string().optional(),
   path: z.string(),
   before: z.string(),
   after: z.string(),

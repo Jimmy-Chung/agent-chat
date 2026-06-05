@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import * as messageRepo from '../db/repos/message.repo'
 import { _setMinRetryWaitForTest } from '../ws/message-delivery'
 
 function createMockHub() {
@@ -186,6 +187,11 @@ describe('Message handler', () => {
     expect(events[0].data.status).toBe('pending')
     expect(events[1].type).toBe('message.delta')
     expect(events[1].data.part.content).toBe('Hello agent')
+    expect(events[1].data.partId).toBe(messageRepo.getStableTextPartId(events[0].data.messageId, 'text'))
+
+    const parts = await messageRepo.getMessageParts(events[0].data.messageId)
+    expect(parts).toHaveLength(1)
+    expect(events[1].data.partId).toBe(parts[0].id)
     expect(events[2].type).toBe('message.delivery')
     expect(events[2].data.status).toBe('pending')
     expect(events.some((event: any) => event.type === 'message.delivery' && event.data.status === 'retrying')).toBe(false)

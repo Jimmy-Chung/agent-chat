@@ -367,9 +367,13 @@ describe('Event router — session.health', () => {
     const deltas = events.filter((e) => e.type === 'message.delta')
     expect(deltas).toHaveLength(1)
     expect((deltas[0].data as { messageId: string }).messageId).toBe('msg-ooo-delta')
+    expect((deltas[0].data as { partId: string }).partId).toBe(
+      messageRepo.getStableTextPartId('msg-ooo-delta', 'text'),
+    )
 
     const parts = await messageRepo.getMessageParts('msg-ooo-delta')
     expect(parts).toHaveLength(1)
+    expect(parts[0].id).toBe((deltas[0].data as { partId: string }).partId)
     expect(parts[0].content_json).toBe(JSON.stringify({ kind: 'text', content: 'tail' }))
   })
 
@@ -447,8 +451,14 @@ describe('Event router — session.health', () => {
 
     const textDeltas = mockHub.getBroadcastEvents()
       .filter((e) => e.type === 'message.delta')
+    expect(textDeltas.map((e) => (e.data as { partId: string }).partId)).toEqual(
+      Array(6).fill(parts[0].id),
+    )
+    expect(parts[0].id).toBe(messageRepo.getStableTextPartId('msg-das-delta', 'text'))
+
+    const textDeltaContents = textDeltas
       .map((e) => (e.data as { part: { content?: string } }).part.content)
-    expect(textDeltas).toEqual([
+    expect(textDeltaContents).toEqual([
       '好的，',
       '先放',
       '一',

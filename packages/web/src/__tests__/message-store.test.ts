@@ -159,6 +159,31 @@ describe('MessageStore', () => {
     expect(parts[1]).toEqual(part2)
   })
 
+  it('upsertSnapshotPart coalesces a streaming text snapshot with the persisted history part', () => {
+    const store = useMessageStore.getState()
+
+    store.upsertSnapshotPart('m1', 'text', JSON.stringify({ content: 'Hello' }), 'm1-text')
+    store.upsertSnapshotPart('m1', 'text', JSON.stringify({ content: 'Hello' }), 'db-part-1')
+
+    const parts = useMessageStore.getState().partsByMessage['m1']
+    expect(parts).toHaveLength(1)
+    expect(parts[0].id).toBe('db-part-1')
+    expect(JSON.parse(parts[0].content_json)).toEqual({ content: 'Hello' })
+  })
+
+  it('upsertSnapshotPart keeps multiple tool_use parts while coalescing singleton thinking parts', () => {
+    const store = useMessageStore.getState()
+
+    store.upsertSnapshotPart('m1', 'thinking', JSON.stringify({ content: 'Thinking' }), 'm1-thinking')
+    store.upsertSnapshotPart('m1', 'thinking', JSON.stringify({ content: 'Thinking' }), 'db-thinking')
+    store.upsertSnapshotPart('m1', 'tool_use', JSON.stringify({ toolUseId: 'tool-1', name: 'read' }), 'tool-1')
+    store.upsertSnapshotPart('m1', 'tool_use', JSON.stringify({ toolUseId: 'tool-2', name: 'bash' }), 'tool-2')
+
+    const parts = useMessageStore.getState().partsByMessage['m1']
+    expect(parts.filter((p) => p.kind === 'thinking')).toHaveLength(1)
+    expect(parts.filter((p) => p.kind === 'tool_use')).toHaveLength(2)
+  })
+
   it('removeMessagesByTopic removes all messages for a topic', () => {
     useMessageStore.getState().setMessages('topic1', [makeMessage({ id: 'm1' })])
     useMessageStore.getState().setMessages('topic2', [makeMessage({ id: 'm2' })])

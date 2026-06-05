@@ -151,6 +151,29 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
     expect(JSON.parse(state.partsByMessage['msg1'][0].content_json)).toEqual({ content: 'Hello tail' })
   })
 
+  it('uses server-assigned partId as the stable identity across realtime and history replay', () => {
+    simulateMessageStart('topic1', 'msg1')
+    const store = useMessageStore.getState()
+
+    store.upsertSnapshotPart(
+      'msg1',
+      'text',
+      JSON.stringify({ content: 'Hello' }),
+      'msg1:text',
+    )
+    store.upsertSnapshotPart(
+      'msg1',
+      'text',
+      JSON.stringify({ content: 'Hello' }),
+      'msg1:text',
+    )
+
+    const parts = useMessageStore.getState().partsByMessage['msg1']
+    expect(parts).toHaveLength(1)
+    expect(parts[0].id).toBe('msg1:text')
+    expect(JSON.parse(parts[0].content_json)).toEqual({ content: 'Hello' })
+  })
+
   it('C5: message.end stopReason=aborted 设置 aborted 状态', () => {
     simulateMessageStart('topic1', 'msg1')
     simulateMessageDelta('msg1', 'partial...')

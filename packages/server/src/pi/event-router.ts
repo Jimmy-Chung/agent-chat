@@ -104,6 +104,7 @@ async function appendCronCompletionMessage(input: {
     cronRunId: input.runId,
   })
   await messageRepo.createMessagePart({
+    id: messageRepo.getStableTextPartId(msg.id, 'text'),
     messageId: msg.id,
     kind: 'text',
     contentJson: JSON.stringify({ content }),
@@ -122,6 +123,7 @@ async function appendCronCompletionMessage(input: {
   input.hub.broadcast('message.delta', {
     topicId: input.topicId,
     messageId: msg.id,
+    partId: messageRepo.getStableTextPartId(msg.id, 'text'),
     part: { kind: 'text', content },
   })
   input.hub.broadcast('message.end', {
@@ -694,6 +696,11 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     case 'message.delta': {
       if (!topicId) return
       const kind = payload.part.kind
+      const partId = kind === 'text'
+        ? messageRepo.getStableTextPartId(payload.messageId, 'text')
+        : kind === 'thinking'
+          ? messageRepo.getStableTextPartId(payload.messageId, 'thinking')
+          : messageRepo.getStableToolPartId(payload.messageId, 'tool_use', payload.part.toolUseId)
       messageRepo.bufferPartDelta(
         payload.messageId,
         kind === 'text'
@@ -702,10 +709,12 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
             ? 'thinking'
             : 'tool_use',
         JSON.stringify(payload.part),
+        partId,
       )
       hub.broadcast('message.delta', {
         topicId,
         messageId: payload.messageId,
+        partId,
         part: payload.part,
       })
       if (kind === 'text' || kind === 'thinking') {
@@ -722,7 +731,8 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       // If the SDK returned an error, inject the error text as a text part before finalizing
       if (payload.stopReason === 'error' && payload.errorMessage) {
         const errorText = toUserFacingAgentErrorMessage(payload.errorMessage)
-        await messageRepo.createMessagePart({
+        const errorPart = await messageRepo.createMessagePart({
+          id: messageRepo.getStableTextPartId(payload.messageId, 'text'),
           messageId: payload.messageId,
           kind: 'text',
           contentJson: JSON.stringify({ content: errorText }),
@@ -730,6 +740,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         hub.broadcast('message.delta', {
           topicId,
           messageId: payload.messageId,
+          partId: errorPart.id,
           part: { kind: 'text', content: errorText },
         })
       }
@@ -767,7 +778,8 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     case 'tool.call': {
       if (!topicId) return
       if (!(await messageRepo.getMessage(payload.messageId))) break
-      await messageRepo.createMessagePart({
+      const part = await messageRepo.createMessagePart({
+        id: messageRepo.getStableToolPartId(payload.messageId, 'tool_use', payload.toolUseId),
         messageId: payload.messageId,
         kind: 'tool_use',
         contentJson: JSON.stringify({
@@ -780,6 +792,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         topicId,
         toolUseId: payload.toolUseId,
         messageId: payload.messageId,
+        partId: part.id,
         name: payload.name,
         input: payload.input,
       })
@@ -789,7 +802,8 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     case 'tool.result': {
       if (!topicId) return
       if (!(await messageRepo.getMessage(payload.messageId))) break
-      await messageRepo.createMessagePart({
+      const part = await messageRepo.createMessagePart({
+        id: messageRepo.getStableToolPartId(payload.messageId, 'tool_result', payload.toolUseId),
         messageId: payload.messageId,
         kind: 'tool_result',
         contentJson: JSON.stringify({
@@ -802,6 +816,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         topicId,
         toolUseId: payload.toolUseId,
         messageId: payload.messageId,
+        partId: part.id,
         output: payload.output,
         isError: payload.isError,
       })
@@ -810,7 +825,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'file.diff': {
       if (!topicId) return
-      await messageRepo.createMessagePart({
+      const part = await messageRepo.createMessagePart({
         messageId: payload.messageId,
         kind: 'file_diff',
         contentJson: JSON.stringify({
@@ -822,6 +837,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       hub.broadcast('file.diff', {
         topicId,
         messageId: payload.messageId,
+        partId: part.id,
         path: payload.path,
         before: payload.before,
         after: payload.after,

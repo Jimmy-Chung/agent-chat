@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-05 [v1.9.13] — fix: server 分配消息 partId，避免历史回放重复
+
+- 修复实时消息和 history replay 使用不同 part identity 导致前端重复展示同一段内容的问题。
+- WS 事件新增 server-assigned `partId`，覆盖 `message.delta`、`tool.call`、`tool.result`、`file.diff`。
+- server 落库、广播和 history replay 统一使用同一个 message part id；前端只消费 server 下发的 `partId`，旧事件保留兼容兜底。
+- 增加协议、server 路由、用户消息发送、web store 回归测试，锁定实时流与历史回放的 part id 一致性。
+- 版本显示更新为 `v1.9.13`。
+
 ## 2026-06-05 [v1.9.12] — fix: 输入框草稿按话题隔离、topic 创建绑定默认模型
 
 - 修复切换话题后输入框仍显示上一个话题草稿的问题。
