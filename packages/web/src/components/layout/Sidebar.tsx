@@ -20,7 +20,7 @@ import { AdapterConnectionModal } from '@/components/AdapterConnectionModal'
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
-import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, normalizeCwd, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
+import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, getWorkspaceRelativePath, joinWorkspacePath, normalizeCwd, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
 import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
@@ -839,14 +839,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.14</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.9.15</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.14</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.15</span>
               </Tooltip>
             </div>
           </div>
@@ -954,6 +954,14 @@ function CreateTopicModal({
     [cwd, workspace],
   )
   const showWorkspacePicker = workspace && cwd.trim().startsWith('/')
+  const cwdPreview = useMemo(() => {
+    const trimmed = cwd.trim()
+    if (!trimmed) return ''
+    if (workspace && trimmed.startsWith('/')) {
+      return getWorkspaceRelativePath(joinWorkspacePath(workspace.workspacePath, trimmed), workspace.workspacePath)
+    }
+    return trimmed
+  }, [cwd, workspace])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1106,9 +1114,7 @@ function CreateTopicModal({
                 />
                 <p className="text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
                   {cwd.trim()
-                    ? workspace?.workspacePath
-                      ? `将在「${workspace.workspacePath}/${cwd.replace(/^\//, '')}」下创建工作目录`
-                      : `将使用输入的目录路径`
+                    ? `将使用「${cwdPreview}」作为工作目录`
                     : '留空则自动创建以话题名命名的独立工作目录'}
                 </p>
                 {showWorkspacePicker && (

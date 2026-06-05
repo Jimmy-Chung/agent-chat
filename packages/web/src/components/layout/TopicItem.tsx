@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import type { Topic } from '@agent-chat/protocol'
 import { useIsMobile } from '@/hooks/use-is-mobile'
-import { getTopicCwd, getTopicDirectoryLabel } from '@/lib/workspace-path'
+import { getTopicDirectoryLabel } from '@/lib/workspace-path'
 
 interface TopicItemProps {
   topic: Topic
@@ -20,7 +20,6 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
   const [hovered, setHovered] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const showDelete = !isSystem && onDelete && (hovered || isMobile)
-  const cwd = getTopicCwd(topic)
   const cwdDir = getTopicDirectoryLabel(topic, workspaceRoot)
 
   const toggleExpand = useCallback((e: React.MouseEvent) => {
@@ -92,8 +91,8 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
                 </div>
               )}
               {cwdDir && (
-                <div className="truncate text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }} title={cwd ?? undefined}>
-                  {cwd}
+                <div className="truncate text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }} title={cwdDir}>
+                  {cwdDir}
                 </div>
               )}
             </div>
