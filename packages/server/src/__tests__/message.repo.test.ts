@@ -239,6 +239,35 @@ describe('MessageRepo', () => {
     expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Hello world' }))
   })
 
+  it('does not double content when replay hits a still-streaming message', async () => {
+    // The "half-double" real-world case: a message is still streaming when the
+    // session breaks. By the time the adapter replays, the DB already has the
+    // full text but the message.status is still 'streaming' — the done-guard
+    // doesn't fire, so the include-guard must catch it.
+    const msg = await messageRepo.createMessage({
+      topicId,
+      role: 'assistant',
+      status: 'streaming',
+    })
+
+    // First pass: text flushed into DB, but turn hasn't finished yet.
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: 'Hello' }))
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: ' world' }))
+    await messageRepo.flushParts()
+    // Message is still streaming, not done.
+
+    // Replay: session recreate re-sends the same deltas.
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: 'Hello' }))
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: ' world' }))
+    await messageRepo.flushParts()
+    // Now the turn actually finishes.
+    await messageRepo.updateMessage(msg.id, { status: 'done', finished_at: Date.now() })
+
+    const parts = await messageRepo.getMessageParts(msg.id)
+    expect(parts).toHaveLength(1)
+    expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Hello world' }))
+  })
+
   it('upserts tool snapshots instead of creating duplicate tool_use parts', async () => {
     const msg = await messageRepo.createMessage({
       topicId,

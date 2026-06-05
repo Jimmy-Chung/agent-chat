@@ -284,6 +284,11 @@ async function _doFlushParts(): Promise<void> {
           const dbData = JSON.parse(existingPart.content_json)
           const newData = JSON.parse(p.contentJson)
           if (typeof newData.content === 'string' && typeof dbData.content === 'string') {
+            // If DB already has this text, the delta is a replay (session
+            // recreate re-streams a turn whose message was still streaming
+            // so the done-guard didn't fire). Normal deltas are incremental
+            // — skip only genuine replays.
+            if (dbData.content.includes(newData.content)) continue
             dbData.content = dbData.content + newData.content
             p.contentJson = JSON.stringify(dbData)
           }
