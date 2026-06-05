@@ -18,6 +18,22 @@ export interface MessageDeliveryBroadcaster {
   broadcast(type: string, data: unknown): void
 }
 
+// Render an unknown thrown value into a useful log string. The WS layer used to
+// reject with a raw error Event, so `String(err)` produced "[object Object]" and
+// hid the real failure (e.g. a jwt_expired handshake reject). Prefer code+message.
+function errText(err: unknown): string {
+  if (err instanceof PiRpcError) return `${err.code}: ${err.message}`
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    try {
+      return JSON.stringify(err)
+    } catch {
+      return Object.prototype.toString.call(err)
+    }
+  }
+  return String(err)
+}
+
 // How long to wait for the sendUserMessage RPC to be acknowledged by the adapter.
 // This is purely network + adapter scheduling latency, not LLM processing time.
 export const RPC_TIMEOUT_MS = 8000
@@ -309,7 +325,7 @@ async function attemptDelivery(
       payload: {
         manual: input.manual,
         retryCount: options.retryCount,
-        error: err instanceof Error ? err.message : String(err),
+        error: errText(err),
       },
     })
     return false
@@ -351,7 +367,7 @@ async function ensureDeliverableSession(
       payload: {
         path: 'ensureDeliverableSession.reconnect',
         code,
-        error: err instanceof Error ? err.message : String(err),
+        error: errText(err),
       },
     })
   }
@@ -393,7 +409,7 @@ async function ensureDeliverableSession(
           status: 'failed',
           payload: {
             path: 'ensureDeliverableSession.session_exists_fallback',
-            error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+            error: errText(retryErr),
           },
         })
         return null
@@ -408,7 +424,7 @@ async function ensureDeliverableSession(
       payload: {
         path: 'ensureDeliverableSession.recreate',
         code: recreateCode,
-        error: recreateErr instanceof Error ? recreateErr.message : String(recreateErr),
+        error: errText(recreateErr),
       },
     })
     return null

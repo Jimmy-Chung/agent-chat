@@ -3,6 +3,7 @@ import type { AppConfig } from '../config'
 import { errorDetail } from '../error-detail'
 import { logger } from '../logger'
 import { logPiEvent } from '../server-logs'
+import { issueJitJwt } from '../pairing/routes'
 import { buildPiWsUrl } from '@agent-chat/protocol'
 import {
   encodeFrame,
@@ -42,6 +43,17 @@ export interface AdapterRpcRequest {
 
 const ADAPTER_READY_TIMEOUT_MS = 3_000
 
+/**
+ * Replace (or append) the `access_token` query param in an adapter WS URL with a
+ * freshly-minted JWT. Preserves any other params and avoids leaving a dangling
+ * separator. Exported for unit testing.
+ */
+export function setAccessTokenParam(rawUrl: string, jwt: string): string {
+  const base = rawUrl.replace(/[?&]access_token=[^&]*/, '').replace(/[?&]$/, '')
+  const sep = base.includes('?') ? '&' : '?'
+  return `${base}${sep}access_token=${encodeURIComponent(jwt)}`
+}
+
 class PiSessionConn extends EventEmitter {
   private ws: WebSocket | null = null
   private rpcId = 0
@@ -79,7 +91,8 @@ class PiSessionConn extends EventEmitter {
   private attemptConnect(): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = buildPiWsUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
-      logger.info({ url: url.replace(/token=[^&]+/, 'token=***'), sessionId: this.sessionId }, 'PI session WS connecting')
+      const maskedUrl = url.replace(/(access_token|token)=[^&]+/g, '$1=***')
+      logger.info({ url: maskedUrl, sessionId: this.sessionId }, 'PI session WS connecting')
       const ws = new WebSocket(url)
       let settled = false
       ws.addEventListener('open', async () => {
@@ -155,7 +168,10 @@ class PiSessionConn extends EventEmitter {
         logger.error({ err, sessionId: this.sessionId }, 'PI session WS error')
         if (ws.readyState !== WebSocket.OPEN && !settled) {
           settled = true
-          reject(err)
+          // Wrap the raw error Event in a PiRpcError so callers/logs get a real
+          // message instead of "[object Object]" (which hid a jwt_expired reject).
+          const msg = (err as { message?: string })?.message || 'PI adapter WS error before open'
+          reject(new PiRpcError('ws_error', msg, { type: (err as { type?: string })?.type }))
         }
       })
 
@@ -401,6 +417,23 @@ export class PiClient extends EventEmitter {
     return new PiSessionConn(sessionId, this.config)
   }
 
+  // Mint a fresh adapter access_token before opening a NEW WS connection.
+  // The pairing JWT embedded in piAdapterUrl has TTL≈300s; the WS handshake only
+  // checks it at connect time, so a live connection survives expiry but any
+  // reconnect/recreate after an idle window reuses the now-expired token and the
+  // adapter rejects it with `jwt_expired` → persistent red dots that a retry
+  // can't clear. The session gateway already refreshes before createSession, but
+  // the delivery reconnect/recreate paths did not — this closes that gap by
+  // re-signing from the long-lived deviceCredential. No-op on the unpaired/debug
+  // path (no deviceCredential), where the URL token is used as-is.
+  private async refreshAccessToken(): Promise<void> {
+    const cfg = this.config
+    if (!cfg.deviceCredential || !cfg.adapterInstanceId || !cfg.serverOrigin) return
+    const jwt = await issueJitJwt(cfg.deviceCredential, cfg.adapterInstanceId, cfg.serverOrigin)
+    if (!jwt) return
+    cfg.piAdapterUrl = setAccessTokenParam(cfg.piAdapterUrl, jwt)
+  }
+
   get isConnected(): boolean {
     return this.sessions.size > 0
   }
@@ -421,6 +454,7 @@ export class PiClient extends EventEmitter {
     const conn = this.createSessionConn(tempId)
 
     try {
+      await this.refreshAccessToken()
       await conn.connect()
       const result = await conn.rpc('createSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
@@ -447,11 +481,19 @@ export class PiClient extends EventEmitter {
     const conn = this.createSessionConn(params.sessionId)
 
     try {
+      await this.refreshAccessToken()
       await conn.connect()
       const result = await conn.rpc('recreateSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
 
-      await conn.rpc('attachSession', { sessionId, lastSeq: 0 })
+      // Resume from the seq we already persisted instead of replaying from
+      // scratch. lastSeq:0 forced the adapter to re-send the entire event
+      // stream; combined with session.recreated clearing seq-dedup and the
+      // non-idempotent part accumulation, the replayed deltas got appended onto
+      // already-finalized messages → duplicated assistant content. Using the
+      // tracked lastSeq makes recreate resume like reconnect. (Belt-and-braces:
+      // message.repo also drops deltas for messages already marked 'done'.)
+      await conn.rpc('attachSession', { sessionId, lastSeq: this.getLastSeq(sessionId) })
       this.adoptSessionConn(conn, sessionId, 'recreated')
       this.emit('session.recreated', { sessionId })
 
@@ -479,6 +521,7 @@ export class PiClient extends EventEmitter {
     const conn = this.createSessionConn(sessionId)
 
     try {
+      await this.refreshAccessToken()
       await conn.connect()
       await conn.rpc('attachSession', { sessionId, lastSeq })
       this.adoptSessionConn(conn, sessionId, 'reconnected')

@@ -216,6 +216,29 @@ describe('MessageRepo', () => {
     expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Plan more' }))
   })
 
+  it('does not re-accumulate deltas onto a message already marked done (replay guard)', async () => {
+    const msg = await messageRepo.createMessage({
+      topicId,
+      role: 'assistant',
+    })
+
+    // Original stream: deltas flushed, then the turn finalizes (message.end → done).
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: 'Hello' }))
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: ' world' }))
+    await messageRepo.flushParts()
+    await messageRepo.updateMessage(msg.id, { status: 'done', finished_at: Date.now() })
+
+    // Session recreate replays the same completed turn from seq 0.
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: 'Hello' }))
+    messageRepo.bufferPartDelta(msg.id, 'text', JSON.stringify({ content: ' world' }))
+    await messageRepo.flushParts()
+
+    const parts = await messageRepo.getMessageParts(msg.id)
+    expect(parts).toHaveLength(1)
+    // Content must NOT be doubled into "Hello worldHello world".
+    expect(parts[0].content_json).toBe(JSON.stringify({ content: 'Hello world' }))
+  })
+
   it('upserts tool snapshots instead of creating duplicate tool_use parts', async () => {
     const msg = await messageRepo.createMessage({
       topicId,
