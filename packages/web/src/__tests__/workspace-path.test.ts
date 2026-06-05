@@ -4,6 +4,7 @@ import {
   getTopicCwd,
   getTopicDirectoryLabel,
   getWorkspaceDirMatches,
+  getWorkspaceRelativePath,
   joinWorkspacePath,
   resolveWorkspaceCwd,
 } from '@/lib/workspace-path'
@@ -49,6 +50,13 @@ describe('workspace path helpers', () => {
     })
 
     expect(getTopicDirectoryLabel(topic, workspace.workspacePath)).toBe('/Design')
+  })
+
+  it('keeps the root available while non-footer displays use relative paths', () => {
+    const full = joinWorkspacePath(workspace.workspacePath, '/agent-chat')
+
+    expect(full).toBe('/Users/test/Desktop/workspace/agent-chat')
+    expect(getWorkspaceRelativePath(full, workspace.workspacePath)).toBe('/agent-chat')
   })
 })
 
