@@ -19,6 +19,8 @@ type TabId = 'attention' | 'todo' | 'plan' | 'artifacts' | 'cron'
 export function InspectorPanel() {
   const [tab, setTab] = useState<TabId>('attention')
   const [attentionExpanded, setAttentionExpanded] = useState(false)
+  const [attentionClosing, setAttentionClosing] = useState(false)
+  const attentionCloseTimerRef = useRef<number | null>(null)
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const artifacts = useArtifactStore((s) =>
     activeTopicId ? (s.byTopic[activeTopicId] ?? EMPTY_ARTIFACTS) : EMPTY_ARTIFACTS,
@@ -35,6 +37,31 @@ export function InspectorPanel() {
     () => (activeTopicId ? allCrons.filter((cron) => cron.originTopicId === activeTopicId) : []),
     [activeTopicId, allCrons],
   )
+  useEffect(() => () => {
+    if (attentionCloseTimerRef.current != null) {
+      window.clearTimeout(attentionCloseTimerRef.current)
+    }
+  }, [])
+
+  const openAttentionOverlay = () => {
+    if (attentionCloseTimerRef.current != null) {
+      window.clearTimeout(attentionCloseTimerRef.current)
+      attentionCloseTimerRef.current = null
+    }
+    setAttentionClosing(false)
+    setAttentionExpanded(true)
+  }
+
+  const closeAttentionOverlay = () => {
+    if (!attentionExpanded || attentionClosing) return
+    setAttentionClosing(true)
+    attentionCloseTimerRef.current = window.setTimeout(() => {
+      setAttentionExpanded(false)
+      setAttentionClosing(false)
+      attentionCloseTimerRef.current = null
+    }, 240)
+  }
+
   if (inspectorCollapsed) {
     return (
       <div
@@ -110,14 +137,14 @@ export function InspectorPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
-        {tab === 'attention' && activeTopicId && <AttentionInspectorTab topicId={activeTopicId} onExpand={() => setAttentionExpanded(true)} />}
+        {tab === 'attention' && activeTopicId && <AttentionInspectorTab topicId={activeTopicId} onExpand={openAttentionOverlay} />}
         {tab === 'todo' && <TodoTab todos={todos} />}
         {tab === 'plan' && <PlanTab plan={plan} />}
         {tab === 'artifacts' && <ArtifactsTab artifacts={artifacts} />}
         {tab === 'cron' && <CronTab topicId={activeTopicId} />}
       </div>
       {attentionExpanded && activeTopicId && (
-        <AttentionInspectorOverlay topicId={activeTopicId} onClose={() => setAttentionExpanded(false)} />
+        <AttentionInspectorOverlay topicId={activeTopicId} closing={attentionClosing} onClose={closeAttentionOverlay} />
       )}
     </div>
   )
@@ -194,7 +221,7 @@ function AttentionMiniNode({ node }: { node: MindMapNode }) {
   )
 }
 
-function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onClose: () => void }) {
+function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: string; closing: boolean; onClose: () => void }) {
   const { nodes, goalAnchor, planItems, rawEvents } = useAttentionTrace(topicId)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
@@ -225,7 +252,11 @@ function AttentionInspectorOverlay({ topicId, onClose }: { topicId: string; onCl
         backdropFilter: 'blur(60px) saturate(200%)',
         borderLeft: '1px solid var(--hairline-2)',
         boxShadow: '-28px 0 80px rgba(0,0,0,.50)',
-        animation: 'attention-inspector-expand 220ms cubic-bezier(0.22,1,0.36,1) both',
+        transformOrigin: 'right center',
+        animation: closing
+          ? 'attention-inspector-collapse 220ms cubic-bezier(0.55,0,0.32,1) both'
+          : 'attention-inspector-expand 260ms cubic-bezier(0.22,1,0.36,1) both',
+        pointerEvents: closing ? 'none' : 'auto',
       }}
     >
       <button

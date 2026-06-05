@@ -363,8 +363,13 @@ code, pre {
 }
 
 @keyframes attention-inspector-expand {
-  0% { opacity: .78; transform: translateX(24px); }
-  100% { opacity: 1; transform: translateX(0); }
+  0% { opacity: .86; clip-path: inset(0 0 0 92%); transform: translateX(20px); }
+  100% { opacity: 1; clip-path: inset(0 0 0 0); transform: translateX(0); }
+}
+
+@keyframes attention-inspector-collapse {
+  0% { opacity: 1; clip-path: inset(0 0 0 0); transform: translateX(0); }
+  100% { opacity: .82; clip-path: inset(0 0 0 92%); transform: translateX(24px); }
 }
 
 /* ───── InteractionCard choice mode ───── */
