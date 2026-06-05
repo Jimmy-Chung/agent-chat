@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-05 [v1.9.9] — fix: 消息重复 + 会话重连红点
+
+- 修复会话重建后**助手消息重复**：`recreateSession` 不再以 `lastSeq:0` 要求 adapter 全量重放；并在落库层对已 `done` 的消息丢弃重放 delta（幂等兜底），避免内容被二次累加。
+- 修复空闲后**重连/重建被 `jwt_expired` 拒绝导致的红点**：在每次新建 adapter WS 连接前用 `deviceCredential` 重新签发 access_token（覆盖 create/reconnect/recreate），重试不再因过期凭证失败。
+- 日志保真：adapter 连接失败不再记成 `[object Object]`，改为真实 code/message；连接日志屏蔽 `access_token`。
+- 版本显示更新为 `v1.9.9`。
+
 ## 2026-06-05 [v1.9.8] — fix: Attention 展开层遮挡与收起
 
 - 修复 Attention 全尺寸展开层透明度过高的问题，展开层改为明确的高不透明背景，不再继承全局 glass modal 透明度。
