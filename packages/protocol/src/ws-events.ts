@@ -238,13 +238,17 @@ export const artifactDownloadReadySchema = z.object({
   expiresAt: z.number(),
 })
 
-const sopTemplateSummarySchema = z.object({
+export const sopTemplateSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   icon: z.string().nullable(),
   description: z.string().nullable(),
   agent_type: z.enum(['programming', 'general', 'any']),
-  workflow_mode: z.enum(['lazy', 'eager', 'off']),
+  instruction: z.string(),
+  input_contract: z.string().nullable(),
+  output_contract: z.string(),
+  plan_template: z.string().nullable(),
+  todo_items_json: z.string().nullable(),
   builtin: z.boolean(),
   created_at: z.number(),
   updated_at: z.number(),
@@ -252,6 +256,15 @@ const sopTemplateSummarySchema = z.object({
 
 export const sopTemplateListSchema = z.object({
   templates: z.array(sopTemplateSummarySchema),
+})
+
+export const sopTemplateGeneratedSchema = z.object({
+  template: sopTemplateSummarySchema.omit({
+    id: true,
+    builtin: true,
+    created_at: true,
+    updated_at: true,
+  }),
 })
 
 export const usageSnapshotSchema = z.object({
@@ -403,6 +416,7 @@ export type ServerEvent =
   | { type: 'artifact.upload.ready'; data: z.infer<typeof artifactUploadReadySchema> }
   | { type: 'artifact.download.ready'; data: z.infer<typeof artifactDownloadReadySchema> }
   | { type: 'sop_template.list'; data: z.infer<typeof sopTemplateListSchema> }
+  | { type: 'sop_template.generated'; data: z.infer<typeof sopTemplateGeneratedSchema> }
   | { type: 'usage.snapshot'; data: z.infer<typeof usageSnapshotSchema> }
   | { type: 'session.health'; data: z.infer<typeof sessionHealthSchema> }
   | { type: 'session.status'; data: z.infer<typeof sessionStatusSchema> }
@@ -444,6 +458,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'artifact.upload.ready': artifactUploadReadySchema,
   'artifact.download.ready': artifactDownloadReadySchema,
   'sop_template.list': sopTemplateListSchema,
+  'sop_template.generated': sopTemplateGeneratedSchema,
   'usage.snapshot': usageSnapshotSchema,
   'session.health': sessionHealthSchema,
   'session.status': sessionStatusSchema,
@@ -480,8 +495,30 @@ export const topicCreateSchema = z.object({
     })
     .optional(),
   sopTemplateId: z.string().optional(),
+  sopIds: z.array(z.string()).optional(),
   providerId: z.string().optional(),
   model: z.string().optional(),
+})
+
+export const sopTemplateSaveSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1),
+  icon: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  agent_type: z.enum(['programming', 'general', 'any']),
+  instruction: z.string().min(1),
+  input_contract: z.string().nullable().optional(),
+  output_contract: z.string().min(1),
+  plan_template: z.string().nullable().optional(),
+  todo_items_json: z.string().nullable().optional(),
+})
+
+export const sopTemplateDeleteSchema = z.object({
+  id: z.string(),
+})
+
+export const sopTemplateGenerateSchema = z.object({
+  topicId: z.string(),
 })
 
 export const topicDeleteSchema = z.object({
@@ -651,6 +688,10 @@ export type ClientEvent =
   | { type: 'cron.resume'; data: z.infer<typeof cronResumeSchema> }
   | { type: 'mcp.command'; data: z.infer<typeof mcpCommandSchema> }
   | { type: 'provider.rpc'; data: z.infer<typeof providerRpcSchema> }
+  | { type: 'sop_template.create'; data: z.infer<typeof sopTemplateSaveSchema> }
+  | { type: 'sop_template.update'; data: z.infer<typeof sopTemplateSaveSchema> }
+  | { type: 'sop_template.delete'; data: z.infer<typeof sopTemplateDeleteSchema> }
+  | { type: 'sop_template.generate'; data: z.infer<typeof sopTemplateGenerateSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -676,4 +717,8 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'cron.resume': cronResumeSchema,
   'mcp.command': mcpCommandSchema,
   'provider.rpc': providerRpcSchema,
+  'sop_template.create': sopTemplateSaveSchema,
+  'sop_template.update': sopTemplateSaveSchema,
+  'sop_template.delete': sopTemplateDeleteSchema,
+  'sop_template.generate': sopTemplateGenerateSchema,
 }

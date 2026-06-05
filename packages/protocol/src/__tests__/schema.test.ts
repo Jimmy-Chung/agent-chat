@@ -38,6 +38,7 @@ import {
   topicCreateSchema,
   topicDeleteSchema,
   topicResumeSchema,
+  sopTemplateSaveSchema,
   usageSnapshotSchema,
   userActionSchema,
   userMessageSchema,
@@ -910,6 +911,29 @@ describe('Client event schemas', () => {
     })
     expect(result.providerId).toBe('pi-deepseek')
     expect(result.model).toBe('deepseek-4pro')
+  })
+
+  it('parses topic.create with ordered SOP ids', () => {
+    const result = topicCreateSchema.parse({
+      name: 'Workflow',
+      agentType: 'general',
+      sopIds: ['sop-1', 'sop-2'],
+    })
+    expect(result.sopIds).toEqual(['sop-1', 'sop-2'])
+  })
+
+  it('parses SOP save without workflowMode', () => {
+    const result = sopTemplateSaveSchema.parse({
+      name: 'Review',
+      agent_type: 'programming',
+      instruction: 'Review changes',
+      input_contract: 'Diff',
+      output_contract: 'Review report',
+      plan_template: null,
+      todo_items_json: null,
+    })
+    expect(result.output_contract).toBe('Review report')
+    expect('workflowMode' in result).toBe(false)
   })
 
   it('parses topic.delete', () => {
