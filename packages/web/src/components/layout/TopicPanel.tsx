@@ -19,6 +19,7 @@ import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
 import { resolvePiBadgeState, resolveTopicSessionDotState } from '@/lib/connection-status'
+import { getTopicCwd, getTopicDirectoryLabel } from '@/lib/workspace-path'
 
 class TopicErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -133,26 +134,8 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
 
   const workspacePath = useWsStore((s) => s.workspacePath)
 
-  const projectDir = useMemo(() => {
-    const specJson = activeTopic.agent_type === 'programming'
-      ? activeTopic.programming_spec_json
-      : activeTopic.general_spec_json
-    if (!specJson) return undefined
-    try {
-      const cwd = (JSON.parse(specJson).cwd ?? '').trim()
-      return cwd || undefined
-    } catch { return undefined }
-  }, [activeTopic.agent_type, activeTopic.programming_spec_json, activeTopic.general_spec_json])
-
-  // Display path with the workspace root stripped (full path kept for hover/title).
-  const projectDirDisplay = useMemo(() => {
-    if (!projectDir) return undefined
-    const full = projectDir.replace(/\/+$/, '') || '/'
-    const root = (workspacePath ?? '').trim().replace(/\/+$/, '')
-    if (root && full.startsWith(`${root}/`)) return full.slice(root.length + 1)
-    if (root && full === root) return full.split('/').pop() || full
-    return full.startsWith('/') ? full.split('/').pop()! : full
-  }, [projectDir, workspacePath])
+  const projectDir = useMemo(() => getTopicCwd(activeTopic) ?? undefined, [activeTopic])
+  const projectDirDisplay = useMemo(() => getTopicDirectoryLabel(activeTopic, workspacePath) ?? undefined, [activeTopic, workspacePath])
 
   const approvalsByMessage = useMemo(() => {
     const map: Record<string, { interactionId: string; interactionKind: string; prompt: string; options?: string[]; status: 'pending' | 'resolved' | 'timeout'; response?: string }> = {}
@@ -226,6 +209,21 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
           <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.012em' }}>
             {activeTopic.name}
           </h2>
+          {projectDirDisplay && (
+            <span
+              className="hidden min-w-0 max-w-[220px] shrink truncate rounded-md px-1.5 text-[11px] font-medium sm:inline-block"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--hairline)',
+                color: 'var(--fg-dim)',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: '19px',
+              }}
+              title={projectDirDisplay}
+            >
+              {projectDirDisplay}
+            </span>
+          )}
           {sessionDotState !== 'hidden' && (
             <span
               title={sessionDotState === 'healthy' ? '当前话题链路健康' : '当前话题链路异常'}
@@ -253,17 +251,6 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
             普通
           </Chip>
-        )}
-
-        {projectDirDisplay && (
-          <span
-            className="hidden min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-medium sm:inline-flex"
-            style={{ height: 22, maxWidth: 240, background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-dim)', letterSpacing: '-0.005em' }}
-            title={projectDir}
-          >
-            <svg className="shrink-0" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>
-            <span className="truncate">{projectDirDisplay}</span>
-          </span>
         )}
 
         <div className="ml-auto flex items-center gap-2">

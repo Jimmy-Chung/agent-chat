@@ -3,25 +3,7 @@
 import { useState, useCallback } from 'react'
 import type { Topic } from '@agent-chat/protocol'
 import { useIsMobile } from '@/hooks/use-is-mobile'
-
-function getTopicCwdDir(topic: Topic, workspaceRoot?: string | null): string | null {
-  const specJson = topic.agent_type === 'programming'
-    ? topic.programming_spec_json
-    : topic.general_spec_json
-  if (!specJson) return null
-  try {
-    const parsed = JSON.parse(specJson) as { cwd?: string }
-    const cwd = (parsed.cwd ?? '').trim().replace(/\/+$/, '') || '/'
-    if (cwd === '/' || !cwd) return null
-    // Strip workspace root prefix to get relative path
-    const root = (workspaceRoot ?? '').trim().replace(/\/+$/, '')
-    if (root && cwd.startsWith(root + '/')) return cwd.slice(root.length + 1)
-    if (root && cwd === root) return '/'
-    return cwd.startsWith('/') ? cwd.split('/').pop()! : cwd
-  } catch {
-    return null
-  }
-}
+import { getTopicCwd, getTopicDirectoryLabel } from '@/lib/workspace-path'
 
 interface TopicItemProps {
   topic: Topic
@@ -38,7 +20,8 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
   const [hovered, setHovered] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const showDelete = !isSystem && onDelete && (hovered || isMobile)
-  const cwdDir = getTopicCwdDir(topic, workspaceRoot)
+  const cwd = getTopicCwd(topic)
+  const cwdDir = getTopicDirectoryLabel(topic, workspaceRoot)
 
   const toggleExpand = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -73,21 +56,7 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
 
         {/* Body */}
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            {cwdDir && (
-              <span
-                className="shrink-0 rounded-md px-1 text-[10px] font-medium"
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid var(--hairline)',
-                  color: 'var(--fg-dim)',
-                  fontFamily: 'var(--font-mono)',
-                  lineHeight: '18px',
-                }}
-              >
-                {cwdDir}
-              </span>
-            )}
+          <div className="flex min-w-0 items-center gap-1.5">
             <span
               className="truncate text-[13px]"
               style={{
@@ -98,6 +67,21 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
             >
               {topic.name}
             </span>
+            {cwdDir && (
+              <span
+                className="min-w-0 max-w-[92px] shrink truncate rounded-md px-1 text-[10px] font-medium"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--hairline)',
+                  color: 'var(--fg-dim)',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: '18px',
+                }}
+                title={cwdDir}
+              >
+                {cwdDir}
+              </span>
+            )}
           </div>
           {expanded && (
             <div className="mt-1.5 flex flex-col gap-1 pl-0.5" style={{ maxWidth: '100%' }}>
@@ -108,18 +92,8 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
                 </div>
               )}
               {cwdDir && (
-                <div className="text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
-                  {(topic.agent_type === 'programming' ? topic.programming_spec_json : topic.general_spec_json)
-                    ? (() => {
-                        try {
-                          const specJson = topic.agent_type === 'programming'
-                            ? topic.programming_spec_json
-                            : topic.general_spec_json
-                          const parsed = JSON.parse(specJson!) as { cwd?: string }
-                          return parsed.cwd || ''
-                        } catch { return '' }
-                      })()
-                    : ''}
+                <div className="truncate text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }} title={cwd ?? undefined}>
+                  {cwd}
                 </div>
               )}
             </div>
