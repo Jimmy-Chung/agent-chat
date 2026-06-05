@@ -20,27 +20,10 @@ import { AdapterConnectionModal } from '@/components/AdapterConnectionModal'
 import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
-import { getWorkspaceDirMatches, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
+import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, normalizeCwd, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
 import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
-
-function normalizeCwd(cwd: string): string {
-  return cwd.trim().replace(/\/+$/, '') || '/'
-}
-
-function getTopicCwd(topic: import('@agent-chat/protocol').Topic): string | null {
-  const specJson = topic.agent_type === 'programming'
-    ? topic.programming_spec_json
-    : topic.general_spec_json
-  if (!specJson) return null
-  try {
-    const parsed = JSON.parse(specJson) as { cwd?: string }
-    return parsed.cwd ? normalizeCwd(parsed.cwd) : null
-  } catch {
-    return null
-  }
-}
 
 function findTopicByCwd(topics: import('@agent-chat/protocol').Topic[], cwd: string) {
   const normalized = normalizeCwd(cwd)
@@ -570,6 +553,7 @@ export function Sidebar() {
   const handleCreateTopic = async () => {
     const name = newTopicName.trim()
     if (!name) return
+    if (name.startsWith('/')) return
     let currentWorkspace = workspace
     if (newTopicAgent === 'programming' && cwd.trim().startsWith('/') && !currentWorkspace) {
       setWorkspaceLoading(true)
@@ -646,9 +630,17 @@ export function Sidebar() {
 
   const systemTopics = topics.filter((t) => t.kind !== 'normal')
   const normalTopics = topics.filter((t) => t.kind === 'normal')
+  const trimmedSearch = search.trim()
+  const lowerSearch = trimmedSearch.toLowerCase()
 
-  const filteredNormal = search
-    ? normalTopics.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+  const filteredNormal = trimmedSearch
+    ? normalTopics.filter((topic) => {
+        if (trimmedSearch.startsWith('/')) {
+          const directory = getTopicDirectoryLabel(topic, workspacePath)
+          return directory ? directory.toLowerCase().includes(lowerSearch) : false
+        }
+        return topic.name.toLowerCase().includes(lowerSearch)
+      })
     : normalTopics
 
   return (
@@ -721,7 +713,7 @@ export function Sidebar() {
         <div className="shrink-0 px-3 pb-2 pt-1">
           <input
             type="text"
-            placeholder="搜索话题..."
+            placeholder="搜索话题或目录"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg px-2.5 text-[12.5px] outline-none"
@@ -847,14 +839,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.13</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.9.14</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.13</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.14</span>
               </Tooltip>
             </div>
           </div>
@@ -954,6 +946,9 @@ function CreateTopicModal({
   onCwdChange: (value: string) => void
   onLoadWorkspace: () => void
 }) {
+  const trimmedName = name.trim()
+  const nameStartsWithSlash = trimmedName.startsWith('/')
+  const canSubmit = Boolean(trimmedName) && !nameStartsWithSlash
   const cwdMatches = useMemo(
     () => workspace ? getWorkspaceDirMatches(cwd, workspace.subDirList).slice(0, 8) : [],
     [cwd, workspace],
@@ -963,11 +958,11 @@ function CreateTopicModal({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
-      if (e.key === 'Enter' && !e.shiftKey) onSubmit()
+      if (e.key === 'Enter' && !e.shiftKey && canSubmit) onSubmit()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onClose, onSubmit])
+  }, [canSubmit, onClose, onSubmit])
 
   return (
     <div
@@ -1005,13 +1000,19 @@ function CreateTopicModal({
                 onChange={(e) => onNameChange(e.target.value)}
                 autoFocus
                 placeholder="例如：优化移动端布局"
+                aria-invalid={nameStartsWithSlash}
                 className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
                 style={{
                   background: 'rgba(0,0,0,.28)',
                   color: 'var(--fg-strong)',
-                  border: '1px solid var(--hairline-2)',
+                  border: nameStartsWithSlash ? '1px solid rgba(255,69,58,.55)' : '1px solid var(--hairline-2)',
                 }}
               />
+              {nameStartsWithSlash && (
+                <p className="mt-2 text-[12px]" style={{ color: '#FF8B82' }}>
+                  话题名不能以 / 开头。按目录创建请填写下方工作目录。
+                </p>
+              )}
             </Field>
 
             <Field label="Agent 类型">
@@ -1187,12 +1188,12 @@ function CreateTopicModal({
             <button
               type="button"
               onClick={onSubmit}
-              disabled={!name.trim()}
+              disabled={!canSubmit}
               className="inline-flex h-9 items-center rounded-xl px-4 text-sm font-semibold"
               style={{
-                background: name.trim() ? 'linear-gradient(180deg, #2090FF, #0A84FF 60%, #0064D8)' : 'var(--glass-2)',
-                color: name.trim() ? '#fff' : 'var(--fg-dim)',
-                boxShadow: name.trim() ? 'inset 0 1px 0 rgba(255,255,255,0.26), 0 6px 16px rgba(10,132,255,0.38)' : 'none',
+                background: canSubmit ? 'linear-gradient(180deg, #2090FF, #0A84FF 60%, #0064D8)' : 'var(--glass-2)',
+                color: canSubmit ? '#fff' : 'var(--fg-dim)',
+                boxShadow: canSubmit ? 'inset 0 1px 0 rgba(255,255,255,0.26), 0 6px 16px rgba(10,132,255,0.38)' : 'none',
               }}
             >
               创建话题
