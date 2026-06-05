@@ -90,7 +90,9 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
     this.piClient = new PiClient(this.config)
     // Route ALL PI events through the event-router (handles DB writes + broadcast)
-    routePiEvents(this.piClient, this, this.config)
+    routePiEvents(this.piClient, this, this.config, {
+      waitUntil: (promise) => this.ctx.waitUntil(promise),
+    })
     this.piClient.on('rpc', async ({ sessionId, method, params, reply }) => {
       try {
         const result = await this.handleAdapterRpc(sessionId, method, params)

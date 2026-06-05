@@ -36,6 +36,7 @@ function createMockPiClient() {
     on: emitter.on.bind(emitter),
     emit: emitter.emit.bind(emitter),
     rpc: vi.fn(),
+    markSeqRouted: vi.fn(),
   }
 }
 
@@ -268,6 +269,37 @@ describe('Event router — session.health', () => {
     expect(mockHub.broadcast).toHaveBeenCalledTimes(2)
   })
 
+  it('finalizes leftover streaming messages when agent.status idle arrives', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Idle Finalize Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-idle-finalize' })
+    await messageRepo.createMessage({
+      id: 'msg-idle-leftover',
+      topicId: topic.id,
+      role: 'assistant',
+    })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-idle-finalize',
+      ts: Date.now(),
+      payload: { kind: 'agent.status', state: 'idle' },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 50))
+
+    const msg = await messageRepo.getMessage('msg-idle-leftover')
+    expect(msg?.status).toBe('aborted')
+    expect(msg?.stop_reason).toBe('aborted')
+    const events = mockHub.getBroadcastEvents()
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message.end',
+      data: expect.objectContaining({ messageId: 'msg-idle-leftover', stopReason: 'aborted' }),
+    }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent.status',
+      data: expect.objectContaining({ topicId: topic.id, state: 'idle' }),
+    }))
+  })
+
   it('accepts low seq events again after session recreate reset', async () => {
     const topic = await topicRepo.createTopic({ name: 'Recreate Reset', kind: 'normal', agentType: 'general' })
     await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-reset-1' })
@@ -339,6 +371,38 @@ describe('Event router — session.health', () => {
     const parts = await messageRepo.getMessageParts('msg-ooo-delta')
     expect(parts).toHaveLength(1)
     expect(parts[0].content_json).toBe(JSON.stringify({ kind: 'text', content: 'tail' }))
+  })
+
+  it('marks lastSeq only after routed events are persisted and exposes the route promise to waitUntil', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Routed Seq Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-routed-seq' })
+    const waitUntil = vi.fn()
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    routePiEvents(mockPi as any, mockHub as any, undefined, { waitUntil })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-routed-seq',
+      ts: Date.now(),
+      payload: { kind: 'message.start', messageId: 'msg-routed-seq', role: 'assistant' },
+    } satisfies PIEvent)
+    mockPi.emit('event', {
+      seq: 2,
+      sessionId: 'sess-routed-seq',
+      ts: Date.now(),
+      payload: { kind: 'message.end', messageId: 'msg-routed-seq', stopReason: 'end_turn' },
+    } satisfies PIEvent)
+
+    expect(waitUntil).toHaveBeenCalled()
+    const promises = waitUntil.mock.calls.map((call) => call[0] as Promise<unknown>)
+    await Promise.all(promises)
+
+    const msg = await messageRepo.getMessage('msg-routed-seq')
+    expect(msg?.status).toBe('done')
+    expect(msg?.stop_reason).toBe('end_turn')
+    expect(mockPi.markSeqRouted).toHaveBeenCalledWith('sess-routed-seq', 1)
+    expect(mockPi.markSeqRouted).toHaveBeenCalledWith('sess-routed-seq', 2)
   })
 
   it('persists streaming text in seq order when adapter delivery is interleaved', async () => {
