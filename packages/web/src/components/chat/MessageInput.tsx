@@ -70,8 +70,8 @@ interface MessageInputProps {
 }
 
 export function MessageInput({ topicId }: MessageInputProps) {
-  const [value, setValue] = useState('')
-  const [mentions, setMentions] = useState<Mention[]>([])
+  const [draftsByTopic, setDraftsByTopic] = useState<Record<string, string>>({})
+  const [mentionsByTopic, setMentionsByTopic] = useState<Record<string, Mention[]>>({})
   const [uploading, setUploading] = useState(false)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerQuery, setPickerQuery] = useState('')
@@ -82,6 +82,30 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const wsClient = getWsClient()
+  const value = draftsByTopic[topicId] ?? ''
+  const mentions = mentionsByTopic[topicId] ?? []
+
+  const setTopicValue = useCallback((next: string) => {
+    setDraftsByTopic((prev) => {
+      if (!next) {
+        const { [topicId]: _removed, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [topicId]: next }
+    })
+  }, [topicId])
+
+  const setTopicMentions = useCallback((next: Mention[] | ((prev: Mention[]) => Mention[])) => {
+    setMentionsByTopic((prev) => {
+      const current = prev[topicId] ?? []
+      const resolved = typeof next === 'function' ? next(current) : next
+      if (resolved.length === 0) {
+        const { [topicId]: _removed, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [topicId]: resolved }
+    })
+  }, [topicId])
 
   const streamingTopicId = useMessageStore((s) => s.streamingTopicId)
   const isStreaming = streamingTopicId === topicId
@@ -124,7 +148,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
 
   // Sync current model from topic
   useEffect(() => {
-    if (currentModel) setSelectedModel(currentModel)
+    setSelectedModel(currentModel ?? '')
   }, [currentModel])
 
   // Auto-select first model when topic has no model set yet
@@ -169,8 +193,8 @@ export function MessageInput({ topicId }: MessageInputProps) {
 
     if (agentStatus === 'processing') {
       useMessageStore.getState().addPendingMessage(topicId, trimmed, clientMessageId)
-      setValue('')
-      setMentions([])
+      setTopicValue('')
+      setTopicMentions([])
       return
     }
 
@@ -184,9 +208,9 @@ export function MessageInput({ topicId }: MessageInputProps) {
       },
     })
     if (!sent) return
-    setValue('')
-    setMentions([])
-  }, [value, topicId, wsClient, mentions, agentStatus])
+    setTopicValue('')
+    setTopicMentions([])
+  }, [value, topicId, wsClient, mentions, agentStatus, setTopicValue, setTopicMentions])
 
   const handleAbort = useCallback(() => {
     wsClient.send({
@@ -256,7 +280,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value
-    setValue(v)
+    setTopicValue(v)
 
     const cursorPos = e.target.selectionStart
     const textBefore = v.slice(0, cursorPos)
@@ -276,10 +300,10 @@ export function MessageInput({ topicId }: MessageInputProps) {
     const textBeforeCursor = value.slice(0, cursorPos)
     const replaced = textBeforeCursor.replace(/@\S*$/, `@${artifact.name} `)
     const newText = replaced + value.slice(cursorPos)
-    setValue(newText)
+    setTopicValue(newText)
 
     if (!mentions.find((m) => m.id === artifact.id)) {
-      setMentions((prev) => [...prev, { id: artifact.id, name: artifact.name }])
+      setTopicMentions((prev) => [...prev, { id: artifact.id, name: artifact.name }])
     }
     setShowPicker(false)
 
@@ -293,7 +317,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
   }
 
   const removeMention = (id: string) => {
-    setMentions((prev) => prev.filter((m) => m.id !== id))
+    setTopicMentions((prev) => prev.filter((m) => m.id !== id))
   }
 
   // Build filtered artifact list

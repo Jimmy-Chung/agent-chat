@@ -474,6 +474,7 @@ export const topicCreateSchema = z.object({
     .optional(),
   sopTemplateId: z.string().optional(),
   providerId: z.string().optional(),
+  model: z.string().optional(),
 })
 
 export const topicDeleteSchema = z.object({

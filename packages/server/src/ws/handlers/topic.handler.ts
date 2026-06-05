@@ -71,6 +71,8 @@ export function registerTopicHandlers(
         : null,
       generalSpecJson,
       sopTemplateId: data.sopTemplateId,
+      currentProviderId: data.providerId ?? null,
+      currentModel: data.model ?? null,
     })
     broadcaster.broadcast('topic.created', topic)
 
@@ -81,6 +83,8 @@ export function registerTopicHandlers(
         programming: data.agentType === 'programming' ? data.programming : undefined,
         general: data.agentType === 'general' ? generalSpec : undefined,
       }
+      if (data.providerId) sessionParams.providerId = data.providerId
+      if (data.model) sessionParams.initialModel = data.model
 
       if (sopTemplate) {
         sessionParams.workflowMode = sopTemplate.workflow_mode
@@ -169,12 +173,33 @@ export function registerTopicHandlers(
 
     if (topic.pi_session_id) {
       try {
-        await pi.rpc('setSessionModel', {
+        const result = await pi.rpc('setSessionModel', {
           sessionId: topic.pi_session_id,
           model: data.model,
         })
+        if (!result?.ok) {
+          broadcaster.broadcast('error', {
+            code: 'MODEL_SWITCH_FAILED',
+            message: '模型切换失败',
+            details: {
+              topicId: data.id,
+              model: data.model,
+            },
+          })
+          return
+        }
       } catch (err) {
         logger.warn({ err }, 'Failed to set model on PI')
+        broadcaster.broadcast('error', {
+          code: 'MODEL_SWITCH_FAILED',
+          message: '模型切换失败',
+          details: {
+            topicId: data.id,
+            model: data.model,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        })
+        return
       }
     }
 

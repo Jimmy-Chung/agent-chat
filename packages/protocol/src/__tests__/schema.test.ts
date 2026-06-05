@@ -867,6 +867,17 @@ describe('Client event schemas', () => {
     expect(result.general?.cwd).toBe('/home/user/repo')
   })
 
+  it('parses topic.create with provider and default model', () => {
+    const result = topicCreateSchema.parse({
+      name: 'Chat',
+      agentType: 'general',
+      providerId: 'pi-deepseek',
+      model: 'deepseek-4pro',
+    })
+    expect(result.providerId).toBe('pi-deepseek')
+    expect(result.model).toBe('deepseek-4pro')
+  })
+
   it('parses topic.delete', () => {
     const result = topicDeleteSchema.parse({
       id: 't1',
