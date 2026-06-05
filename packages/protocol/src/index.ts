@@ -216,7 +216,9 @@ export {
   artifactListSchema,
   artifactUploadReadySchema,
   artifactDownloadReadySchema,
+  sopTemplateSummarySchema,
   sopTemplateListSchema,
+  sopTemplateGeneratedSchema,
   usageSnapshotSchema,
   errorSchema,
   sessionHealthSchema,
@@ -250,6 +252,9 @@ export {
   providerRpcSchema,
   providerRpcResultSchema,
   providerRpcErrorSchema,
+  sopTemplateSaveSchema,
+  sopTemplateDeleteSchema,
+  sopTemplateGenerateSchema,
   clientEventDataSchemas,
 } from './ws-events'
 

@@ -9,7 +9,11 @@ function makeTemplate(overrides: Partial<SopTemplate> = {}): SopTemplate {
     icon: null,
     description: 'Review code changes',
     agent_type: 'programming',
-    workflow_mode: 'lazy',
+    instruction: 'Review the diff and report issues.',
+    input_contract: 'A code diff',
+    output_contract: 'A prioritized review report',
+    plan_template: null,
+    todo_items_json: null,
     builtin: true,
     created_at: Date.now(),
     updated_at: Date.now(),
@@ -19,7 +23,7 @@ function makeTemplate(overrides: Partial<SopTemplate> = {}): SopTemplate {
 
 describe('SopTemplateStore', () => {
   beforeEach(() => {
-    useSopTemplateStore.setState({ templates: [] })
+    useSopTemplateStore.setState({ templates: [], generatedDraft: null })
   })
 
   it('should have correct initial state', () => {
@@ -41,5 +45,21 @@ describe('SopTemplateStore', () => {
       .setTemplates([makeTemplate({ id: 'tpl1' })])
     useSopTemplateStore.getState().setTemplates([])
     expect(useSopTemplateStore.getState().templates).toEqual([])
+  })
+
+  it('stores generated SOP drafts', () => {
+    const draft = {
+      name: 'Draft',
+      icon: null,
+      description: null,
+      agent_type: 'any' as const,
+      instruction: 'Do the work',
+      input_contract: null,
+      output_contract: 'Result',
+      plan_template: null,
+      todo_items_json: null,
+    }
+    useSopTemplateStore.getState().setGeneratedDraft(draft)
+    expect(useSopTemplateStore.getState().generatedDraft).toEqual(draft)
   })
 })

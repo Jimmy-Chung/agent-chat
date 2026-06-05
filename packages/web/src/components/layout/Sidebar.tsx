@@ -24,6 +24,7 @@ import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, getWorkspa
 import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
+import type { SopTemplate } from '@/stores/sop-template-store'
 
 function findTopicByCwd(topics: import('@agent-chat/protocol').Topic[], cwd: string) {
   const normalized = normalizeCwd(cwd)
@@ -408,7 +409,7 @@ export function Sidebar() {
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const workspaceLoadInFlight = useRef(false)
   const [permissionTier, setPermissionTier] = useState<PermissionTier>('normal')
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [selectedSopIds, setSelectedSopIds] = useState<string[]>([])
   const [deletingTopic, setDeletingTopic] = useState<{ id: string; name: string } | null>(null)
   const [showConnectionModal, setShowConnectionModal] = useState(false)
   const [showProviderConfig, setShowProviderConfig] = useState(false)
@@ -544,7 +545,7 @@ export function Sidebar() {
     setCwd('')
     setWorkspace(null)
     setWorkspaceError(null)
-    setSelectedTemplateId('')
+    setSelectedSopIds([])
   }
 
   const handleCreateTopic = async () => {
@@ -600,7 +601,7 @@ export function Sidebar() {
       data: {
         name,
         agentType: newTopicAgent,
-        sopTemplateId: selectedTemplateId || undefined,
+        sopIds: selectedSopIds.length > 0 ? selectedSopIds : undefined,
         ...(activeProviderId ? { providerId: activeProviderId } : {}),
         ...(initialModel ? { model: initialModel } : {}),
         ...(newTopicAgent === 'programming'
@@ -827,14 +828,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.18</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.10.0</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.18</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.0</span>
               </Tooltip>
             </div>
           </div>
@@ -852,7 +853,7 @@ export function Sidebar() {
               workspaceLoading={workspaceLoading}
               workspaceError={workspaceError}
               permissionTier={permissionTier}
-              selectedTemplateId={selectedTemplateId}
+              selectedSopIds={selectedSopIds}
               templates={programmingTemplates}
               onClose={closeNewTopicModal}
               onSubmit={handleCreateTopic}
@@ -860,7 +861,7 @@ export function Sidebar() {
               onAgentTypeChange={setNewTopicAgent}
               onExtensionChange={setExtension}
               onPermissionTierChange={setPermissionTier}
-              onSelectedTemplateIdChange={setSelectedTemplateId}
+              onSelectedSopIdsChange={setSelectedSopIds}
               onCwdChange={setCwd}
               onLoadWorkspace={loadWorkspace}
             />,
@@ -892,7 +893,7 @@ function CreateTopicModal({
   workspaceLoading,
   workspaceError,
   permissionTier,
-  selectedTemplateId,
+  selectedSopIds,
   templates,
   onClose,
   onSubmit,
@@ -900,7 +901,7 @@ function CreateTopicModal({
   onAgentTypeChange,
   onExtensionChange,
   onPermissionTierChange,
-  onSelectedTemplateIdChange,
+  onSelectedSopIdsChange,
   onCwdChange,
   onLoadWorkspace,
 }: {
@@ -912,31 +913,42 @@ function CreateTopicModal({
   workspaceLoading: boolean
   workspaceError: string | null
   permissionTier: PermissionTier
-  selectedTemplateId: string
-  templates: Array<{
-    id: string
-    name: string
-    icon: string | null
-    description: string | null
-    agent_type: 'programming' | 'general' | 'any'
-    workflow_mode: 'lazy' | 'eager' | 'off'
-    builtin: boolean
-    created_at: number
-    updated_at: number
-  }>
+  selectedSopIds: string[]
+  templates: SopTemplate[]
   onClose: () => void
   onSubmit: () => void
   onNameChange: (value: string) => void
   onAgentTypeChange: (value: AgentType) => void
   onExtensionChange: (value: ExtensionType) => void
   onPermissionTierChange: (value: PermissionTier) => void
-  onSelectedTemplateIdChange: (value: string) => void
+  onSelectedSopIdsChange: (value: string[]) => void
   onCwdChange: (value: string) => void
   onLoadWorkspace: () => void
 }) {
   const trimmedName = name.trim()
   const nameStartsWithSlash = trimmedName.startsWith('/')
   const canSubmit = Boolean(trimmedName) && !nameStartsWithSlash
+  const [draggedSopId, setDraggedSopId] = useState<string | null>(null)
+  const selectedSops = useMemo(
+    () => selectedSopIds
+      .map((id) => templates.find((template) => template.id === id))
+      .filter((template): template is SopTemplate => Boolean(template)),
+    [selectedSopIds, templates],
+  )
+  const availableSops = useMemo(
+    () => templates.filter((template) => !selectedSopIds.includes(template.id)),
+    [selectedSopIds, templates],
+  )
+  const moveSop = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return
+    const next = [...selectedSopIds]
+    const from = next.indexOf(sourceId)
+    const to = next.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    next.splice(from, 1)
+    next.splice(to, 0, sourceId)
+    onSelectedSopIdsChange(next)
+  }, [onSelectedSopIdsChange, selectedSopIds])
   const cwdMatches = useMemo(
     () => workspace ? getWorkspaceDirMatches(cwd, workspace.subDirList).slice(0, 8) : [],
     [cwd, workspace],
@@ -1029,25 +1041,64 @@ function CreateTopicModal({
             </Field>
 
             {templates.length > 0 && (
-              <Field label="SOP 模板">
-                <select
-                  value={selectedTemplateId}
-                  onChange={(e) => onSelectedTemplateIdChange(e.target.value)}
-                  className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
-                  style={{
-                    background: 'rgba(0,0,0,.28)',
-                    color: 'var(--fg-regular)',
-                    border: '1px solid var(--hairline-2)',
-                  }}
-                >
-                  <option value="">不使用模板</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.icon ? `${t.icon} ` : ''}
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+              <Field label="SOP 工作流">
+                <div className="space-y-2">
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (!e.target.value) return
+                      onSelectedSopIdsChange([...selectedSopIds, e.target.value])
+                    }}
+                    className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
+                    style={{
+                      background: 'rgba(0,0,0,.28)',
+                      color: 'var(--fg-regular)',
+                      border: '1px solid var(--hairline-2)',
+                    }}
+                  >
+                    <option value="">添加 SOP</option>
+                    {availableSops.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedSops.length > 0 && (
+                    <div className="space-y-1.5">
+                      {selectedSops.map((template, index) => (
+                        <div
+                          key={template.id}
+                          draggable
+                          onDragStart={() => setDraggedSopId(template.id)}
+                          onDragEnd={() => setDraggedSopId(null)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={() => {
+                            if (draggedSopId) moveSop(draggedSopId, template.id)
+                            setDraggedSopId(null)
+                          }}
+                          className="flex min-w-0 items-center gap-2 rounded-xl px-3 py-2"
+                          style={{
+                            background: draggedSopId === template.id ? 'rgba(10,132,255,.12)' : 'rgba(0,0,0,.20)',
+                            border: '1px solid var(--hairline)',
+                            color: 'var(--fg-regular)',
+                          }}
+                        >
+                          <span className="shrink-0 text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>{index + 1}</span>
+                          <span className="min-w-0 flex-1 truncate text-sm">{template.name}</span>
+                          <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{template.agent_type}</span>
+                          <button
+                            type="button"
+                            onClick={() => onSelectedSopIdsChange(selectedSopIds.filter((id) => id !== template.id))}
+                            className="shrink-0 rounded-md px-2 py-1 text-[12px]"
+                            style={{ color: 'var(--fg-dim)' }}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </Field>
             )}
 

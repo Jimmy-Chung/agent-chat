@@ -529,13 +529,33 @@ class WsClient {
             icon: (r.icon as string) ?? null,
             description: (r.description as string) ?? null,
             agent_type: r.agent_type as 'programming' | 'general' | 'any',
-            workflow_mode: r.workflow_mode as 'lazy' | 'eager' | 'off',
+            instruction: (r.instruction as string) ?? '',
+            input_contract: (r.input_contract as string) ?? null,
+            output_contract: (r.output_contract as string) ?? '',
+            plan_template: (r.plan_template as string) ?? null,
+            todo_items_json: (r.todo_items_json as string) ?? null,
             builtin: r.builtin as boolean,
             created_at: r.created_at as number,
             updated_at: r.updated_at as number,
           }
         })
         useSopTemplateStore.getState().setTemplates(templates)
+        break
+      }
+
+      case 'sop_template.generated': {
+        const template = (event.data as { template: Record<string, unknown> }).template
+        useSopTemplateStore.getState().setGeneratedDraft({
+          name: template.name as string,
+          icon: (template.icon as string) ?? null,
+          description: (template.description as string) ?? null,
+          agent_type: template.agent_type as 'programming' | 'general' | 'any',
+          instruction: (template.instruction as string) ?? '',
+          input_contract: (template.input_contract as string) ?? null,
+          output_contract: (template.output_contract as string) ?? '',
+          plan_template: (template.plan_template as string) ?? null,
+          todo_items_json: (template.todo_items_json as string) ?? null,
+        })
         break
       }
 

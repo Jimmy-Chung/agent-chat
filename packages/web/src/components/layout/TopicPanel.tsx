@@ -16,8 +16,10 @@ import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { McpSettingsModal } from '@/components/McpSettingsModal'
 import { AttentionDrawer } from '@/components/attention/AttentionDrawer'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { SopEditorModal } from '@/components/sop/SopEditorModal'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
+import type { SopTemplate, SopTemplateDraft } from '@/stores/sop-template-store'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
 import { resolvePiBadgeState, resolveTopicSessionDotState } from '@/lib/connection-status'
 import { getTopicCwd, getTopicDirectoryLabel } from '@/lib/workspace-path'
@@ -102,7 +104,20 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   const [renamingTopic, setRenamingTopic] = useState<{ id: string; name: string } | null>(null)
   const [showMcpSettings, setShowMcpSettings] = useState(false)
   const [showAttention, setShowAttention] = useState(false)
+  const generatedDraft = useSopTemplateStore((s) => s.generatedDraft)
+  const setGeneratedDraft = useSopTemplateStore((s) => s.setGeneratedDraft)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const saveSopDraft = useCallback((draft: SopTemplateDraft, id?: string) => {
+    getWsClient().send({
+      type: id ? 'sop_template.update' : 'sop_template.create',
+      data: {
+        ...(id ? { id } : {}),
+        ...draft,
+      },
+    })
+    setGeneratedDraft(null)
+  }, [setGeneratedDraft])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -303,6 +318,19 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
                 <button
                   onClick={() => {
                     setMenuOpen(false)
+                    getWsClient().send({ type: 'sop_template.generate', data: { topicId: activeTopic.id } })
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:opacity-80"
+                  style={{ color: 'var(--fg-regular)' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  生成 SOP
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false)
                     setDeletingTopic({ id: activeTopic.id, name: activeTopic.name })
                   }}
                   className="flex w-full items-center gap-2 px-4 py-2.5 text-sm transition-colors hover:opacity-80"
@@ -360,6 +388,16 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
 
       {showAttention && (
         <AttentionDrawer topicId={activeTopic.id} onClose={() => setShowAttention(false)} />
+      )}
+
+      {generatedDraft && typeof document !== 'undefined' && createPortal(
+        <SopEditorModal
+          title="从会话生成 SOP"
+          initial={generatedDraft}
+          onClose={() => setGeneratedDraft(null)}
+          onSave={saveSopDraft}
+        />,
+        document.body,
       )}
     </div>
   )
@@ -910,43 +948,101 @@ function CronAdminView() {
 
 function SopLibraryView() {
   const templates = useSopTemplateStore((s) => s.templates)
-  const builtinTemplates = templates.filter((t) => t.builtin)
-  const userTemplates = templates.filter((t) => !t.builtin)
+  const [editing, setEditing] = useState<SopTemplate | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  const handleSave = useCallback((draft: SopTemplateDraft, id?: string) => {
+    getWsClient().send({
+      type: id ? 'sop_template.update' : 'sop_template.create',
+      data: {
+        ...(id ? { id } : {}),
+        ...draft,
+      },
+    })
+    setEditing(null)
+    setCreating(false)
+  }, [])
 
   return (
     <div className="space-y-6">
-      {builtinTemplates.length > 0 && (
-        <section>
-          <h3 className="mb-3 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>内置模板</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {builtinTemplates.map((t) => <SopTemplateCard key={t.id} template={t} />)}
-          </div>
-        </section>
-      )}
-      {userTemplates.length > 0 && (
-        <section>
-          <h3 className="mb-3 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.10em' }}>我的模板</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {userTemplates.map((t) => <SopTemplateCard key={t.id} template={t} />)}
-          </div>
-        </section>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold" style={{ color: 'var(--fg-strong)' }}>SOP 中心</h3>
+          <p className="mt-1 text-[12px]" style={{ color: 'var(--fg-dim)' }}>创建可复用 SOP，并在新话题中组合为工作流。</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          className="ml-auto inline-flex h-9 items-center rounded-xl px-4 text-sm font-semibold"
+          style={{ background: 'rgba(10,132,255,.18)', border: '1px solid rgba(10,132,255,.32)', color: '#8fc6ff' }}
+        >
+          新建 SOP
+        </button>
+      </div>
+
+      {templates.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {templates.map((template) => (
+            <SopTemplateCard
+              key={template.id}
+              template={template}
+              onEdit={() => setEditing(template)}
+              onDelete={() => getWsClient().send({ type: 'sop_template.delete', data: { id: template.id } })}
+            />
+          ))}
+        </div>
       )}
       {templates.length === 0 && (
-        <p className="py-8 text-center text-sm" style={{ color: 'var(--fg-dim)' }}>暂无模板</p>
+        <p className="py-8 text-center text-sm" style={{ color: 'var(--fg-dim)' }}>暂无 SOP</p>
+      )}
+
+      {(creating || editing) && typeof document !== 'undefined' && createPortal(
+        <SopEditorModal
+          title={editing ? '编辑 SOP' : '新建 SOP'}
+          initial={editing ?? undefined}
+          onClose={() => { setEditing(null); setCreating(false) }}
+          onSave={handleSave}
+        />,
+        document.body,
       )}
     </div>
   )
 }
 
-function SopTemplateCard({ template }: { template: { id: string; name: string; icon: string | null; description: string | null; agent_type: string } }) {
+function SopTemplateCard({ template, onEdit, onDelete }: { template: SopTemplate; onEdit: () => void; onDelete: () => void }) {
   return (
     <div className="glass-1 p-4">
-      <div className="flex items-center gap-2">
-        {template.icon && <span>{template.icon}</span>}
-        <span className="text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{template.name}</span>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            {template.icon && <span>{template.icon}</span>}
+            <span className="truncate text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{template.name}</span>
+            <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{template.agent_type}</span>
+          </div>
+          {template.description && <p className="mt-2 line-clamp-2 text-xs" style={{ color: 'var(--fg-dim)' }}>{template.description}</p>}
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button type="button" onClick={onEdit} className="rounded-lg px-2 py-1 text-[12px]" style={{ color: 'var(--fg-regular)', background: 'rgba(255,255,255,.06)', border: '1px solid var(--hairline)' }}>
+            编辑
+          </button>
+          <button type="button" onClick={onDelete} className="rounded-lg px-2 py-1 text-[12px]" style={{ color: 'var(--state-danger)', background: 'rgba(255,69,58,.10)', border: '1px solid rgba(255,69,58,.20)' }}>
+            删除
+          </button>
+        </div>
       </div>
-      {template.description && <p className="mt-2 text-xs" style={{ color: 'var(--fg-dim)' }}>{template.description}</p>}
-      <span className="mt-2 inline-block rounded-full px-2 py-0.5 text-xs" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{template.agent_type}</span>
+      <div className="mt-3 grid gap-2 text-[12px] md:grid-cols-2">
+        <PreviewLine label="输入" value={template.input_contract || '默认'} />
+        <PreviewLine label="输出" value={template.output_contract} />
+      </div>
+    </div>
+  )
+}
+
+function PreviewLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg px-2 py-1.5" style={{ background: 'rgba(0,0,0,.18)', border: '1px solid var(--hairline)' }}>
+      <span className="mr-1" style={{ color: 'var(--fg-dim)' }}>{label}</span>
+      <span className="truncate" style={{ color: 'var(--fg-regular)' }}>{value}</span>
     </div>
   )
 }

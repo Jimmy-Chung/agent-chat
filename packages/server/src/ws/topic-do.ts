@@ -6,11 +6,13 @@ import {
   topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
   userMessageRetrySchema, userMessageSchema,
+  sopTemplateSaveSchema, sopTemplateDeleteSchema, sopTemplateGenerateSchema,
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
   searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema,
   mcpCommandSchema,
   providerRpcSchema,
 } from '@agent-chat/protocol'
+import type { TodoItem } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { errorDetail } from '../error-detail'
 import { PiClient } from '../pi/client'
@@ -43,6 +45,7 @@ import {
 import { abortSessionWithTimeout, finalizeTopicAbort } from './abort-control'
 import { listPendingInteractionHistory } from './interaction-history'
 import { buildConnectedSessionHealthPayload } from './session-health'
+import { buildSopDraftFromHistory, composeSopWorkflow, type SopNode } from '../sop/workflow'
 
 interface DOEnv {
   DB: D1Database
@@ -52,6 +55,22 @@ interface DOEnv {
 const HEARTBEAT_INTERVAL_MS = 30_000
 
 type SessionCreateTrigger = 'topic.create' | 'topic.select.retry'
+
+type SopTemplatePayload = {
+  id: string
+  name: string
+  icon: string | null
+  description: string | null
+  agent_type: 'programming' | 'general' | 'any'
+  instruction: string
+  input_contract: string | null
+  output_contract: string
+  plan_template: string | null
+  todo_items_json: string | null
+  builtin: boolean
+  created_at: number
+  updated_at: number
+}
 
 export class TopicDurableObject extends DurableObject<DOEnv> {
   private piClient: PiClient | null = null
@@ -168,7 +187,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     }
     try {
       const templates = await sopRepo.listTemplates()
-      this.sendTo(server, 'sop_template.list', { templates })
+      this.sendTo(server, 'sop_template.list', { templates: templates.map(sopTemplateToPayload) })
     } catch (err) {
       logger.warn({ err }, 'Failed to load SOP templates on connect')
     }
@@ -663,18 +682,35 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             break
           }
         }
-        const sopTemplate = data.sopTemplateId ? await sopRepo.getTemplate(data.sopTemplateId) : undefined
+        const selectedSopIds = data.sopIds?.length
+          ? data.sopIds
+          : data.sopTemplateId
+            ? [data.sopTemplateId]
+            : []
+        const selectedSops = []
+        for (const sopId of selectedSopIds) {
+          const template = await sopRepo.getTemplate(sopId)
+          if (!template) {
+            this.broadcastAll('error', { code: 'SOP_NOT_FOUND', message: 'SOP 不存在' })
+            return
+          }
+          if (template.agent_type !== 'any' && template.agent_type !== data.agentType) {
+            this.broadcastAll('error', { code: 'SOP_AGENT_TYPE_MISMATCH', message: 'SOP 不适用于当前 Agent 类型' })
+            return
+          }
+          selectedSops.push(template)
+        }
+        const sopWorkflow = composeSopWorkflow(selectedSops.map(sopTemplateToNode))
+
         const generalSpec = data.agentType === 'general'
           ? {
               ...data.general,
-              ...(sopTemplate
+              ...(sopWorkflow
                 ? {
-                    systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
-                    initialPlan: sopTemplate.plan_template ?? undefined,
-                    initialTodos: sopTemplate.todos_template_json
-                      ? JSON.parse(sopTemplate.todos_template_json)
-                      : undefined,
-                    workflowMode: sopTemplate.workflow_mode ?? undefined,
+                    systemPrompt: mergeSystemPrompt(undefined, sopWorkflow.composedInstruction),
+                    initialPlan: sopWorkflow.composedPlan,
+                    initialTodos: sopWorkflow.composedTodos,
+                    sopWorkflow,
                   }
                 : {}),
             }
@@ -682,14 +718,27 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const generalSpecJson = generalSpec && Object.values(generalSpec).some((value) => value !== undefined)
           ? JSON.stringify(generalSpec)
           : null
+        const programmingSpec = data.agentType === 'programming'
+          ? {
+              ...(data.programming ?? {}),
+              ...(sopWorkflow
+                ? {
+                    systemPrompt: mergeSystemPrompt(undefined, sopWorkflow.composedInstruction),
+                    sopWorkflow,
+                  }
+                : {}),
+            }
+          : undefined
 
         const topic = await topicRepo.createTopic({
           name: data.name,
           kind: 'normal',
           agentType: data.agentType,
-          programmingSpecJson: data.programming ? JSON.stringify(data.programming) : null,
+          programmingSpecJson: programmingSpec && Object.values(programmingSpec).some((value) => value !== undefined)
+            ? JSON.stringify(programmingSpec)
+            : null,
           generalSpecJson,
-          sopTemplateId: data.sopTemplateId,
+          sopTemplateId: selectedSopIds[0] ?? null,
           currentProviderId: data.providerId ?? null,
           currentModel: data.model ?? null,
         })
@@ -707,6 +756,98 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           topic,
           trigger: 'topic.create',
           providerId: data.providerId,
+        })
+        break
+      }
+
+      case 'sop_template.create': {
+        const data = sopTemplateSaveSchema.parse(frame.d)
+        await sopRepo.createTemplate({
+          name: data.name,
+          icon: data.icon ?? undefined,
+          description: data.description ?? undefined,
+          agentType: data.agent_type,
+          instruction: data.instruction,
+          inputContract: data.input_contract ?? null,
+          outputContract: data.output_contract,
+          planTemplate: data.plan_template ?? undefined,
+          todoItemsJson: data.todo_items_json ?? null,
+          builtin: false,
+        })
+        const templates = await sopRepo.listTemplates()
+        this.broadcastAll('sop_template.list', { templates: templates.map(sopTemplateToPayload) })
+        break
+      }
+
+      case 'sop_template.update': {
+        const data = sopTemplateSaveSchema.parse(frame.d)
+        if (!data.id) {
+          this.broadcastAll('error', { code: 'SOP_ID_REQUIRED', message: 'SOP id 不能为空' })
+          break
+        }
+        const updated = await sopRepo.updateTemplate(data.id, {
+          name: data.name,
+          icon: data.icon ?? null,
+          description: data.description ?? null,
+          agent_type: data.agent_type,
+          instruction: data.instruction,
+          input_contract: data.input_contract ?? null,
+          output_contract: data.output_contract,
+          plan_template: data.plan_template ?? null,
+          todo_items_json: data.todo_items_json ?? null,
+        })
+        if (!updated) {
+          this.broadcastAll('error', { code: 'SOP_NOT_FOUND', message: 'SOP 不存在或不可编辑' })
+          break
+        }
+        const templates = await sopRepo.listTemplates()
+        this.broadcastAll('sop_template.list', { templates: templates.map(sopTemplateToPayload) })
+        break
+      }
+
+      case 'sop_template.delete': {
+        const data = sopTemplateDeleteSchema.parse(frame.d)
+        const deleted = await sopRepo.deleteTemplate(data.id)
+        if (!deleted) {
+          this.broadcastAll('error', { code: 'SOP_NOT_FOUND', message: 'SOP 不存在或不可删除' })
+          break
+        }
+        const templates = await sopRepo.listTemplates()
+        this.broadcastAll('sop_template.list', { templates: templates.map(sopTemplateToPayload) })
+        break
+      }
+
+      case 'sop_template.generate': {
+        const data = sopTemplateGenerateSchema.parse(frame.d)
+        const topic = await topicRepo.getTopic(data.topicId)
+        if (!topic) {
+          this.broadcastAll('error', { code: 'TOPIC_NOT_FOUND', message: '话题不存在' })
+          break
+        }
+        const messages = await messageRepo.listMessagesByTopic(data.topicId, 200)
+        const history: Array<{ role: string; content: string }> = []
+        for (const message of messages) {
+          const parts = await messageRepo.getMessageParts(message.id)
+          const content = parts
+            .filter((part) => part.kind === 'text')
+            .map((part) => parseTextContent(part.content_json))
+            .filter(Boolean)
+            .join('\n')
+          if (content.trim()) history.push({ role: message.role, content })
+        }
+        const draft = buildSopDraftFromHistory({ topicName: topic.name, messages: history })
+        this.sendTo(ws, 'sop_template.generated', {
+          template: {
+            name: draft.name,
+            icon: null,
+            description: draft.description ?? null,
+            agent_type: draft.agent_type,
+            instruction: draft.instruction,
+            input_contract: draft.input_contract ?? null,
+            output_contract: draft.output_contract,
+            plan_template: draft.plan_template ?? null,
+            todo_items_json: draft.todo_items ? JSON.stringify(draft.todo_items) : null,
+          },
         })
         break
       }
@@ -1282,4 +1423,54 @@ function parseTextContent(contentJson: string): string {
   } catch {
     return ''
   }
+}
+
+function sopTemplateToPayload(template: sopRepo.SopTemplate): SopTemplatePayload {
+  return {
+    id: template.id,
+    name: template.name,
+    icon: template.icon,
+    description: template.description,
+    agent_type: template.agent_type,
+    instruction: template.instruction,
+    input_contract: template.input_contract,
+    output_contract: template.output_contract,
+    plan_template: template.plan_template,
+    todo_items_json: template.todo_items_json,
+    builtin: template.builtin,
+    created_at: template.created_at,
+    updated_at: template.updated_at,
+  }
+}
+
+function parseTodoItems(value: string | null): TodoItem[] | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as TodoItem[]
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function sopTemplateToNode(template: sopRepo.SopTemplate): SopNode {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    agent_type: template.agent_type,
+    instruction: template.instruction,
+    input_contract: template.input_contract,
+    output_contract: template.output_contract,
+    plan_template: template.plan_template,
+    todo_items: parseTodoItems(template.todo_items_json),
+    created_at: template.created_at,
+    updated_at: template.updated_at,
+  }
+}
+
+function mergeSystemPrompt(existing: string | undefined, addition: string | undefined): string | undefined {
+  if (!addition?.trim()) return existing
+  if (!existing?.trim()) return addition
+  return `${existing.trim()}\n\n${addition.trim()}`
 }

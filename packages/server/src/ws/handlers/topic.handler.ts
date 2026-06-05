@@ -1,4 +1,5 @@
 import type { WSFrame } from '@agent-chat/protocol'
+import type { TodoItem } from '@agent-chat/protocol'
 import { topicCreateSchema, topicDeleteSchema, topicRenameSchema, topicDetachExtensionSchema, topicSetModelSchema, topicSetPlanModeSchema, topicResumeSchema } from '@agent-chat/protocol'
 import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
@@ -7,6 +8,7 @@ import * as sopRepo from '../../db/repos/sop_template.repo'
 import { logger } from '../../logger'
 import type { EventBroadcaster } from '../../pi/event-router'
 import { restoreExistingTopicSession } from '../message-delivery'
+import { composeSopWorkflow, type SopNode } from '../../sop/workflow'
 
 export function registerTopicHandlers(
   hub: { on: (event: string, handler: (...args: unknown[]) => void) => void },
@@ -41,19 +43,30 @@ export function registerTopicHandlers(
       }
     }
 
-    const sopTemplate = data.sopTemplateId
-      ? await sopRepo.getTemplate(data.sopTemplateId)
-      : undefined
+    const selectedSopIds = data.sopIds?.length
+      ? data.sopIds
+      : data.sopTemplateId
+        ? [data.sopTemplateId]
+        : []
+    const selectedSops = []
+    for (const sopId of selectedSopIds) {
+      const template = await sopRepo.getTemplate(sopId)
+      if (!template) {
+        broadcaster.broadcast('error', { code: 'SOP_NOT_FOUND', message: 'SOP 不存在' })
+        return
+      }
+      selectedSops.push(template)
+    }
+    const sopWorkflow = composeSopWorkflow(selectedSops.map(sopTemplateToNode))
     const generalSpec = data.agentType === 'general'
       ? {
           ...data.general,
-          ...(sopTemplate
+          ...(sopWorkflow
             ? {
-                systemPrompt: sopTemplate.system_prompt_addon ?? undefined,
-                initialPlan: sopTemplate.plan_template ?? undefined,
-                initialTodos: sopTemplate.todos_template_json
-                  ? JSON.parse(sopTemplate.todos_template_json)
-                  : undefined,
+                systemPrompt: sopWorkflow.composedInstruction,
+                initialPlan: sopWorkflow.composedPlan,
+                initialTodos: sopWorkflow.composedTodos,
+                sopWorkflow,
               }
             : {}),
         }
@@ -62,15 +75,27 @@ export function registerTopicHandlers(
       ? JSON.stringify(generalSpec)
       : null
 
+    const programmingSpec = data.agentType === 'programming'
+      ? {
+          ...(data.programming ?? {}),
+          ...(sopWorkflow
+            ? {
+                systemPrompt: sopWorkflow.composedInstruction,
+                sopWorkflow,
+              }
+            : {}),
+        }
+      : undefined
+
     const topic = await topicRepo.createTopic({
       name: data.name,
       kind: 'normal',
       agentType: data.agentType,
-      programmingSpecJson: data.programming
-        ? JSON.stringify(data.programming)
+      programmingSpecJson: programmingSpec && Object.values(programmingSpec).some((value) => value !== undefined)
+        ? JSON.stringify(programmingSpec)
         : null,
       generalSpecJson,
-      sopTemplateId: data.sopTemplateId,
+      sopTemplateId: selectedSopIds[0] ?? null,
       currentProviderId: data.providerId ?? null,
       currentModel: data.model ?? null,
     })
@@ -80,15 +105,11 @@ export function registerTopicHandlers(
       const sessionParams: Record<string, unknown> = {
         kind: data.agentType,
         topicId: topic.id,
-        programming: data.agentType === 'programming' ? data.programming : undefined,
+        programming: data.agentType === 'programming' ? programmingSpec : undefined,
         general: data.agentType === 'general' ? generalSpec : undefined,
       }
       if (data.providerId) sessionParams.providerId = data.providerId
       if (data.model) sessionParams.initialModel = data.model
-
-      if (sopTemplate) {
-        sessionParams.workflowMode = sopTemplate.workflow_mode
-      }
 
       const result = await pi.createSession(sessionParams as Parameters<typeof pi.createSession>[0])
       const updated = await topicRepo.updateTopic(topic.id, {
@@ -253,4 +274,30 @@ export function registerTopicHandlers(
       }
     }
   })
+}
+
+function parseTodoItems(value: string | null): TodoItem[] | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as TodoItem[]
+    return Array.isArray(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function sopTemplateToNode(template: sopRepo.SopTemplate): SopNode {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    agent_type: template.agent_type,
+    instruction: template.instruction,
+    input_contract: template.input_contract,
+    output_contract: template.output_contract,
+    plan_template: template.plan_template,
+    todo_items: parseTodoItems(template.todo_items_json),
+    created_at: template.created_at,
+    updated_at: template.updated_at,
+  }
 }

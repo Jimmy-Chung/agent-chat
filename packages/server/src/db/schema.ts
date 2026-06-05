@@ -226,9 +226,13 @@ export const sopTemplates = sqliteTable(
     icon: text('icon'),
     description: text('description'),
     agentType: text('agent_type').notNull(),
+    instruction: text('instruction'),
+    inputContract: text('input_contract'),
+    outputContract: text('output_contract'),
     systemPromptAddon: text('system_prompt_addon'),
     planTemplate: text('plan_template'),
     todosTemplateJson: text('todos_template_json'),
+    todoItemsJson: text('todo_items_json'),
     workflowMode: text('workflow_mode').notNull().default('lazy'),
     builtin: integer('builtin', { mode: 'boolean' })
       .default(false)

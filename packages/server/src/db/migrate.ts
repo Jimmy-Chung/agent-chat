@@ -77,7 +77,7 @@ export async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_usage_topic_time ON usage_records(topic_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_usage_model_time ON usage_records(model, created_at);
       CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, kind TEXT NOT NULL, detail_json TEXT);
-      CREATE TABLE IF NOT EXISTS sop_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, description TEXT, agent_type TEXT NOT NULL, system_prompt_addon TEXT, plan_template TEXT, todos_template_json TEXT, workflow_mode TEXT NOT NULL DEFAULT 'lazy', builtin INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS sop_templates (id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, description TEXT, agent_type TEXT NOT NULL, instruction TEXT, input_contract TEXT, output_contract TEXT, system_prompt_addon TEXT, plan_template TEXT, todos_template_json TEXT, todo_items_json TEXT, workflow_mode TEXT NOT NULL DEFAULT 'lazy', builtin INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_sop_templates_type ON sop_templates(agent_type);
     `)
 
@@ -103,6 +103,27 @@ export async function runMigrations() {
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0006_cron_tags')
+    }
+  }
+
+  // Run 0010: add SOP workflow fields
+  {
+    const hash = '0010_sop_workflow_fields'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      try { await d1.prepare(`ALTER TABLE sop_templates ADD COLUMN instruction TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE sop_templates ADD COLUMN input_contract TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE sop_templates ADD COLUMN output_contract TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE sop_templates ADD COLUMN todo_items_json TEXT`).run() } catch { /* column may already exist */ }
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0010_sop_workflow_fields')
     }
   }
 
