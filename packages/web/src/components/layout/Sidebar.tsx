@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTopicStore } from '@/stores/topic-store'
-import { useUiStore } from '@/stores/ui-store'
 import { useWsStore } from '@/stores/ws-store'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useSopTemplateStore } from '@/stores/sop-template-store'
 import { useCronStore } from '@/stores/cron-store'
 import { useToastStore } from '@/stores/toast-store'
+import { useMessageStore } from '@/stores/message-store'
 import { TopicItem } from './TopicItem'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { Tooltip } from '@/components/ui/Tooltip'
@@ -116,8 +116,6 @@ type PermissionTier = 'yolo' | 'normal'
 
 type AgentType = 'general' | 'programming'
 type ExtensionType = 'claude-code' | 'codex'
-
-const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
 const PROVIDER_TAB_DEFS = [
   {
@@ -399,7 +397,6 @@ export function Sidebar() {
   const pushToast = usePushTopicCreateToast()
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const selectTopic = useTopicStore((s) => s.selectTopic)
-  const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const [search, setSearch] = useState('')
   const [showNewTopic, setShowNewTopic] = useState(false)
   const [newTopicName, setNewTopicName] = useState('')
@@ -441,9 +438,9 @@ export function Sidebar() {
       setAdapterVersion('unreachable')
     }
   }, [adapterVersion])
-  const artifactsByTopic = useArtifactStore((s) => s.byTopic)
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
   const cronRunCount = useCronStore((s) => s.crons.filter((c) => c.status === 'active').length)
+  const unreadByTopic = useMessageStore((s) => s.unreadByTopic)
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
   const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
@@ -671,16 +668,6 @@ export function Sidebar() {
           <span className="flex-1 text-[14px]" style={{ letterSpacing: '-0.02em' }}>
             <HelmWordmark fontSize={14} />
           </span>
-          <button
-            onClick={toggleSidebar}
-            className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:opacity-80"
-            style={{ color: 'var(--fg-dim)' }}
-            aria-label="收起侧边栏"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
         </div>
 
         <div className="shrink-0 px-3 pt-3">
@@ -759,7 +746,7 @@ export function Sidebar() {
               active={topic.id === activeTopicId}
               onClick={() => selectTopic(topic.id)}
               onDelete={(id, name) => setDeletingTopic({ id, name })}
-              badgeCount={(artifactsByTopic[topic.id] ?? EMPTY_ARTIFACTS).length}
+              badgeCount={unreadByTopic[topic.id] ?? 0}
               workspaceRoot={workspacePath}
             />
           ))}
@@ -817,13 +804,14 @@ export function Sidebar() {
           {workspacePath && (
             <div className="flex min-w-0 items-center gap-1.5">
               <span className="shrink-0 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>工作区目录：</span>
-              <span
-                className="truncate text-[10.5px]"
-                style={{ color: 'var(--fg-regular)', fontFamily: 'var(--font-mono)' }}
-                title={workspacePath}
-              >
-                {workspacePath}
-              </span>
+              <Tooltip content={workspacePath} side="top" delayMs={200} className="min-w-0">
+                <span
+                  className="block max-w-full truncate text-[10.5px]"
+                  style={{ color: 'var(--fg-regular)', fontFamily: 'var(--font-mono)' }}
+                >
+                  {workspacePath}
+                </span>
+              </Tooltip>
             </div>
           )}
           <div className="flex items-center gap-2">
@@ -839,14 +827,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.9.16</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.9.17</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.16</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.9.17</span>
               </Tooltip>
             </div>
           </div>
