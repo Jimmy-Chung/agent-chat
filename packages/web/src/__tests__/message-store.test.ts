@@ -119,6 +119,49 @@ describe('MessageStore', () => {
     expect(state.agentPhaseByTopic['topic1']).toBe('streaming')
   })
 
+  it('reconcileAgentStatusFromMessages clears processing when only needs_retry remains', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [
+      makeMessage({ id: 'm1', role: 'user', status: 'needs_retry' }),
+    ])
+    store.setAgentStatus('topic1', 'processing', 'thinking')
+
+    store.reconcileAgentStatusFromMessages('topic1')
+
+    const state = useMessageStore.getState()
+    expect(state.agentStatusByTopic['topic1']).toBe('idle')
+    expect(state.agentPhaseByTopic['topic1']).toBeUndefined()
+  })
+
+  it('reconcileAgentStatusFromMessages converts stale pending user messages to needs_retry', () => {
+    const store = useMessageStore.getState()
+    const staleStartedAt = Date.now() - 3 * 60 * 1000
+    store.setMessages('topic1', [
+      makeMessage({ id: 'm1', role: 'user', status: 'pending', started_at: staleStartedAt }),
+    ])
+    store.setAgentStatus('topic1', 'processing', 'thinking')
+
+    store.reconcileAgentStatusFromMessages('topic1')
+
+    const state = useMessageStore.getState()
+    expect(state.byTopic['topic1'][0].status).toBe('needs_retry')
+    expect(state.agentStatusByTopic['topic1']).toBe('idle')
+  })
+
+  it('reconcileAgentStatusFromMessages keeps fresh pending user messages active', () => {
+    const store = useMessageStore.getState()
+    store.setMessages('topic1', [
+      makeMessage({ id: 'm1', role: 'user', status: 'pending', started_at: Date.now() }),
+    ])
+    store.setAgentStatus('topic1', 'processing', 'thinking')
+
+    store.reconcileAgentStatusFromMessages('topic1')
+
+    const state = useMessageStore.getState()
+    expect(state.byTopic['topic1'][0].status).toBe('pending')
+    expect(state.agentStatusByTopic['topic1']).toBe('processing')
+  })
+
   it('addMessage appends a message to a topic', () => {
     useMessageStore.getState().setMessages('topic1', [makeMessage({ id: 'm1' })])
     const newMsg = makeMessage({ id: 'm2' })
