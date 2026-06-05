@@ -4,6 +4,8 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 
+const SINGLETON_SNAPSHOT_PART_KINDS = new Set<MessagePart['kind']>(['text', 'thinking'])
+
 export interface StoredInteraction {
   interactionId: string
   messageId: string
@@ -154,8 +156,9 @@ export const useMessageStore = create<MessageState & MessageActions>()(
         }
 
         const parts = s.partsByMessage[messageId]
-        const existingIndex = parts.findIndex(
-          (part) => part.id === stableId,
+        const existingIndex = parts.findIndex((part) =>
+          part.id === stableId
+          || (SINGLETON_SNAPSHOT_PART_KINDS.has(kind) && part.kind === kind),
         )
 
         if (existingIndex >= 0) {
