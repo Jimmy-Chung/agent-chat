@@ -83,7 +83,8 @@ export async function createPendingUserMessage(input: CreateUserMessageInput): P
     maxRetries: 2,
   })
 
-  await messageRepo.createMessagePart({
+  const part = await messageRepo.createMessagePart({
+    id: messageRepo.getStableTextPartId(msg.id, 'text'),
     messageId: msg.id,
     kind: 'text',
     contentJson: JSON.stringify({ content: input.content }),
@@ -102,6 +103,7 @@ export async function createPendingUserMessage(input: CreateUserMessageInput): P
   input.broadcaster.broadcast('message.delta', {
     topicId: input.topicId,
     messageId: msg.id,
+    partId: part.id,
     part: { kind: 'text', content: input.content },
   })
   broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'pending', 0, 2)

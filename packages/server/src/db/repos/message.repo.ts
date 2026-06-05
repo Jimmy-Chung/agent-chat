@@ -91,10 +91,26 @@ export async function listMessagesByTopic(
 // ─── MessagePart CRUD ──────────────────────────────────────────────
 
 export async function createMessagePart(input: {
+  id?: string
   messageId: string
   kind: MessagePart['kind']
   contentJson: string
 }): Promise<MessagePart> {
+  if (input.id) {
+    const existing = await getDb()
+      .select()
+      .from(messageParts)
+      .where(eq(messageParts.id, input.id))
+      .get()
+    if (existing) {
+      await updateMessagePartContent(input.id, input.contentJson)
+      return toPartDomain({
+        ...existing,
+        contentJson: input.contentJson,
+      })
+    }
+  }
+
   const existing = await getDb()
     .select({ ordinal: messageParts.ordinal })
     .from(messageParts)
@@ -103,7 +119,7 @@ export async function createMessagePart(input: {
   const ordinal = existing.length
 
   const row = {
-    id: ulid(),
+    id: input.id ?? ulid(),
     messageId: input.messageId,
     ordinal,
     kind: input.kind,
@@ -154,12 +170,25 @@ let flushLock: Promise<void> = Promise.resolve()
 const FLUSH_INTERVAL_MS = 100
 const FLUSH_SIZE_THRESHOLD = 32 * 1024
 
+export function getStableTextPartId(messageId: string, kind: 'text' | 'thinking'): string {
+  return `${messageId}:${kind}`
+}
+
+export function getStableToolPartId(
+  messageId: string,
+  kind: 'tool_use' | 'tool_result',
+  toolUseId: string,
+): string {
+  return `${messageId}:${kind}:${toolUseId}`
+}
+
 export function bufferPartDelta(
   messageId: string,
   kind: MessagePart['kind'],
   contentJson: string,
+  partId?: string,
 ): void {
-  const key = `${messageId}:${kind}`
+  const key = partId ?? `${messageId}:${kind}`
   const existing = pendingParts.get(key)
 
   if (existing) {
@@ -182,7 +211,7 @@ export function bufferPartDelta(
     // from event-router. We defer the DB check to flushParts.
     const reuseOrdinal = 0 // placeholder, resolved in flushParts
     pendingParts.set(key, {
-      id: ulid(),
+      id: partId ?? ulid(),
       messageId,
       ordinal: reuseOrdinal,
       kind,

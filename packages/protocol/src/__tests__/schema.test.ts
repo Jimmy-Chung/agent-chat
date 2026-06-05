@@ -738,9 +738,43 @@ describe('Server event schemas', () => {
     const result = wsMessageDeltaSchema.parse({
       topicId: 't1',
       messageId: 'm1',
+      partId: 'm1:text',
       part: { kind: 'text', content: 'hi' },
     })
     expect(result.part.kind).toBe('text')
+    expect(result.partId).toBe('m1:text')
+  })
+
+  it('parses server-assigned partId on tool and file events', () => {
+    const toolCall = serverEventDataSchemas['tool.call'].parse({
+      topicId: 't1',
+      messageId: 'm1',
+      partId: 'm1:tool_use:tu1',
+      toolUseId: 'tu1',
+      name: 'Read',
+      input: { path: '/tmp/a.ts' },
+    })
+    expect(toolCall.partId).toBe('m1:tool_use:tu1')
+
+    const toolResult = serverEventDataSchemas['tool.result'].parse({
+      topicId: 't1',
+      messageId: 'm1',
+      partId: 'm1:tool_result:tu1',
+      toolUseId: 'tu1',
+      output: 'ok',
+      isError: false,
+    })
+    expect(toolResult.partId).toBe('m1:tool_result:tu1')
+
+    const fileDiff = serverEventDataSchemas['file.diff'].parse({
+      topicId: 't1',
+      messageId: 'm1',
+      partId: 'part-file-1',
+      path: '/tmp/a.ts',
+      before: 'old',
+      after: 'new',
+    })
+    expect(fileDiff.partId).toBe('part-file-1')
   })
 
   it('parses cron.list', () => {

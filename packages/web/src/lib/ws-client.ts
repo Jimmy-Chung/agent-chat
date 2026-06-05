@@ -264,6 +264,7 @@ class WsClient {
 
       case 'message.delta': {
         const part = event.data.part
+        const partId = event.data.partId
         if (part.kind === 'text') {
           const hadStreamingText = useMessageStore.getState().streamingText[event.data.messageId] !== undefined
           if (useMessageStore.getState().streamingText[event.data.messageId] === undefined) {
@@ -276,7 +277,7 @@ class WsClient {
             event.data.messageId,
             'text',
             JSON.stringify({ content: nextText }),
-            `${event.data.messageId}-text`,
+            partId ?? `${event.data.messageId}:text`,
           )
           if (!hadStreamingText) clearFinishedStreamingScratch(event.data.messageId)
         }
@@ -292,7 +293,7 @@ class WsClient {
             event.data.messageId,
             'thinking',
             JSON.stringify({ content: nextThinking }),
-            `${event.data.messageId}-thinking`,
+            partId ?? `${event.data.messageId}:thinking`,
           )
           if (!hadStreamingThinking) clearFinishedStreamingScratch(event.data.messageId)
         }
@@ -342,7 +343,7 @@ class WsClient {
             name: d.name,
             input: d.input,
           }),
-          `tool-${String(d.toolUseId)}`,
+          (d.partId as string | undefined) ?? `${String(d.messageId)}:tool_use:${String(d.toolUseId)}`,
         )
         break
       }
@@ -357,7 +358,7 @@ class WsClient {
             output: d.output,
             isError: d.isError,
           }),
-          `tool-result-${String(d.toolUseId)}`,
+          (d.partId as string | undefined) ?? `${String(d.messageId)}:tool_result:${String(d.toolUseId)}`,
         )
         break
       }
@@ -368,7 +369,7 @@ class WsClient {
           d.messageId as string,
           'file_diff',
           JSON.stringify({ path: d.path, before: d.before, after: d.after }),
-          `diff-${String(d.path)}`,
+          (d.partId as string | undefined) ?? `${String(d.messageId)}:file_diff:${String(d.path)}`,
         )
         break
       }
