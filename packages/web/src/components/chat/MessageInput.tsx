@@ -125,6 +125,14 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const activeTopic = useTopicStore((s) => s.topics.find((t) => t.id === topicId))
   const currentModel = activeTopic?.current_model
 
+  useEffect(() => {
+    if (!hasPendingUserMessage && !isAgentActive) return
+    const timer = window.setInterval(() => {
+      useMessageStore.getState().reconcileAgentStatusFromMessages(topicId)
+    }, 15_000)
+    return () => window.clearInterval(timer)
+  }, [hasPendingUserMessage, isAgentActive, topicId])
+
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   // Models are scoped to the provider this topic was created with (bound at creation,
   // immutable per topic). Legacy topics created before provider binding have no

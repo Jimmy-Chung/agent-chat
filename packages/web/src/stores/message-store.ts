@@ -5,6 +5,13 @@ import { immer } from 'zustand/middleware/immer'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 
 const SINGLETON_SNAPSHOT_PART_KINDS = new Set<MessagePart['kind']>(['text', 'thinking'])
+const STALE_PENDING_USER_MESSAGE_MS = 2 * 60 * 1000
+
+function isFreshPendingUserMessage(message: Message, now = Date.now()): boolean {
+  return message.role === 'user'
+    && message.status === 'pending'
+    && now - message.started_at < STALE_PENDING_USER_MESSAGE_MS
+}
 
 export interface StoredInteraction {
   interactionId: string
@@ -208,11 +215,18 @@ export const useMessageStore = create<MessageState & MessageActions>()(
 
     reconcileAgentStatusFromMessages: (topicId) => {
       set((s) => {
+        const now = Date.now()
+        for (const message of s.byTopic[topicId] ?? []) {
+          if (message.role === 'user'
+            && message.status === 'pending'
+            && now - message.started_at >= STALE_PENDING_USER_MESSAGE_MS) {
+            message.status = 'needs_retry'
+          }
+        }
         const hasActiveMessages = (s.byTopic[topicId] ?? []).some((m) =>
           m.status === 'streaming'
-          || m.status === 'pending'
+          || isFreshPendingUserMessage(m, now)
           || m.status === 'retrying'
-          || m.status === 'needs_retry',
         )
         if (hasActiveMessages) return
 
