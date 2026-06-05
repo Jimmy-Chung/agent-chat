@@ -15,6 +15,7 @@ import { MessageInput } from '@/components/chat/MessageInput'
 import { DeleteTopicModal } from '@/components/chat/DeleteTopicModal'
 import { McpSettingsModal } from '@/components/McpSettingsModal'
 import { AttentionDrawer } from '@/components/attention/AttentionDrawer'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { getWsClient } from '@/lib/ws-client'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
@@ -210,19 +211,20 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
             {activeTopic.name}
           </h2>
           {projectDirDisplay && (
-            <span
-              className="hidden min-w-0 max-w-[220px] shrink truncate rounded-md px-1.5 text-[11px] font-medium sm:inline-block"
-              style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid var(--hairline)',
-                color: 'var(--fg-dim)',
-                fontFamily: 'var(--font-mono)',
-                lineHeight: '19px',
-              }}
-              title={projectDirDisplay}
-            >
-              {projectDirDisplay}
-            </span>
+            <Tooltip content={projectDirDisplay} side="top" delayMs={200} className="hidden min-w-0 shrink sm:inline-block">
+              <span
+                className="block min-w-0 max-w-[220px] truncate rounded-md px-1.5 text-[11px] font-medium"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--hairline)',
+                  color: 'var(--fg-dim)',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: '19px',
+                }}
+              >
+                {projectDirDisplay}
+              </span>
+            </Tooltip>
           )}
           {sessionDotState !== 'hidden' && (
             <span
@@ -241,23 +243,16 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
         </div>
 
         {activeTopic.agent_type === 'programming' && (
-          <ExtensionChip extension={activeExtension} />
-        )}
-        {activeTopic.agent_type === 'programming' && (
           <ToolsMenu planMode={planMode} onTogglePlan={togglePlanMode} onOpenMcp={() => setShowMcpSettings(true)} />
-        )}
-        {activeTopic.agent_type === 'general' && (
-          <Chip>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
-            普通
-          </Chip>
         )}
 
         <div className="ml-auto flex items-center gap-2">
-          {activeTopic.current_model && (
-            <Chip variant="model">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" /></svg>
-              {activeTopic.current_model}
+          {activeTopic.agent_type === 'programming' ? (
+            <ExtensionChip extension={activeExtension} />
+          ) : (
+            <Chip>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" /></svg>
+              普通
             </Chip>
           )}
           <button
@@ -394,7 +389,6 @@ const EMPTY_MESSAGES: Message[] = []
 function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicId: string; state: string; sessionState?: string; sessionError?: string }) {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
   const progress = useMessageStore((s) => s.progressByTopic[topicId])
-  const phase = useMessageStore((s) => s.agentPhaseByTopic[topicId])
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
   const hasPendingUser = lastMsg?.role === 'user' && lastMsg?.status === 'pending'
   const isActive = state === 'processing' || state === 'aborting' || hasPendingUser
@@ -428,22 +422,12 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [topicId])
 
-  const getProcessingLabel = () => {
-    if (phase === 'thinking') return 'Processing → Thinking'
-    if (phase === 'streaming') return 'Processing → Streaming'
-    return 'Processing → Using tool'
-  }
-
   const sessionLabelMap: Record<string, string> = {
     connected: '已连接',
     reconnecting: '重连中',
     disconnected: '已断开',
   }
 
-  const statusLabel = hasPendingUser && state === 'idle' ? 'Sending'
-    : state === 'processing' ? getProcessingLabel()
-    : state === 'aborting' ? 'Aborting'
-    : 'Idle'
   const showProgress = isActive && !!progress
   // Only show when agent is active or session is unhealthy — idle + connected is
   // redundant with the green topic dot already visible in the sidebar/topic panel.
@@ -459,7 +443,7 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
         background: 'linear-gradient(180deg, rgba(255,214,10,0.07), rgba(255,214,10,0.02) 55%, transparent)',
       }}
     >
-      <span className="inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11.5px] font-medium" style={{ background: 'rgba(255,255,255,0.06)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}>
+      <span className="inline-flex items-center rounded-full px-2 py-1" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hairline)' }} aria-label={isActive ? 'Agent active' : 'Agent idle'}>
         <span
           className={isActive ? 'animate-pulse' : ''}
           style={{
@@ -470,7 +454,6 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
             boxShadow: isActive ? '0 0 12px rgba(247,194,107,.55)' : 'none',
           }}
         />
-        {statusLabel}
       </span>
 
       {isActive && (
@@ -510,9 +493,6 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
       )}
 
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>
-          ⌘. Stop
-        </span>
         <button
           type="button"
           disabled={!isActive}
@@ -1060,7 +1040,7 @@ function ToolsMenu({ planMode, onTogglePlan, onOpenMcp }: { planMode: boolean; o
   }, [open])
 
   return (
-    <div className="relative shrink-0" ref={ref}>
+    <div className="relative z-[120] shrink-0" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
@@ -1078,7 +1058,7 @@ function ToolsMenu({ planMode, onTogglePlan, onOpenMcp }: { planMode: boolean; o
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl"
+          className="absolute left-0 top-full z-[120] mt-1 w-44 overflow-hidden rounded-xl"
           style={{
             background: 'var(--glass-modal)',
             WebkitBackdropFilter: 'blur(60px) saturate(200%)',

@@ -810,7 +810,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
             value={value}
             onChange={handleChange}
             onKeyDown={sessionLoading ? undefined : handleKeyDown}
-            placeholder={sessionLoading ? '正在连接 Agent...' : '回复 agent…  按 ⌘↩ 发送 · @ 提及文件 · / 触发命令'}
+            placeholder={sessionLoading ? '正在连接 Agent...' : '回复 agent... 按 Enter 发送 · @ 提及文件'}
             maxRows={6}
             disabled={sessionLoading}
             className="min-h-[22px] flex-1 resize-none bg-transparent text-sm outline-none disabled:opacity-50"
@@ -831,9 +831,6 @@ export function MessageInput({ topicId }: MessageInputProps) {
               </button>
               <button title="提及" onClick={() => { setShowPicker(true); setPickerQuery(''); setHighlightIndex(0) }} className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors" style={{ color: 'var(--fg-dim)' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" /></svg>
-              </button>
-              <button title="命令" className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs transition-colors" style={{ color: 'var(--fg-dim)' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-12" /></svg>
               </button>
             </div>
 

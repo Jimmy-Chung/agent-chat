@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import type { Topic } from '@agent-chat/protocol'
 import { useIsMobile } from '@/hooks/use-is-mobile'
 import { getTopicDirectoryLabel } from '@/lib/workspace-path'
+import { Tooltip } from '@/components/ui/Tooltip'
 
 interface TopicItemProps {
   topic: Topic
@@ -18,14 +19,8 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
   const isSystem = topic.kind !== 'normal'
   const isMobile = useIsMobile()
   const [hovered, setHovered] = useState(false)
-  const [expanded, setExpanded] = useState(false)
   const showDelete = !isSystem && onDelete && (hovered || isMobile)
   const cwdDir = getTopicDirectoryLabel(topic, workspaceRoot)
-
-  const toggleExpand = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpanded((v) => !v)
-  }, [])
 
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -55,9 +50,9 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
 
         {/* Body */}
         <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="min-w-0">
             <span
-              className="truncate text-[13px]"
+              className="block truncate text-[13px]"
               style={{
                 color: 'var(--fg-strong)',
                 fontWeight: isSystem ? 600 : 500,
@@ -66,9 +61,11 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
             >
               {topic.name}
             </span>
-            {cwdDir && (
+          </div>
+          {cwdDir && (
+            <Tooltip content={cwdDir} side="top" delayMs={200} className="block max-w-full">
               <span
-                className="min-w-0 max-w-[92px] shrink truncate rounded-md px-1 text-[10px] font-medium"
+                className="mt-1 block max-w-full truncate rounded-md px-1.5 text-[10px] font-medium"
                 style={{
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid var(--hairline)',
@@ -76,48 +73,15 @@ export function TopicItem({ topic, active, onClick, onDelete, badgeCount = 0, wo
                   fontFamily: 'var(--font-mono)',
                   lineHeight: '18px',
                 }}
-                title={cwdDir}
               >
                 {cwdDir}
               </span>
-            )}
-          </div>
-          {expanded && (
-            <div className="mt-1.5 flex flex-col gap-1 pl-0.5" style={{ maxWidth: '100%' }}>
-              {topic.agent_type && topic.kind === 'normal' && (
-                <div className="flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
-                  <span>{topic.agent_type === 'programming' ? 'Programming' : 'General'}</span>
-                  {topic.plan_mode && <span style={{ color: '#6cb1ff' }}>Plan</span>}
-                </div>
-              )}
-              {cwdDir && (
-                <div className="truncate text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }} title={cwdDir}>
-                  {cwdDir}
-                </div>
-              )}
-            </div>
+            </Tooltip>
           )}
         </div>
 
-        {/* Meta — expand toggle + delete icon (hover on desktop, always on mobile), else timestamp */}
+        {/* Meta — unread badge + delete icon (hover on desktop, always on mobile), else timestamp */}
         <div className="flex items-center gap-1 pt-0.5">
-          {cwdDir && (
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={toggleExpand}
-              onKeyDown={(e) => { if (e.key === 'Enter') toggleExpand(e as unknown as React.MouseEvent) }}
-              className="flex h-4 w-4 items-center justify-center rounded transition-transform"
-              style={{
-                color: hovered ? 'var(--fg-regular)' : 'var(--fg-dim)',
-                transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-              }}
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </span>
-          )}
           {badgeCount > 0 && (
             <span
               className="inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-medium"

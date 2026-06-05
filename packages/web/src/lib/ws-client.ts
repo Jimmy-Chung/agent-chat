@@ -258,6 +258,9 @@ class WsClient {
           max_retries: event.data.maxRetries ?? 2,
         })
         if (event.data.role === 'assistant') {
+          if (topicStore.activeTopicId !== event.data.topicId) {
+            messageStore.incrementUnread(event.data.topicId)
+          }
           messageStore.startStreaming(event.data.topicId, event.data.messageId)
         }
         break

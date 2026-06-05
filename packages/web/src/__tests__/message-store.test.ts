@@ -50,6 +50,7 @@ describe('MessageStore', () => {
       usageByMessage: {},
       interactions: {},
       pendingMessagesByTopic: {},
+      unreadByTopic: {},
     })
   })
 
@@ -235,6 +236,36 @@ describe('MessageStore', () => {
     const state = useMessageStore.getState()
     expect(state.byTopic['topic1']).toBeUndefined()
     expect(state.byTopic['topic2']).toBeDefined()
+  })
+
+  it('increments and clears unread counts by topic', () => {
+    const store = useMessageStore.getState()
+    store.incrementUnread('topic1')
+    store.incrementUnread('topic1')
+    store.incrementUnread('topic2')
+
+    expect(useMessageStore.getState().unreadByTopic).toEqual({
+      topic1: 2,
+      topic2: 1,
+    })
+
+    store.clearUnread('topic1')
+
+    expect(useMessageStore.getState().unreadByTopic).toEqual({
+      topic2: 1,
+    })
+  })
+
+  it('removeMessagesByTopic clears unread counts for the removed topic', () => {
+    const store = useMessageStore.getState()
+    store.incrementUnread('topic1')
+    store.incrementUnread('topic2')
+
+    store.removeMessagesByTopic('topic1')
+
+    expect(useMessageStore.getState().unreadByTopic).toEqual({
+      topic2: 1,
+    })
   })
 
   describe('streaming', () => {

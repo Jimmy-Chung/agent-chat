@@ -5,6 +5,7 @@ import { persist } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 import type { Topic } from '@agent-chat/protocol'
 import { getWsClient } from '@/lib/ws-client'
+import { useMessageStore } from './message-store'
 
 const ACTIVE_TOPIC_STORAGE_KEY = 'AGENT_CHAT_ACTIVE_TOPIC_ID'
 
@@ -51,6 +52,7 @@ export const useTopicStore = create<TopicState & TopicActions>()(
         set((s) => {
           s.activeTopicId = id
         })
+        useMessageStore.getState().clearUnread(id)
         requestTopicData(id)
       },
 

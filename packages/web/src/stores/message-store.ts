@@ -49,6 +49,7 @@ interface MessageState {
   usageByMessage: Record<string, { model: string; inputTokens: number; outputTokens: number }>
   interactions: Record<string, StoredInteraction>
   pendingMessagesByTopic: Record<string, PendingMessage[]>
+  unreadByTopic: Record<string, number>
 }
 
 interface MessageActions {
@@ -81,6 +82,8 @@ interface MessageActions {
   removePendingMessage: (topicId: string, id: string) => void
   clearPendingMessages: (topicId: string) => void
   flushPendingMessages: (topicId: string) => PendingMessage[]
+  incrementUnread: (topicId: string) => void
+  clearUnread: (topicId: string) => void
 }
 
 export const useMessageStore = create<MessageState & MessageActions>()(
@@ -101,6 +104,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     usageByMessage: {},
     interactions: {},
     pendingMessagesByTopic: {},
+    unreadByTopic: {},
 
     fetchMessages: (_topicId) => {
       // Loading is done via WS; placeholder for store-level logic
@@ -241,6 +245,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
         const messageIds = (s.byTopic[topicId] ?? []).map((message) => message.id)
         delete s.byTopic[topicId]
         delete s.pendingMessagesByTopic[topicId]
+        delete s.unreadByTopic[topicId]
         for (const messageId of messageIds) {
           delete s.partsByMessage[messageId]
           delete s.streamingText[messageId]
@@ -406,6 +411,18 @@ export const useMessageStore = create<MessageState & MessageActions>()(
         })
       }
       return pending
+    },
+
+    incrementUnread: (topicId) => {
+      set((s) => {
+        s.unreadByTopic[topicId] = (s.unreadByTopic[topicId] ?? 0) + 1
+      })
+    },
+
+    clearUnread: (topicId) => {
+      set((s) => {
+        delete s.unreadByTopic[topicId]
+      })
     },
   })),
 )

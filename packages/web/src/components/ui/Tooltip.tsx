@@ -13,9 +13,10 @@ interface TooltipProps {
   children: ReactNode
   delayMs?: number
   onShow?: () => void
+  className?: string
 }
 
-export function Tooltip({ content, variant = 'info', side = 'top', children, delayMs = 300, onShow }: TooltipProps) {
+export function Tooltip({ content, variant = 'info', side = 'top', children, delayMs = 300, onShow, className }: TooltipProps) {
   const [show, setShow] = useState(false)
   const [style, setStyle] = useState<React.CSSProperties | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null)
@@ -79,7 +80,8 @@ export function Tooltip({ content, variant = 'info', side = 'top', children, del
   return (
     <span
       ref={triggerRef}
-      style={{ position: 'relative', display: 'inline-flex' }}
+      className={className}
+      style={{ position: 'relative' }}
       onMouseEnter={enter}
       onMouseLeave={leave}
       onFocus={enter}
