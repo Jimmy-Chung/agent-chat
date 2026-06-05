@@ -363,9 +363,9 @@ export class PiClient extends EventEmitter {
   private sessions = new Map<string, PiSessionConn>()
   private lastSeqBySession = new Map<string, number>()
   private config: AppConfig
-  /** Optional hook: called whenever a session's lastSeq advances. Used by the
-   *  Durable Object to persist the value across hibernation so reconnects after
-   *  wake-up use the correct seq instead of 0. */
+  /** Optional hook: called whenever a session's routed lastSeq advances. Used by
+   *  the Durable Object to persist the value across hibernation so reconnects
+   *  after wake-up resume from events that are already written/broadcast. */
   onLastSeqUpdate?: (sessionId: string, seq: number) => void
 
   constructor(config: AppConfig) {
@@ -379,15 +379,15 @@ export class PiClient extends EventEmitter {
     if (seq > current) this.lastSeqBySession.set(sessionId, seq)
   }
 
+  markSeqRouted(sessionId: string, seq: number): void {
+    const current = this.lastSeqBySession.get(sessionId) ?? 0
+    if (seq <= current) return
+    this.lastSeqBySession.set(sessionId, seq)
+    this.onLastSeqUpdate?.(sessionId, seq)
+  }
+
   private adoptSessionConn(conn: PiSessionConn, sessionId: string, action: 'created' | 'recreated' | 'reconnected'): void {
     conn.on('event', (event: PIEvent) => {
-      if (event.seq > 0) {
-        const lastSeq = this.lastSeqBySession.get(event.sessionId) ?? 0
-        if (event.seq > lastSeq) {
-          this.lastSeqBySession.set(event.sessionId, event.seq)
-          this.onLastSeqUpdate?.(event.sessionId, event.seq)
-        }
-      }
       this.emit('event', event)
     })
     conn.on('rpc', (request: AdapterRpcRequest) => {
@@ -443,10 +443,7 @@ export class PiClient extends EventEmitter {
   }
 
   getLastSeq(sessionId: string): number {
-    return Math.max(
-      this.sessions.get(sessionId)?.lastSeq ?? 0,
-      this.lastSeqBySession.get(sessionId) ?? 0,
-    )
+    return this.lastSeqBySession.get(sessionId) ?? 0
   }
 
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {

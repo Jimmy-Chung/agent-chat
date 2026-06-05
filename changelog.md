@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-05 [v1.9.11] — fix: 高密度 PI 事件路由收敛
+
+- 修复高密度输出下 topic 卡在 Thinking：PI 事件路由 Promise 交给 Durable Object `waitUntil` 托管，避免异步队列未 drain 就被生命周期回收。
+- 修复 `lastSeq` 推进时机：只有事件成功完成落库/广播路由后才记录为已处理，避免 reconnect/recreate 跳过“已收到但未落库”的终止事件。
+- 增加 `agent.status idle` 兜底收敛：若 DB 里仍有残留 `streaming` 消息，会结束为 `aborted` 并广播 `message.end`，避免刷新后继续卡住。
+- 版本显示更新为 `v1.9.11`。
+
 ## 2026-06-05 [v1.9.10] — fix: Attention 展开收起动画
 
 - 优化 Attention 全尺寸面板打开/关闭状态：打开时从右侧向左展开，关闭时向右收起后再卸载，避免硬切。

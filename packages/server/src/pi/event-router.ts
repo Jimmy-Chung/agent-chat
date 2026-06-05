@@ -353,10 +353,45 @@ async function finalizeStreamingMessagesAfterDisconnect(
   broadcaster.broadcast('agent.status', { topicId, state: 'idle' })
 }
 
+async function finalizeStreamingMessagesOnIdle(
+  topicId: string,
+  sessionId: string,
+  broadcaster: EventBroadcaster,
+): Promise<void> {
+  try {
+    await messageRepo.flushParts()
+  } catch (err) {
+    logger.warn({ err, topicId, sessionId }, 'Failed to flush pending parts before idle finalize')
+  }
+
+  const messages = await messageRepo.listMessagesByTopic(topicId)
+  const streamingMessages = messages.filter((message) => message.status === 'streaming')
+  if (streamingMessages.length === 0) return
+
+  const now = Date.now()
+  logger.warn(
+    { topicId, sessionId, messageIds: streamingMessages.map((message) => message.id) },
+    'Finalizing leftover streaming messages after agent.status idle',
+  )
+  for (const message of streamingMessages) {
+    await messageRepo.updateMessage(message.id, {
+      status: 'aborted',
+      finished_at: now,
+      stop_reason: 'aborted',
+    })
+    broadcaster.broadcast('message.end', {
+      topicId,
+      messageId: message.id,
+      stopReason: 'aborted',
+    })
+  }
+}
+
 export function routePiEvents(
   pi: PiClient,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
+  options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
   currentPiClient = pi
 
@@ -410,30 +445,42 @@ export function routePiEvents(
     }
 
     if (isHealth) {
-      enqueueRouteEvent(event, broadcaster, config)
+      enqueueRouteEvent(pi, event, broadcaster, config, options)
       return
     }
 
-    enqueueReorderedEvent(event, broadcaster, config)
+    enqueueReorderedEvent(pi, event, broadcaster, config, options)
   })
 }
 
 function enqueueRouteEvent(
+  pi: PiClient,
   event: PIEvent,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
+  options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
   const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
-  const next = prev.then(() => routeEvent(event, broadcaster, config)).catch((err) => {
-    logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
-  })
+  const next = prev
+    .then(async () => {
+      await routeEvent(event, broadcaster, config)
+      if (event.seq > 0 && event.payload.kind !== 'session.health') {
+        pi.markSeqRouted(event.sessionId, event.seq)
+      }
+    })
+    .catch((err) => {
+      logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
+    })
   sessionQueues.set(event.sessionId, next)
+  options?.waitUntil?.(next)
 }
 
 function enqueueReorderedEvent(
+  pi: PiClient,
   event: PIEvent,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
+  options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
   let buffer = sessionReorderBuffers.get(event.sessionId)
   if (!buffer) {
@@ -446,13 +493,15 @@ function enqueueReorderedEvent(
   }
 
   buffer.pending.set(event.seq, event)
-  drainReorderBuffer(event.sessionId, broadcaster, config)
+  drainReorderBuffer(pi, event.sessionId, broadcaster, config, options)
 }
 
 function drainReorderBuffer(
+  pi: PiClient,
   sessionId: string,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
+  options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
   const buffer = sessionReorderBuffers.get(sessionId)
   if (!buffer) return
@@ -466,7 +515,7 @@ function drainReorderBuffer(
     const minSeq = minPendingSeq(buffer)
     if (minSeq === null) return
     if (minSeq !== 1) {
-      scheduleReorderGapFlush(sessionId, broadcaster, config)
+      scheduleReorderGapFlush(pi, sessionId, broadcaster, config, options)
       return
     }
     buffer.nextSeq = minSeq
@@ -476,18 +525,20 @@ function drainReorderBuffer(
     const next = buffer.pending.get(buffer.nextSeq)
     if (!next) break
     buffer.pending.delete(buffer.nextSeq)
-    enqueueRouteEvent(next, broadcaster, config)
+    enqueueRouteEvent(pi, next, broadcaster, config, options)
     buffer.nextSeq += 1
   }
 
   if (buffer.pending.size === 0) return
-  scheduleReorderGapFlush(sessionId, broadcaster, config)
+  scheduleReorderGapFlush(pi, sessionId, broadcaster, config, options)
 }
 
 function scheduleReorderGapFlush(
+  pi: PiClient,
   sessionId: string,
   broadcaster: EventBroadcaster,
   config?: AppConfig,
+  options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
   const buffer = sessionReorderBuffers.get(sessionId)
   if (!buffer || buffer.timer) return
@@ -506,7 +557,7 @@ function scheduleReorderGapFlush(
       )
       current.nextSeq = minSeq
     }
-    drainReorderBuffer(sessionId, broadcaster, config)
+    drainReorderBuffer(pi, sessionId, broadcaster, config, options)
   }, piEventReorderWindowMs)
 }
 
@@ -823,6 +874,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       if (!topicId) return
       if (payload.state === 'idle') {
         clearStreamDisconnectFinalizer(topicId)
+        await finalizeStreamingMessagesOnIdle(topicId, sessionId, hub)
       }
       hub.broadcast('agent.status', { topicId, ...mapAgentState(payload.state) })
       break
