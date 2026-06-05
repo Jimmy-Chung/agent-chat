@@ -691,6 +691,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           generalSpecJson,
           sopTemplateId: data.sopTemplateId,
           currentProviderId: data.providerId ?? null,
+          currentModel: data.model ?? null,
         })
 
         // Broadcast topic immediately so sidebar shows it, then establish session.
@@ -755,9 +756,30 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           const pi = await this.ensurePiClient()
           if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
             try {
-              await pi.rpc('setSessionModel', { sessionId: topic.pi_session_id, model: data.model })
+              const result = await pi.rpc('setSessionModel', { sessionId: topic.pi_session_id, model: data.model })
+              if (!result?.ok) {
+                this.broadcastAll('error', {
+                  code: 'MODEL_SWITCH_FAILED',
+                  message: '模型切换失败',
+                  details: {
+                    topicId: data.id,
+                    model: data.model,
+                  },
+                })
+                break
+              }
             } catch (err) {
               logger.warn({ err }, 'Failed to set model on PI')
+              this.broadcastAll('error', {
+                code: 'MODEL_SWITCH_FAILED',
+                message: '模型切换失败',
+                details: {
+                  topicId: data.id,
+                  model: data.model,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              })
+              break
             }
           }
         }

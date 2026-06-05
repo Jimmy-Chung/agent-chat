@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-05 [v1.9.12] — fix: 输入框草稿按话题隔离、topic 创建绑定默认模型
+
+- 修复切换话题后输入框仍显示上一个话题草稿的问题。
+- 输入框文本和 artifact mention chips 改为按 `topicId` 保存；发送成功只清空当前话题草稿，切回原话题可恢复未发送内容。
+- 创建 topic 时，如果选中的 provider 配了 models，则把第一个 model 作为默认 model 一起传给 server，并在 `createSession.initialModel` 中原子下发给 Adapter。
+- provider 没有配置 models 时不传 model，输入框也不显示 model selector。
+- 模型切换失败时不再直接写 `current_model`，避免 UI/DB 显示的模型和真实 session 模型分叉。
+- 版本显示更新为 `v1.9.12`。
+
 ## 2026-06-05 [v1.9.11] — fix: 高密度 PI 事件路由收敛
 
 - 修复高密度输出下 topic 卡在 Thinking：PI 事件路由 Promise 交给 Durable Object `waitUntil` 托管，避免异步队列未 drain 就被生命周期回收。

@@ -18,7 +18,7 @@ function createMockHub() {
 function createMockPiClient() {
   return {
     createSession: vi.fn().mockResolvedValue({ sessionId: 'pi-sess-1' }),
-    rpc: vi.fn().mockResolvedValue(undefined),
+    rpc: vi.fn().mockResolvedValue({ ok: true }),
     disconnectSession: vi.fn(),
     reconnectSession: vi.fn().mockResolvedValue(undefined),
     hasSession: vi.fn().mockReturnValue(false),
@@ -71,6 +71,55 @@ describe('Topic handler — topic.create', () => {
       'topic.created',
       expect.any(Object),
     )
+  })
+
+  it('creates a general topic with provider/model and passes initialModel to PI createSession', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await handler({}, {
+      d: {
+        name: 'DeepSeek Chat',
+        agentType: 'general',
+        providerId: 'pi-deepseek',
+        model: 'deepseek-4pro',
+      },
+    })
+
+    const topics = await topicRepo.listTopics()
+    expect(topics[0].current_provider_id).toBe('pi-deepseek')
+    expect(topics[0].current_model).toBe('deepseek-4pro')
+
+    expect(mockPi.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'general',
+        providerId: 'pi-deepseek',
+        initialModel: 'deepseek-4pro',
+      }),
+    )
+  })
+
+  it('does not pass initialModel when topic.create has no model', async () => {
+    const handler = await getHandler('client:topic.create')
+
+    await handler({}, {
+      d: {
+        name: 'No Model Provider',
+        agentType: 'general',
+        providerId: 'pi-empty',
+      },
+    })
+
+    const topics = await topicRepo.listTopics()
+    expect(topics[0].current_provider_id).toBe('pi-empty')
+    expect(topics[0].current_model).toBeNull()
+
+    expect(mockPi.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'general',
+        providerId: 'pi-empty',
+      }),
+    )
+    expect(mockPi.createSession.mock.calls[0][0]).not.toHaveProperty('initialModel')
   })
 
   it('creates a general topic with cwd and passes it to PI createSession', async () => {
