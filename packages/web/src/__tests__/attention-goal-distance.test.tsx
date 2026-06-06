@@ -16,7 +16,7 @@ function node(goal_distance: number): TraceNode {
   return {
     id: 'n', parent_id: null, branch_id: 'main', user_message: 'u', intent: '', rationale: null,
     conclusion: 'c', planned_ref: null, alignment: 'unplanned', goal_distance, status: 'done',
-    event_ids: [], step_count: 0, ts_start: 0, ts_end: 1,
+    event_ids: [], source_message_ids: [], step_count: 0, ts_start: 0, ts_end: 1,
   }
 }
 const GOAL: GoalAnchor = { raw_query: '修复 SSE 端口泄漏', normalized_goal: '修复 SSE 端口泄漏', ts: 0 }

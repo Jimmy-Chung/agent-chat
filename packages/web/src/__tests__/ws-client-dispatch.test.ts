@@ -17,6 +17,7 @@ describe('ws-client dispatch — C: delta 分发逻辑', () => {
       agentStatusByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
   })
 
@@ -266,6 +267,7 @@ describe('BUG-040 ⑤ — agent.status idle 强制收口 streaming 残留', () =
       progressByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
   })
 
@@ -382,6 +384,7 @@ describe('tool-card loading — 多工具消息不互相覆盖（#3 回归）', 
       agentStatusByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
   })
 

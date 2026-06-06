@@ -16,6 +16,7 @@ export type CandidateNode = {
   user_messages: string[]
   user_kind: UserMessageKind
   exchanges: TraceExchange[]
+  source_message_ids: string[]
   turn_id: string
   // 模型侧（为响应该用户消息所做的所有事）
   thinking: RawEvent[]
@@ -119,6 +120,7 @@ export function aggregate(events: RawEvent[]): {
       user_messages: [userText],
       user_kind: getUserKind(currentUserEvt),
       exchanges: [exchange],
+      source_message_ids: [exchange.message_id],
       turn_id: currentUserEvt.turn_id ?? `user_${groupIndex}`,
       thinking: currentThinking,
       tools: currentTools,
@@ -171,9 +173,11 @@ function fallbackSingleCandidate(events: RawEvent[]): CandidateNode[] {
       user_message: '（无用户消息）',
       user_messages: ['（无用户消息）'],
       user_kind: 'instruction',
+      source_message_ids: [],
       exchanges: [
         {
           id: 'exchange_unknown',
+          message_id: '',
           user_message: '（无用户消息）',
           user_kind: 'instruction',
           assistant_summary: summarizeAssistantActivity(
@@ -219,6 +223,7 @@ function buildExchange(
   ]
   return {
     id: `ex_${userEvt.id}`,
+    message_id: userEvt.message_id ?? userEvt.id,
     user_message: userMessage,
     user_kind: getUserKind(userEvt),
     prev_ai_summary: prevAiSummary ?? undefined,
@@ -314,6 +319,7 @@ function mergeCandidates(a: CandidateNode, b: CandidateNode): CandidateNode {
     messages: [...a.messages, ...b.messages],
     assistant_actions: [...assistantActions],
     exchanges: [...a.exchanges, ...b.exchanges],
+    source_message_ids: [...a.source_message_ids, ...b.source_message_ids],
     ts_end: Math.max(a.ts_end, b.ts_end),
   }
 }
@@ -465,6 +471,7 @@ export function candidatesToLoadingNodes(candidates: CandidateNode[]): TraceNode
       goal_distance: 0.5,
       status: 'running' as const,
       event_ids: allEventIds,
+      source_message_ids: candidates.flatMap((c) => c.source_message_ids),
       step_count: candidates.length,
       user_kind: candidates[0]?.user_kind,
       assistant_actions: [...new Set(candidates.flatMap((c) => c.assistant_actions))],

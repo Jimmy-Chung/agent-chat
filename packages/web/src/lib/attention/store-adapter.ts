@@ -165,11 +165,27 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
         if (!text.trim()) continue
         const payload: Record<string, unknown> = { text, role: msg.role }
         if (role === 'user') payload.user_kind = classifyUserKind(text)
-        events.push({ id: part.id, ts, kind: 'message', role, turn_id: msg.turn_id ?? undefined, payload })
+        events.push({
+          id: part.id,
+          ts,
+          kind: 'message',
+          role,
+          message_id: msg.id,
+          turn_id: msg.turn_id ?? undefined,
+          payload,
+        })
       } else if (part.kind === 'thinking') {
         const text = parseTextLike(part.content_json)
         if (!text.trim()) continue
-        events.push({ id: part.id, ts, kind: 'thinking', role, turn_id: msg.turn_id ?? undefined, payload: { text } })
+        events.push({
+          id: part.id,
+          ts,
+          kind: 'thinking',
+          role,
+          message_id: msg.id,
+          turn_id: msg.turn_id ?? undefined,
+          payload: { text },
+        })
       } else if (part.kind === 'tool_use') {
         const call = safeParse<ToolCallContent>(part.content_json)
         const evt: RawEvent = {
@@ -177,6 +193,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
           ts,
           kind: 'tool_use',
           role,
+          message_id: msg.id,
           turn_id: msg.turn_id ?? undefined,
           payload: { name: call?.name ?? '工具', input: call?.input, toolUseId: call?.toolUseId },
         }
@@ -196,6 +213,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
             ts,
             kind: 'tool_use',
             role,
+            message_id: msg.id,
             turn_id: msg.turn_id ?? undefined,
             payload: { name: '(result)', output: res.output, isError: res.isError ?? false, toolUseId: res.toolUseId },
           })
@@ -207,6 +225,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
           ts,
           kind: 'tool_use',
           role,
+          message_id: msg.id,
           turn_id: msg.turn_id ?? undefined,
           payload: { name: 'FileDiff', input: { path: diff?.path } },
         })
@@ -225,6 +244,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
       ts: baseTs + 0.25,
       kind: 'message',
       role: 'assistant',
+      message_id: inter.messageId ?? inter.interactionId,
       turn_id: turnId,
       payload: {
         text: [
@@ -244,6 +264,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
         ts: baseTs + 0.5,
         kind: 'message',
         role: 'user',
+        message_id: inter.messageId ?? inter.interactionId,
         turn_id: turnId,
         payload: {
           text: `用户选择：${compactText(inter.response, 240)}`,
@@ -262,6 +283,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
       id: 'todo_snapshot',
       ts: snapshotTs,
       kind: 'todo',
+      message_id: messages[messages.length - 1]?.id,
       payload: { input: { todos: input.todos } },
     })
   }
@@ -270,6 +292,7 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
       id: 'plan_snapshot',
       ts: snapshotTs,
       kind: 'plan',
+      message_id: messages[messages.length - 1]?.id,
       payload: { text: input.plan, items: planTextToItems(input.plan) },
     })
   }

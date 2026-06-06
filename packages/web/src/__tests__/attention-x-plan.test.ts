@@ -22,6 +22,7 @@ function node(id: string, over: Partial<TraceNode>): TraceNode {
     goal_distance: 0.2,
     status: 'done',
     event_ids: [id],
+    source_message_ids: [id],
     step_count: 1,
     ts_start: 0,
     ts_end: 1,

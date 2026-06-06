@@ -14,6 +14,7 @@ describe('MessageStore streaming — B: 流式状态', () => {
       agentStatusByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
   })
 
