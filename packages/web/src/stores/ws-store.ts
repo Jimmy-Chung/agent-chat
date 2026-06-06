@@ -49,6 +49,7 @@ interface WsState {
   providerConfigs: ProviderConfig[]
   providerConfigsLoading: boolean
   workspacePath: string | null
+  workspacePathStatus: 'idle' | 'loading' | 'ready' | 'error'
 }
 
 interface WsActions {
@@ -64,6 +65,7 @@ interface WsActions {
   setProviderConfigs: (configs: ProviderConfig[]) => void
   setProviderConfigsLoading: (loading: boolean) => void
   setWorkspacePath: (path: string | null) => void
+  setWorkspacePathStatus: (status: WsState['workspacePathStatus']) => void
 }
 
 export const useWsStore = create<WsState & WsActions>()(
@@ -77,6 +79,7 @@ export const useWsStore = create<WsState & WsActions>()(
     providerConfigs: [],
     providerConfigsLoading: false,
     workspacePath: null,
+    workspacePathStatus: 'idle',
 
     connect: () => {
       set((s) => {
@@ -146,6 +149,13 @@ export const useWsStore = create<WsState & WsActions>()(
     setWorkspacePath: (path) => {
       set((s) => {
         s.workspacePath = path
+        s.workspacePathStatus = path ? 'ready' : 'error'
+      })
+    },
+
+    setWorkspacePathStatus: (status) => {
+      set((s) => {
+        s.workspacePathStatus = status
       })
     },
   })),

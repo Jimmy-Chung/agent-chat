@@ -355,6 +355,17 @@ function compactTurnsToPhases(turns: CandidateNode[], maxPhases = 12): Candidate
     }
   }
 
+  if (initialPhases.length === 1 && turns.length > maxPhases) {
+    const phases: CandidateNode[] = []
+    for (let i = 0; i < maxPhases; i++) {
+      const start = Math.floor((i * turns.length) / maxPhases)
+      const end = Math.floor(((i + 1) * turns.length) / maxPhases)
+      const bucket = turns.slice(start, Math.max(start + 1, end))
+      phases.push(bucket.reduce((acc, item) => mergeCandidates(acc, item)))
+    }
+    return phases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
+  }
+
   if (initialPhases.length <= maxPhases) {
     return initialPhases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
   }
