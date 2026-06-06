@@ -860,6 +860,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     case 'interaction.request': {
       if (!topicId) return
       const interaction = await interactionRepo.createInteraction({
+        id: payload.interactionId,
         topicId,
         messageId: payload.messageId,
         kind: payload.interactionKind,

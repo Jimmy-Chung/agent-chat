@@ -5,14 +5,19 @@ import { getDb } from '../migrate'
 import { ulid } from '../../lib/ulid'
 
 export async function createInteraction(input: {
+  id?: string
   topicId: string
   messageId?: string | null
   kind: Interaction['kind']
   prompt: string
   optionsJson?: string | null
 }): Promise<Interaction> {
+  if (input.id) {
+    const existing = await getInteraction(input.id)
+    if (existing) return existing
+  }
   const row = {
-    id: ulid(),
+    id: input.id ?? ulid(),
     topicId: input.topicId,
     messageId: input.messageId ?? null,
     kind: input.kind,

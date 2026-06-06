@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-06 [v1.10.2] — fix: adapter 选择交互阻塞链路
+
+- 修复 adapter `interaction.request` 的原始 `interactionId` 被 agent-chat 重新生成，导致用户选择后 adapter/CLI 无法匹配等待中的 tool call，出现 `[cli_error] CLI produced no output` 且后续回复认为用户跳过选择的问题。
+- 选择项现在原样回传 adapter，不再把前端展示用的短 label 当作实际 choice payload。
+- 新增 server/web 回归测试覆盖 `toolu_*` interaction id 保留、choice 原样转发、前端点击发送原始 option。
+- 版本显示更新为 `v1.10.2`。
+
 ## 2026-06-06 [v1.10.1] — fix: 模型重选持久化与 Attention 配置门禁
 
 - 修复已有话题重新选择模型时，如果当前 live session 模型切换失败会阻止 `current_model` 落库的问题；现在先保存话题模型，再尽力同步当前会话。

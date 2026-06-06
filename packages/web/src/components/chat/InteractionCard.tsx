@@ -78,12 +78,11 @@ export function InteractionCard({
 
   function handleChoose(choice: string) {
     if (!isPending) return
-    const label = parseLabel(choice)
     setResolved(true)
-    setResolvedChoice(label)
+    setResolvedChoice(parseLabel(choice))
     getWsClient().send({
       type: 'user.action',
-      data: { topicId, action: 'choose', interactionId, choice: label },
+      data: { topicId, action: 'choose', interactionId, choice },
     })
   }
 

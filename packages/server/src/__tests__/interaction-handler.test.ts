@@ -160,6 +160,38 @@ describe('Interaction handler — user.action approve/reject', () => {
     }))
   })
 
+  it('resolves choice with the original adapter interaction id and raw choice', async () => {
+    const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
+    const actionHandler = actionCall![1]
+
+    const topic = await topicRepo.createTopic({ name: 'Choice Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-choice' })
+    const rawChoice = 'Next.js (全栈) (前后端一体，React 页面 + API Routes，部署简单)'
+
+    const interaction = await interactionRepo.createInteraction({
+      id: 'toolu_choice_1',
+      topicId: topic.id,
+      kind: 'choice',
+      prompt: '技术栈用哪套？',
+      optionsJson: JSON.stringify([rawChoice]),
+    })
+
+    await actionHandler({}, {
+      d: { topicId: topic.id, action: 'choose', interactionId: interaction.id, choice: rawChoice },
+    })
+
+    const updated = await interactionRepo.getInteraction(interaction.id)
+    expect(updated!.status).toBe('resolved')
+    expect(updated!.response_json).toBe(JSON.stringify({ decision: 'choose', choice: rawChoice }))
+
+    expect(mockPi.rpc).toHaveBeenCalledWith('resolveInteraction', {
+      sessionId: 'sess-choice',
+      interactionId: 'toolu_choice_1',
+      decision: 'choose',
+      choice: rawChoice,
+    })
+  })
+
   it('no-ops for already resolved interaction', async () => {
     const actionCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:user.action')
     const actionHandler = actionCall![1]

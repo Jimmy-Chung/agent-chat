@@ -4,6 +4,7 @@ import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as pushRepo from '../db/repos/push-subscription.repo'
+import * as interactionRepo from '../db/repos/interaction.repo'
 import type { AppConfig } from '../config'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
@@ -521,6 +522,39 @@ describe('Event router — session.health', () => {
     const irEvent = events.find((e) => e.type === 'interaction.request')
     expect(irEvent).toBeDefined()
     expect((irEvent!.data as Record<string, unknown>).interactionKind).toBe('approval')
+  })
+
+  it('preserves adapter interactionId when broadcasting and storing choices', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Choice Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-choice-id' })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-choice-id',
+      ts: Date.now(),
+      payload: {
+        kind: 'interaction.request',
+        interactionId: 'toolu_018Hxnx1YvTC2oe2t3JuBYVk',
+        messageId: 'msg-choice',
+        interactionKind: 'choice',
+        prompt: '技术栈用哪套？',
+        options: [
+          'Next.js (全栈) (前后端一体，React 页面 + API Routes，部署简单)',
+          'Node + Express/Fastify + 独立前端 (后端 API 独立)',
+        ],
+      },
+    } satisfies PIEvent)
+
+    await new Promise((r) => setTimeout(r, 0))
+
+    const irEvent = mockHub.getBroadcastEvents().find((e) => e.type === 'interaction.request')
+    expect(irEvent).toBeDefined()
+    expect((irEvent!.data as Record<string, unknown>).interactionId).toBe('toolu_018Hxnx1YvTC2oe2t3JuBYVk')
+
+    const stored = await interactionRepo.getInteraction('toolu_018Hxnx1YvTC2oe2t3JuBYVk')
+    expect(stored).toBeDefined()
+    expect(stored!.topic_id).toBe(topic.id)
+    expect(stored!.kind).toBe('choice')
   })
 })
 
