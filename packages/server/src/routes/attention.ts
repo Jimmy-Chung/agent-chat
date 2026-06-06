@@ -13,6 +13,7 @@ import {
   renameAttentionGoal,
   upsertAttentionGoalSnapshot,
 } from '../db/repos/attention_goal_snapshot.repo'
+import { logGatewayEvent } from '../server-logs'
 
 export interface AttentionLlmConfig {
   apiKey: string
@@ -45,6 +46,14 @@ const SYSTEM_PROMPT =
   'reason（简短判断依据）与 goalAlignment（0-10 整数，与总目标的相关程度，越高越贴目标）。' +
   '同时输出 normalizedGoal（总目标归一化表达）。严格只输出 JSON：' +
   '{"normalizedGoal":string,"nodes":[{"userSummary":string,"assistantSummary":string,"aggregateTitle":string,"sameTopic":boolean,"closeCurrentTopic":boolean,"reason":string,"goalAlignment":number}, ...]}，顺序与输入节点一致。'
+
+function waitUntil(c: { executionCtx: ExecutionContext }, promise: Promise<unknown>): void {
+  try {
+    c.executionCtx.waitUntil(promise)
+  } catch {
+    void promise
+  }
+}
 
 /** 解析模型输出。接受 {nodes:[...]} 或裸数组；非法 → null（调用方降级）。 */
 export function parseInterpretation(
@@ -184,6 +193,18 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     const llm = cfg?.attentionLlm ?? { apiKey: '', baseUrl: '', model: '' }
     const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : undefined
     const result = await interpretTrace(body.prompt, llm, { maxTokens })
+    if (!result.ok) {
+      waitUntil(c, logGatewayEvent({
+        eventKind: 'attention.interpret.degraded',
+        status: result.reason ?? 'unknown',
+        payload: {
+          reason: result.reason ?? 'unknown',
+          hasApiKey: !!llm.apiKey,
+          hasBaseUrl: !!llm.baseUrl,
+          hasModel: !!llm.model,
+        },
+      }))
+    }
     // 降级也返回 200（带 degraded 标记），不 500 —— 前端据此展示配置提示。
     return c.json(result, 200, { 'Cache-Control': 'no-store' })
   })

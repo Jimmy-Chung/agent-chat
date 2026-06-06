@@ -118,13 +118,15 @@ function goalTitle(goal: AttentionGoalMeta): string {
   return goal.title?.trim() || (goal.is_default ? '默认目标' : goal.goal_text)
 }
 
-function toLoadedSnapshot(snapshot: PersistedAttentionGoalSnapshot): LoadedSnapshot | null {
+export function toLoadedSnapshot(snapshot: PersistedAttentionGoalSnapshot): LoadedSnapshot | null {
+  if (!snapshot.has_snapshot || snapshot.source_message_count <= 0 || snapshot.source_last_event_ts <= 0) return null
   const nodes = safeParse<TraceNode[]>(snapshot.trace_nodes_json)
   const goalAnchor = snapshot.goal_json ? safeParse<GoalAnchor | null>(snapshot.goal_json) : null
   const planItems = safeParse<PlanItem[]>(snapshot.plan_items_json)
   const rawEvents = safeParse<RawEvent[]>(snapshot.raw_events_json)
   const interpret = safeParse<InterpretResult>(snapshot.interpret_json)
   if (!nodes || !planItems || !rawEvents || !interpret) return null
+  if (nodes.length === 0 || rawEvents.length === 0) return null
   return { meta: snapshot, nodes, goalAnchor, planItems, rawEvents, interpret }
 }
 

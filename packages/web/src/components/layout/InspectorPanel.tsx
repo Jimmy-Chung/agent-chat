@@ -289,7 +289,6 @@ function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: str
           onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
           onRenameGoal={(goalId, title) => void attention.renameGoal(goalId, title)}
           focusCurrent
-          chrome={false}
         />
       </div>
     </div>
