@@ -96,6 +96,7 @@ export function buildTrace(
       goal_distance,
       status: isInProgressNode ? 'running' : 'done',
       event_ids: [...c.thinking, ...c.tools, ...c.messages].map((e) => e.id),
+      source_message_ids: [...c.source_message_ids],
       step_count: c.tools.length,
       user_kind: c.user_kind,
       assistant_actions: c.assistant_actions,

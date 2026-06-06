@@ -25,6 +25,12 @@ export interface StoredInteraction {
   defaultTimeoutMs?: number
 }
 
+export interface FocusedMessageTarget {
+  topicId: string
+  messageId: string
+  requestId: number
+}
+
 export interface PendingMessage {
   id: string
   content: string
@@ -48,6 +54,7 @@ interface MessageState {
   progressByTopic: Record<string, { phase: string; message: string; metadata?: Record<string, unknown> }>
   usageByMessage: Record<string, { model: string; inputTokens: number; outputTokens: number }>
   interactions: Record<string, StoredInteraction>
+  focusedMessageTarget: FocusedMessageTarget | null
   pendingMessagesByTopic: Record<string, PendingMessage[]>
   unreadByTopic: Record<string, number>
 }
@@ -78,6 +85,7 @@ interface MessageActions {
   setUsage: (messageId: string, data: { model: string; inputTokens: number; outputTokens: number }) => void
   setInteraction: (id: string, data: StoredInteraction) => void
   setInteractionsForTopic: (topicId: string, interactions: StoredInteraction[]) => void
+  focusMessage: (topicId: string, messageId: string) => void
   addPendingMessage: (topicId: string, content: string, clientMessageId: string) => void
   removePendingMessage: (topicId: string, id: string) => void
   clearPendingMessages: (topicId: string) => void
@@ -103,6 +111,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     progressByTopic: {},
     usageByMessage: {},
     interactions: {},
+    focusedMessageTarget: null,
     pendingMessagesByTopic: {},
     unreadByTopic: {},
 
@@ -369,6 +378,13 @@ export const useMessageStore = create<MessageState & MessageActions>()(
         for (const interaction of interactions) {
           s.interactions[interaction.interactionId] = interaction
         }
+      })
+    },
+
+    focusMessage: (topicId, messageId) => {
+      set((s) => {
+        const nextRequestId = (s.focusedMessageTarget?.requestId ?? 0) + 1
+        s.focusedMessageTarget = { topicId, messageId, requestId: nextRequestId }
       })
     },
 

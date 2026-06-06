@@ -3,9 +3,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
+import { resolveFocusMessageId } from '@/lib/attention'
 import { getWsClient } from '@/lib/ws-client'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
+import { useMessageStore } from '@/stores/message-store'
 
 const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
   ssr: false,
@@ -172,17 +175,20 @@ function MindMapDetail({
   traceNodes,
   rawEvents,
   planItems,
+  onFocus,
 }: {
   selected: MindMapNode | null
   traceNodes: TraceNode[]
   rawEvents: RawEvent[]
   planItems: PlanItem[]
+  onFocus: (messageId: string) => void
 }) {
   if (!selected) {
     return <EmptyHint text="选择一个节点查看治理过程" />
   }
   const traceById = new Map(traceNodes.map((node) => [node.id, node]))
   const sourceTraceNodes = selected.sourceNodeIds.map((id) => traceById.get(id)).filter(Boolean) as TraceNode[]
+  const focusMessageId = resolveFocusMessageId(selected.sourceNodeIds, traceById)
   const eventIds = new Set(sourceTraceNodes.flatMap((node) => node.event_ids))
   const events = selected.kind === 'goal'
     ? rawEvents
@@ -248,18 +254,34 @@ function MindMapDetail({
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
       <div className="shrink-0 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
-        <div className="flex items-center gap-2">
-          <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
-            {selected.kind}
-          </span>
-          {selected.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前节点</span>}
-          {selected.collapsed && <span className="text-[10px]" style={{ color: '#F7C26B' }}>聚合节点</span>}
-        </div>
-        <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
-          {selected.title}
-        </div>
-        <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
-          {selected.subtitle}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
+                {selected.kind}
+              </span>
+              {selected.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前节点</span>}
+              {selected.collapsed && <span className="text-[10px]" style={{ color: '#F7C26B' }}>聚合节点</span>}
+            </div>
+            <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+              {selected.title}
+            </div>
+            <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+              {selected.subtitle}
+            </div>
+          </div>
+          {focusMessageId && (
+            <Tooltip content="回到消息面板中的对应消息" side="top">
+              <button
+                type="button"
+                onClick={() => onFocus(focusMessageId)}
+                className="mt-0.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-opacity hover:opacity-85"
+                style={{ background: 'var(--glass-2)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
+              >
+                Focus
+              </button>
+            </Tooltip>
+          )}
         </div>
       </div>
 
@@ -318,6 +340,7 @@ export function AttentionXPanel({
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
+  const focusMessage = useMessageStore((s) => s.focusMessage)
   const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
@@ -388,7 +411,13 @@ export function AttentionXPanel({
               focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
             />
           </div>
-          <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} planItems={planItems} />
+          <MindMapDetail
+            selected={selectedMindNode}
+            traceNodes={nodes}
+            rawEvents={rawEvents}
+            planItems={planItems}
+            onFocus={(messageId) => focusMessage(topicId, messageId)}
+          />
         </div>
         )}
       </div>

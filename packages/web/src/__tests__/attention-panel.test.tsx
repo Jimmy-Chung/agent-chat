@@ -25,6 +25,7 @@ function node(over: Partial<TraceNode> = {}): TraceNode {
     goal_distance: over.goal_distance ?? 0.2,
     status: over.status ?? 'done',
     event_ids: [],
+    source_message_ids: [],
     step_count: over.step_count ?? 1,
     ts_start: 0,
     ts_end: 1,
@@ -103,8 +104,8 @@ describe('TC-AIT-222-04 点选 + 详情', () => {
       conclusion: '处理登录',
       user_message: '修一下登录',
       exchanges: [
-        { id: 'ex1', user_message: '修一下登录', user_kind: 'instruction', assistant_summary: '看了代码', assistant_actions: [], event_ids: [], tool_count: 1, ts_start: 0, ts_end: 1 },
-        { id: 'ex2', user_message: '还报错', user_kind: 'evidence', assistant_summary: '改了 token 校验', assistant_actions: [], event_ids: [], tool_count: 2, ts_start: 1, ts_end: 2 },
+        { id: 'ex1', message_id: 'm1', user_message: '修一下登录', user_kind: 'instruction', assistant_summary: '看了代码', assistant_actions: [], event_ids: [], tool_count: 1, ts_start: 0, ts_end: 1 },
+        { id: 'ex2', message_id: 'm2', user_message: '还报错', user_kind: 'evidence', assistant_summary: '改了 token 校验', assistant_actions: [], event_ids: [], tool_count: 2, ts_start: 1, ts_end: 2 },
       ],
     })
     render(<AttentionPanelContent nodes={[withSub]} goalAnchor={GOAL} />)
@@ -150,6 +151,7 @@ describe('Attention X 动态树详情', () => {
       exchanges: [
         {
           id: 'ex1',
+          message_id: 'm1',
           user_message: '帮我做 todo web 应用',
           user_kind: 'instruction',
           assistant_summary: '我先确认技术栈并准备实现。',
@@ -161,6 +163,7 @@ describe('Attention X 动态树详情', () => {
         },
         {
           id: 'ex2',
+          message_id: 'm2',
           user_message: '选 vue',
           user_kind: 'choice',
           assistant_summary: '已按 Vue 方案实现第一版。',

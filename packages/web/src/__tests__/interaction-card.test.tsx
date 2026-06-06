@@ -12,7 +12,7 @@ vi.mock('@/lib/ws-client', () => ({
 afterEach(() => {
   cleanup()
   sendMock.mockClear()
-  useMessageStore.setState({ interactions: {} })
+  useMessageStore.setState({ interactions: {}, focusedMessageTarget: null })
 })
 
 describe('InteractionCard', () => {

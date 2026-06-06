@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-06 [v1.10.3] — feat: Attention 节点支持 Focus 回跳
+
+- Attention 节点详情右上角新增 `Focus` 按钮，可回跳到该节点对应的第一条来源消息。
+- 点击后消息面板会平滑滚动到目标消息，并进行短暂高亮，方便用户确认定位结果。
+- 聚合节点默认落到第一条来源消息，保持定位动作稳定。
+- 版本显示更新为 `v1.10.3`。
+
 ## 2026-06-06 [v1.10.2] — fix: adapter 选择交互阻塞链路
 
 - 修复 adapter `interaction.request` 的原始 `interactionId` 被 agent-chat 重新生成，导致用户选择后 adapter/CLI 无法匹配等待中的 tool call，出现 `[cli_error] CLI produced no output` 且后续回复认为用户跳过选择的问题。

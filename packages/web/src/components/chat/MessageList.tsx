@@ -1,11 +1,12 @@
 'use client'
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
 import type { ToolResultInfo } from './ToolCard'
 import { MessageBubble } from './MessageBubble'
 import { InteractionCard } from './InteractionCard'
 import { formatDateDivider, shouldShowDateDivider } from '@/lib/message-time'
+import { useMessageStore } from '@/stores/message-store'
 
 interface OrphanInteraction {
   interactionId: string
@@ -56,10 +57,25 @@ export function MessageList({
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const messageRefs = useRef(new Map<string, HTMLDivElement>())
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null)
+  const focusTarget = useMessageStore((s) => s.focusedMessageTarget)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, messages[messages.length - 1]?.status])
+
+  useEffect(() => {
+    if (!focusTarget || focusTarget.topicId !== topicId) return
+    const el = messageRefs.current.get(focusTarget.messageId)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedMessageId(focusTarget.messageId)
+    const timer = window.setTimeout(() => {
+      setHighlightedMessageId((current) => (current === focusTarget.messageId ? null : current))
+    }, 1600)
+    return () => window.clearTimeout(timer)
+  }, [focusTarget?.requestId, focusTarget?.messageId, focusTarget?.topicId, topicId])
 
   if (messages.length === 0) {
     return (
@@ -97,7 +113,22 @@ export function MessageList({
                 : turns[turnIdx - 1]?.messages.at(-1)
 
               return (
-                <div key={msg.id}>
+                <div
+                  key={msg.id}
+                  ref={(node) => {
+                    if (node) messageRefs.current.set(msg.id, node)
+                    else messageRefs.current.delete(msg.id)
+                  }}
+                  style={{
+                    scrollMarginTop: '96px',
+                    borderRadius: '14px',
+                    transition: 'box-shadow 180ms ease, background-color 180ms ease',
+                    ...(highlightedMessageId === msg.id ? {
+                      boxShadow: '0 0 0 1px rgba(10,132,255,0.62), 0 0 0 6px rgba(10,132,255,0.12)',
+                      background: 'rgba(10,132,255,0.06)',
+                    } : {}),
+                  }}
+                >
                   {shouldShowDateDivider(previousMessage?.started_at ?? null, msg.started_at) && (
                     <DateDivider timestamp={msg.started_at} />
                   )}

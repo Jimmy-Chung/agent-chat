@@ -45,6 +45,7 @@ describe('Streaming performance — D: 量化性能', () => {
       agentStatusByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
     const store = useMessageStore.getState()
     store.startStreaming('perf-topic', 'perf-m1')
@@ -68,6 +69,7 @@ describe('Streaming performance — D: 量化性能', () => {
       agentStatusByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
     })
     const store = useMessageStore.getState()
     store.startStreaming('perf-topic', 'perf-m2')

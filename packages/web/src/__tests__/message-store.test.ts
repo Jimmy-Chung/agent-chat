@@ -49,6 +49,7 @@ describe('MessageStore', () => {
       progressByTopic: {},
       usageByMessage: {},
       interactions: {},
+      focusedMessageTarget: null,
       pendingMessagesByTopic: {},
       unreadByTopic: {},
     })

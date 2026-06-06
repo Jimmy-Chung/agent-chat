@@ -10,6 +10,7 @@ export type RawEvent = {
   ts: number
   kind: EventKind
   role?: 'user' | 'assistant' // 'user' = real human input
+  message_id?: string
   parent_task_id?: string
   turn_id?: string
   payload: Record<string, unknown>
@@ -22,6 +23,7 @@ export type NodeStatus = 'pending' | 'running' | 'done' | 'failed' | 'abandoned'
 
 export type TraceExchange = {
   id: string
+  message_id: string
   user_message: string
   user_kind: UserMessageKind
   prev_ai_summary?: string // 上一轮 AI 回答（触发本次提问的上下文）
@@ -54,6 +56,7 @@ export type TraceNode = {
 
   status: NodeStatus
   event_ids: string[] // 该节点包含的所有原始事件
+  source_message_ids: string[] // 节点对应的原始消息 id，按时间顺序
   step_count: number // 聚合了几个工具调用步骤
   user_kind?: UserMessageKind
   assistant_actions?: AssistantActionKind[]

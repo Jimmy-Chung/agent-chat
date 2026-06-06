@@ -20,6 +20,7 @@ function node(id: string, over: Partial<TraceNode> = {}): TraceNode {
     goal_distance: 0.2,
     status: 'done',
     event_ids: [id],
+    source_message_ids: [id],
     step_count: 1,
     user_kind: 'instruction',
     ts_start: order * 1000,
@@ -141,6 +142,7 @@ describe('attention-x conversation tree governance', () => {
         goal_distance: 0.12,
         exchanges: [{
           id: 'e2',
+          message_id: 'm2',
           user_message: '选 vue',
           user_kind: 'choice',
           prev_ai_summary: '你要怎么做？给出选项：vue、react、svelte',
@@ -183,6 +185,7 @@ describe('attention-x conversation tree governance', () => {
         conclusion: '整理中国境外投资现状、主要目的地、个人境外投资渠道和政策环境',
         exchanges: [{
           id: 'e1',
+          message_id: 'm1',
           user_message: '我想调研一下关于中国人境外投资的一些现状',
           user_kind: 'instruction',
           assistant_summary: '中国境外投资现状包含主要投资方向、代表国家、资金规模、ODI、东南亚、欧洲、中东和个人境外投资渠道',
@@ -229,6 +232,7 @@ describe('attention-x conversation tree governance', () => {
         conclusion: '境外投资调研框架',
         exchanges: [{
           id: 'e1-long',
+          message_id: 'm1',
           user_message: '我想调研一下关于中国人境外投资的一些现状',
           user_kind: 'instruction',
           assistant_summary: longAssistantSummary,
@@ -354,9 +358,10 @@ describe('attention-x conversation tree governance', () => {
     const compacted = node('n1', {
       user_message: '帮我做一个 todo web 应用',
       user_message_count: 3,
-      exchanges: [
+        exchanges: [
         {
           id: 'ex1',
+          message_id: 'm1',
           user_message: '帮我做一个 todo web 应用',
           user_kind: 'instruction',
           assistant_summary: '确认 todo 应用需求',
@@ -368,6 +373,7 @@ describe('attention-x conversation tree governance', () => {
         },
         {
           id: 'ex2',
+          message_id: 'm2',
           user_message: '选 vue',
           user_kind: 'choice',
           assistant_summary: '采用 Vue 实现',
@@ -379,6 +385,7 @@ describe('attention-x conversation tree governance', () => {
         },
         {
           id: 'ex3',
+          message_id: 'm3',
           user_message: '帮我修改按钮样式',
           user_kind: 'instruction',
           assistant_summary: '修改按钮样式',
