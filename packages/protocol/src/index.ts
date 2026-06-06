@@ -230,6 +230,7 @@ export {
   topicRenameSchema,
   topicDetachExtensionSchema,
   topicSetModelSchema,
+  topicSetAttentionTargetSchema,
   userMessageSchema,
   userMessageRetrySchema,
   userActionSchema,

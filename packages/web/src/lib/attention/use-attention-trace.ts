@@ -4,7 +4,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Message, MessagePart } from '@agent-chat/protocol'
 import { useMessageStore } from '@/stores/message-store'
+import { useTopicStore } from '@/stores/topic-store'
 import { getServerBase } from '@/lib/server-url'
 import { aggregate } from './aggregator'
 import { storeToRawEvents, extractGoalAnchor, type TodoSnapshotItem } from './store-adapter'
@@ -28,10 +30,37 @@ export interface AttentionTrace {
 }
 
 const EMPTY_MESSAGES: never[] = []
+const STALE_PENDING_USER_MESSAGE_MS = 2 * 60 * 1000
+
+export function hasActiveAttentionMessage(messages: Message[], now = Date.now()): boolean {
+  return messages.some((message) => {
+    if (message.status === 'streaming' || message.status === 'retrying') return true
+    if (message.role !== 'user' || message.status !== 'pending') return false
+    return now - message.started_at < STALE_PENDING_USER_MESSAGE_MS
+  })
+}
+
+export function resolveGoalAnchor(input: {
+  explicitTarget: string | null | undefined
+  explicitUpdatedAt: number | null | undefined
+  messages: Message[]
+  partsByMessage: Record<string, MessagePart[]>
+}): GoalAnchor | null {
+  const explicit = input.explicitTarget?.trim()
+  if (explicit) {
+    return {
+      raw_query: explicit,
+      normalized_goal: explicit,
+      ts: input.explicitUpdatedAt ?? 0,
+    }
+  }
+  return extractGoalAnchor({ messages: input.messages, partsByMessage: input.partsByMessage })
+}
 
 export function useAttentionTrace(topicId: string): AttentionTrace {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
   const partsByMessage = useMessageStore((s) => s.partsByMessage)
+  const topic = useTopicStore((s) => s.topics.find((entry) => entry.id === topicId) ?? null)
   const todos = useMessageStore((s) => s.todosByTopic[topicId]) as TodoSnapshotItem[] | undefined
   const plan = useMessageStore((s) => s.planByTopic[topicId])
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId] ?? 'idle')
@@ -45,14 +74,21 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     () => storeToRawEvents({ messages, partsByMessage, interactions, todos, plan }),
     [messages, partsByMessage, interactions, todos, plan],
   )
+  const hasLiveMessages = useMemo(() => hasActiveAttentionMessage(messages), [messages])
   const aggregated = useMemo(() => aggregate(rawEvents), [rawEvents])
   const candidates = aggregated.candidates
   const planItems = aggregated.planItems
   const goalAnchor = useMemo(
-    () => extractGoalAnchor({ messages, partsByMessage }),
-    [messages, partsByMessage],
+    () => resolveGoalAnchor({
+      explicitTarget: topic?.attention_target,
+      explicitUpdatedAt: topic?.updated_at,
+      messages,
+      partsByMessage,
+    }),
+    [messages, partsByMessage, topic?.attention_target, topic?.updated_at],
   )
   const lastEventTs = rawEvents.length > 0 ? rawEvents[rawEvents.length - 1].ts : 0
+  const goalKey = goalAnchor?.normalized_goal ?? ''
 
   const [interpret, setInterpret] = useState<{ key: string; result: InterpretResult } | null>(null)
   const [llmUnavailable, setLlmUnavailable] = useState(false)
@@ -62,7 +98,8 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     const { shouldCall, cacheKey } = planInterpret({
       candidateCount: candidates.length,
       lastEventTs,
-      agentStatus,
+      goalKey,
+      agentStatus: hasLiveMessages ? agentStatus : 'idle',
       lastInterpretedKey: lastKeyRef.current,
     })
     if (!shouldCall) return
@@ -84,10 +121,10 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     return () => {
       cancelled = true
     }
-  }, [candidates, lastEventTs, agentStatus, goalAnchor])
+  }, [candidates, lastEventTs, agentStatus, goalAnchor, hasLiveMessages, goalKey])
 
-  const inProgress = agentStatus !== 'idle'
-  const currentKey = makeInterpretKey(candidates.length, lastEventTs)
+  const inProgress = hasLiveMessages && agentStatus !== 'idle'
+  const currentKey = makeInterpretKey(candidates.length, lastEventTs, goalKey)
   const semanticGoalAnchor = useMemo<GoalAnchor | null>(() => {
     const normalized = interpret?.key === currentKey ? interpret.result.normalizedGoal?.trim() : ''
     if (!normalized) return goalAnchor

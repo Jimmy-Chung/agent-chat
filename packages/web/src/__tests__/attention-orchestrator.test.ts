@@ -74,16 +74,23 @@ describe('TC-AIT-221-01 触发时机', () => {
 // ── TC-AIT-221-02：缓存命中不二次调用 ────────────────────────────────────────
 describe('TC-AIT-221-02 缓存命中', () => {
   it('同 cacheKey（候选数+末事件 ts 不变）→ 不重复调用', () => {
-    const key = makeInterpretKey(3, 5000)
-    const r = planInterpret({ candidateCount: 3, lastEventTs: 5000, agentStatus: 'idle', lastInterpretedKey: key })
+    const key = makeInterpretKey(3, 5000, 'goal-a')
+    const r = planInterpret({ candidateCount: 3, lastEventTs: 5000, goalKey: 'goal-a', agentStatus: 'idle', lastInterpretedKey: key })
     expect(r.cacheKey).toBe(key)
     expect(r.shouldCall).toBe(false)
   })
 
   it('轨迹变化（末事件 ts 变）→ 重新调用', () => {
-    const key = makeInterpretKey(3, 5000)
+    const key = makeInterpretKey(3, 5000, 'goal-a')
     expect(
-      planInterpret({ candidateCount: 3, lastEventTs: 6000, agentStatus: 'idle', lastInterpretedKey: key }).shouldCall,
+      planInterpret({ candidateCount: 3, lastEventTs: 6000, goalKey: 'goal-a', agentStatus: 'idle', lastInterpretedKey: key }).shouldCall,
+    ).toBe(true)
+  })
+
+  it('目标变化 → 重新调用', () => {
+    const key = makeInterpretKey(3, 5000, 'goal-a')
+    expect(
+      planInterpret({ candidateCount: 3, lastEventTs: 5000, goalKey: 'goal-b', agentStatus: 'idle', lastInterpretedKey: key }).shouldCall,
     ).toBe(true)
   })
 })

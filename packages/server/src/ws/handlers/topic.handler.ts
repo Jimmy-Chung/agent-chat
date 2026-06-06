@@ -1,6 +1,6 @@
 import type { WSFrame } from '@agent-chat/protocol'
 import type { TodoItem } from '@agent-chat/protocol'
-import { topicCreateSchema, topicDeleteSchema, topicRenameSchema, topicDetachExtensionSchema, topicSetModelSchema, topicSetPlanModeSchema, topicResumeSchema } from '@agent-chat/protocol'
+import { topicCreateSchema, topicDeleteSchema, topicRenameSchema, topicDetachExtensionSchema, topicSetAttentionTargetSchema, topicSetModelSchema, topicSetPlanModeSchema, topicResumeSchema } from '@agent-chat/protocol'
 import type { PiClient } from '../../pi/client'
 import * as topicRepo from '../../db/repos/topic.repo'
 import * as artifactRepo from '../../db/repos/artifact.repo'
@@ -228,6 +228,15 @@ export function registerTopicHandlers(
           },
         })
       }
+    }
+  })
+
+  hub.on('client:topic.setAttentionTarget', async (...args: unknown[]) => {
+    const frame = args[1] as WSFrame
+    const data = topicSetAttentionTargetSchema.parse(frame.d)
+    const updated = await topicRepo.updateTopic(data.id, { attention_target: data.target?.trim() || null })
+    if (updated) {
+      broadcaster.broadcast('topic.updated', updated)
     }
   })
 

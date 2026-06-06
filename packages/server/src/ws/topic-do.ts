@@ -3,7 +3,7 @@ import {
   encodeFrame, decodeFrame, createFrame, type WSFrame,
   type Topic,
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
-  topicSetModelSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
+  topicSetModelSchema, topicSetAttentionTargetSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
   userMessageRetrySchema, userMessageSchema,
   sopTemplateSaveSchema, sopTemplateDeleteSchema, sopTemplateGenerateSchema,
@@ -925,6 +925,13 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             }
           }
         }
+        break
+      }
+
+      case 'topic.setAttentionTarget': {
+        const data = topicSetAttentionTargetSchema.parse(frame.d)
+        const updated = await topicRepo.updateTopic(data.id, { attention_target: data.target?.trim() || null })
+        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
         break
       }
 

@@ -32,8 +32,8 @@ export function localSummary(c: CandidateNode): string {
   return c.user_message.slice(0, 15)
 }
 
-export function makeInterpretKey(candidateCount: number, lastEventTs: number): string {
-  return `${candidateCount}:${lastEventTs}`
+export function makeInterpretKey(candidateCount: number, lastEventTs: number, goalKey = ''): string {
+  return `${candidateCount}:${lastEventTs}:${goalKey}`
 }
 
 /**
@@ -43,10 +43,11 @@ export function makeInterpretKey(candidateCount: number, lastEventTs: number): s
 export function planInterpret(input: {
   candidateCount: number
   lastEventTs: number
+  goalKey?: string
   agentStatus: string
   lastInterpretedKey: string | null
 }): { shouldCall: boolean; cacheKey: string } {
-  const cacheKey = makeInterpretKey(input.candidateCount, input.lastEventTs)
+  const cacheKey = makeInterpretKey(input.candidateCount, input.lastEventTs, input.goalKey ?? '')
   const idle = input.agentStatus === 'idle'
   const shouldCall = idle && input.candidateCount > 0 && cacheKey !== input.lastInterpretedKey
   return { shouldCall, cacheKey }
