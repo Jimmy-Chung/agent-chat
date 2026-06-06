@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-06 [v1.10.12] — fix: Attention LLM 输出解析兼容
+
+- Attention interpret 输出 token 上限从 700 提高到 2400，降低大图 JSON 被截断导致 `parse_error` 的概率。
+- server 解析 LLM 输出时兼容 markdown code fence、前后解释文本、result/output/data 包装字段、items/results 数组和 snake_case 字段。
+- 新增解析兼容回归测试，覆盖 code fence、包装对象和 snake_case 输出。
+- 版本显示更新为 `v1.10.12`。
+
 ## 2026-06-06 [v1.10.11] — fix: Attention 大会话重绘超时
 
 - Attention server rebuild 的 LLM interpret timeout 从 12s 提高到 45s，覆盖历史会话和目标切换后的完整会话重绘。

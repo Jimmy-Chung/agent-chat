@@ -40,7 +40,7 @@ export interface InterpretResult {
 }
 
 const DEFAULT_TIMEOUT_MS = 45_000
-const MAX_OUTPUT_TOKENS = 700
+const MAX_OUTPUT_TOKENS = 2400
 
 const SYSTEM_PROMPT =
   '你是会话决策分析器。给定一段 Agent 会话的候选节点摘要，为每个节点输出：' +
@@ -58,7 +58,67 @@ function waitUntil(c: { executionCtx: ExecutionContext }, promise: Promise<unkno
   }
 }
 
-/** 解析模型输出。接受 {nodes:[...]} 或裸数组；非法 → null（调用方降级）。 */
+function stripCodeFence(content: string): string {
+  const trimmed = content.trim()
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  return fenced ? fenced[1].trim() : trimmed
+}
+
+function extractJsonCandidate(content: string): string {
+  const stripped = stripCodeFence(content)
+  if (stripped.startsWith('{') || stripped.startsWith('[')) return stripped
+  const objectStart = stripped.indexOf('{')
+  const arrayStart = stripped.indexOf('[')
+  const startCandidates = [objectStart, arrayStart].filter((index) => index >= 0)
+  if (!startCandidates.length) return stripped
+  const start = Math.min(...startCandidates)
+  const endChar = stripped[start] === '{' ? '}' : ']'
+  const end = stripped.lastIndexOf(endChar)
+  return end > start ? stripped.slice(start, end + 1).trim() : stripped
+}
+
+function safeJsonParse(value: string): unknown | null {
+  try {
+    return JSON.parse(extractJsonCandidate(value))
+  } catch {
+    return null
+  }
+}
+
+function unwrapInterpretPayload(data: unknown): unknown {
+  let current = data
+  for (let i = 0; i < 4; i += 1) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return current
+    const record = current as Record<string, unknown>
+    if (Array.isArray(record.nodes) || Array.isArray(record.items) || Array.isArray(record.results)) return current
+    for (const key of ['data', 'result', 'output', 'response', 'content']) {
+      const next = record[key]
+      if (!next) continue
+      if (typeof next === 'string') {
+        const parsed = safeJsonParse(next)
+        if (parsed) {
+          current = parsed
+          break
+        }
+      } else if (typeof next === 'object') {
+        current = next
+        break
+      }
+    }
+    if (current === data) return current
+  }
+  return current
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
+
+/** 解析模型输出。接受 {nodes:[...]}、常见包装对象、markdown code fence 或裸数组；非法 → null（调用方降级）。 */
 export function parseInterpretation(
   content: string,
 ): {
@@ -72,21 +132,22 @@ export function parseInterpretation(
   nodeReason: string[]
   normalizedGoal?: string
 } | null {
-  let data: unknown
-  try {
-    data = JSON.parse(content)
-  } catch {
-    return null
-  }
+  const data = unwrapInterpretPayload(safeJsonParse(content))
   const nodes = Array.isArray(data)
     ? data
     : data && typeof data === 'object' && Array.isArray((data as { nodes?: unknown }).nodes)
       ? (data as { nodes: unknown[] }).nodes
+      : data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)
+        ? (data as { items: unknown[] }).items
+        : data && typeof data === 'object' && Array.isArray((data as { results?: unknown }).results)
+          ? (data as { results: unknown[] }).results
       : null
   if (!nodes) return null
   const normalizedGoal =
     data && typeof data === 'object' && typeof (data as { normalizedGoal?: unknown }).normalizedGoal === 'string'
       ? (data as { normalizedGoal: string }).normalizedGoal
+      : data && typeof data === 'object' && typeof (data as { goal?: unknown }).goal === 'string'
+        ? (data as { goal: string }).goal
       : undefined
   const conclusion: string[] = []
   const goalAlignment: number[] = []
@@ -99,18 +160,18 @@ export function parseInterpretation(
   for (const n of nodes) {
     if (!n || typeof n !== 'object') return null
     const node = n as Record<string, unknown>
-    const user = typeof node.userSummary === 'string' ? node.userSummary : ''
-    const assistant = typeof node.assistantSummary === 'string' ? node.assistantSummary : ''
-    const aggregate = typeof node.aggregateTitle === 'string' ? node.aggregateTitle : ''
-    const legacyConclusion = typeof node.conclusion === 'string' ? node.conclusion : ''
+    const user = pickString(node, ['userSummary', 'user_summary', 'user', 'question', 'title'])
+    const assistant = pickString(node, ['assistantSummary', 'assistant_summary', 'assistant', 'answer', 'conclusion', 'summary'])
+    const aggregate = pickString(node, ['aggregateTitle', 'aggregate_title', 'title', 'topic'])
+    const legacyConclusion = pickString(node, ['conclusion', 'summary'])
     userSummary.push(user)
     assistantSummary.push(assistant)
     aggregateTitle.push(aggregate)
     conclusion.push(assistant || legacyConclusion || aggregate)
     sameTopic.push(typeof node.sameTopic === 'boolean' ? node.sameTopic : true)
     closeCurrentTopic.push(typeof node.closeCurrentTopic === 'boolean' ? node.closeCurrentTopic : false)
-    nodeReason.push(typeof node.reason === 'string' ? node.reason : '')
-    const ga = Number(node.goalAlignment)
+    nodeReason.push(pickString(node, ['reason', 'nodeReason', 'node_reason', 'rationale']))
+    const ga = Number(node.goalAlignment ?? node.goal_alignment ?? node.alignment ?? node.score)
     goalAlignment.push(Number.isFinite(ga) ? Math.min(10, Math.max(0, ga)) : 5)
   }
   return {

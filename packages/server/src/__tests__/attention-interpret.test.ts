@@ -90,6 +90,36 @@ describe('TC-AIT-220-02 正常解析', () => {
     expect(p?.closeCurrentTopic).toEqual([false, false])
   })
 
+  it('parseInterpretation 接受 markdown code fence 与前后解释文本', () => {
+    const p = parseInterpretation('下面是结果：\n```json\n{"normalizedGoal":"目标","nodes":[{"userSummary":"用户概要","assistantSummary":"AI概要","aggregateTitle":"标题","sameTopic":true,"closeCurrentTopic":true,"reason":"依据","goalAlignment":8}]}\n```\n请查收')
+    expect(p?.normalizedGoal).toBe('目标')
+    expect(p?.userSummary).toEqual(['用户概要'])
+    expect(p?.assistantSummary).toEqual(['AI概要'])
+    expect(p?.aggregateTitle).toEqual(['标题'])
+    expect(p?.goalAlignment).toEqual([8])
+  })
+
+  it('parseInterpretation 接受 result/output 包装和 snake_case 字段', () => {
+    const p = parseInterpretation(JSON.stringify({
+      result: {
+        goal: '归一目标',
+        items: [{
+          user_summary: '用户侧归纳',
+          assistant_summary: 'AI侧归纳',
+          aggregate_title: '节点标题',
+          node_reason: '包装字段',
+          goal_alignment: 7,
+        }],
+      },
+    }))
+    expect(p?.normalizedGoal).toBe('归一目标')
+    expect(p?.conclusion).toEqual(['AI侧归纳'])
+    expect(p?.userSummary).toEqual(['用户侧归纳'])
+    expect(p?.aggregateTitle).toEqual(['节点标题'])
+    expect(p?.nodeReason).toEqual(['包装字段'])
+    expect(p?.goalAlignment).toEqual([7])
+  })
+
   it('parseInterpretation 非法 JSON → null', () => {
     expect(parseInterpretation('not json')).toBeNull()
   })
