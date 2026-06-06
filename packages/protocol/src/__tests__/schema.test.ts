@@ -38,6 +38,7 @@ import {
   topicCreateSchema,
   topicDeleteSchema,
   topicResumeSchema,
+  topicSetAttentionTargetSchema,
   sopTemplateSaveSchema,
   usageSnapshotSchema,
   userActionSchema,
@@ -920,6 +921,14 @@ describe('Client event schemas', () => {
       sopIds: ['sop-1', 'sop-2'],
     })
     expect(result.sopIds).toEqual(['sop-1', 'sop-2'])
+  })
+
+  it('parses topic.setAttentionTarget', () => {
+    const result = topicSetAttentionTargetSchema.parse({
+      id: 'topic-1',
+      target: '把话题目标明确成注册平台流程',
+    })
+    expect(result.target).toBe('把话题目标明确成注册平台流程')
   })
 
   it('parses SOP save without workflowMode', () => {

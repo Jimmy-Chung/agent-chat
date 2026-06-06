@@ -17,6 +17,11 @@ function parseSpec(specJson: string | null): { cwd?: string } | null {
   }
 }
 
+function normalizeAttentionTarget(target: string | null | undefined): string | null {
+  const value = target?.trim()
+  return value ? value : null
+}
+
 function getTopicCwd(topic: Topic): string | undefined {
   const spec = topic.agent_type === 'programming'
     ? parseSpec(topic.programming_spec_json)
@@ -31,6 +36,7 @@ export async function createTopic(input: {
   programmingSpecJson?: string | null
   generalSpecJson?: string | null
   sopTemplateId?: string | null
+  attentionTarget?: string | null
   currentModel?: string | null
   currentProviderId?: string | null
 }): Promise<Topic> {
@@ -44,6 +50,7 @@ export async function createTopic(input: {
     programmingSpecJson: input.programmingSpecJson ?? null,
     generalSpecJson: input.generalSpecJson ?? null,
     sopTemplateId: input.sopTemplateId ?? null,
+    attentionTarget: normalizeAttentionTarget(input.attentionTarget),
     currentModel: input.currentModel ?? null,
     currentProviderId: input.currentProviderId ?? null,
     historyFrozenAt: null,
@@ -109,6 +116,7 @@ const topicKeyMap: Record<string, string> = {
   history_frozen_at: 'historyFrozenAt',
   programming_spec_json: 'programmingSpecJson',
   general_spec_json: 'generalSpecJson',
+  attention_target: 'attentionTarget',
   plan_mode: 'planMode',
 }
 
@@ -122,6 +130,7 @@ export async function updateTopic(
       | 'agent_type'
       | 'current_model'
       | 'current_provider_id'
+      | 'attention_target'
       | 'history_frozen_at'
       | 'programming_spec_json'
       | 'general_spec_json'
@@ -182,6 +191,7 @@ export async function upsertSystemTopic(
     programmingSpecJson: null,
     generalSpecJson: null,
     sopTemplateId: null,
+    attentionTarget: null,
     currentModel: null,
     currentProviderId: null,
     historyFrozenAt: null,
@@ -204,6 +214,7 @@ function toDomain(row: Record<string, unknown>): Topic {
     programming_spec_json: (row.programmingSpecJson as string) || null,
     general_spec_json: (row.generalSpecJson as string) || null,
     sop_template_id: (row.sopTemplateId as string) || null,
+    attention_target: (row.attentionTarget as string) || null,
     current_model: (row.currentModel as string) || null,
     current_provider_id: (row.currentProviderId as string) || null,
     history_frozen_at: (row.historyFrozenAt as number) || null,

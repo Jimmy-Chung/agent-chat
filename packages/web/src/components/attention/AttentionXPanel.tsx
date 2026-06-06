@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
 import { resolveFocusMessageId } from '@/lib/attention'
@@ -9,6 +9,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { useMessageStore } from '@/stores/message-store'
+import { useTopicStore } from '@/stores/topic-store'
 
 const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
   ssr: false,
@@ -341,6 +342,8 @@ export function AttentionXPanel({
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
   const focusMessage = useMessageStore((s) => s.focusMessage)
+  const topic = useTopicStore((s) => s.topics.find((entry) => entry.id === topicId) ?? null)
+  const [targetDraft, setTargetDraft] = useState(topic?.attention_target ?? '')
   const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
@@ -348,6 +351,41 @@ export function AttentionXPanel({
     mindProjection.nodes[0] ??
     null
   const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
+  useEffect(() => {
+    setTargetDraft(topic?.attention_target ?? '')
+  }, [topic?.attention_target, topic?.updated_at, topicId])
+
+  const persistAttentionTarget = useCallback((next: string | null) => {
+    const sent = getWsClient().send({
+      type: 'topic.setAttentionTarget',
+      data: { id: topicId, target: next },
+    })
+    if (!sent) return false
+    if (topic) {
+      useTopicStore.getState().upsertTopic({
+        ...topic,
+        attention_target: next,
+      })
+    }
+    return true
+  }, [topic, topicId])
+
+  const saveAttentionTarget = useCallback(() => {
+    const normalized = targetDraft.trim() || null
+    persistAttentionTarget(normalized)
+  }, [persistAttentionTarget, targetDraft])
+
+  const clearAttentionTarget = useCallback(() => {
+    if (persistAttentionTarget(null)) {
+      setTargetDraft('')
+    }
+  }, [persistAttentionTarget])
+
+  const handleTargetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    saveAttentionTarget()
+  }, [saveAttentionTarget])
   const selectMindNode = (id: string) => {
     setSelectedMindId(id)
     const node = mindProjection.nodes.find((entry) => entry.id === id)
@@ -363,19 +401,52 @@ export function AttentionXPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {chrome && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
-          <button
-            onClick={reloadHistory}
-            className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-80"
-            style={{ background: 'var(--glass-2)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
-          >
-            重新加载历史
-          </button>
-          <div className="rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}>
-            动态树
+        <div className="flex shrink-0 flex-col gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={reloadHistory}
+              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-80"
+              style={{ background: 'var(--glass-2)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
+            >
+              重新加载历史
+            </button>
+            <div className="rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}>
+              动态树
+            </div>
+            <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+              {nodes.length} nodes · {planItems.length} plan/todo
+            </div>
           </div>
-          <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
-            {nodes.length} nodes · {planItems.length} plan/todo
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>目标</div>
+            <input
+              value={targetDraft}
+              onChange={(event) => setTargetDraft(event.target.value)}
+              onKeyDown={handleTargetKeyDown}
+              placeholder="留空则使用话题第一句"
+              className="min-w-0 flex-1 rounded-md px-3 py-2 text-[12px] outline-none"
+              style={{
+                background: 'rgba(0,0,0,0.18)',
+                border: '1px solid var(--hairline)',
+                color: 'var(--fg-strong)',
+              }}
+            />
+            <button
+              type="button"
+              onClick={saveAttentionTarget}
+              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
+              style={{ background: 'var(--glass-2)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
+            >
+              保存
+            </button>
+            <button
+              type="button"
+              onClick={clearAttentionTarget}
+              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
+              style={{ background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--hairline)' }}
+            >
+              清空
+            </button>
           </div>
         </div>
       )}

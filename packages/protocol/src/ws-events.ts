@@ -17,6 +17,7 @@ const topicSchema = z.object({
   programming_spec_json: z.string().nullable().optional().default(null),
   general_spec_json: z.string().nullable().optional().default(null),
   sop_template_id: z.string().nullable().optional().default(null),
+  attention_target: z.string().nullable().optional().default(null),
   current_model: z.string().nullable(),
   current_provider_id: z.string().nullable().optional().default(null),
   history_frozen_at: z.number().nullable(),
@@ -540,6 +541,11 @@ export const topicSetModelSchema = z.object({
   model: z.string(),
 })
 
+export const topicSetAttentionTargetSchema = z.object({
+  id: z.string(),
+  target: z.string().nullable(),
+})
+
 export const userMessageSchema = z.object({
   topicId: z.string(),
   content: z.string(),
@@ -658,6 +664,10 @@ export type ClientEvent =
       data: z.infer<typeof topicDetachExtensionSchema>
     }
   | { type: 'topic.setModel'; data: z.infer<typeof topicSetModelSchema> }
+  | {
+      type: 'topic.setAttentionTarget'
+      data: z.infer<typeof topicSetAttentionTargetSchema>
+    }
   | { type: 'user.message'; data: z.infer<typeof userMessageSchema> }
   | { type: 'user.message.retry'; data: z.infer<typeof userMessageRetrySchema> }
   | { type: 'user.action'; data: z.infer<typeof userActionSchema> }
@@ -699,6 +709,7 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.rename': topicRenameSchema,
   'topic.detachExtension': topicDetachExtensionSchema,
   'topic.setModel': topicSetModelSchema,
+  'topic.setAttentionTarget': topicSetAttentionTargetSchema,
   'user.message': userMessageSchema,
   'user.message.retry': userMessageRetrySchema,
   'user.action': userActionSchema,

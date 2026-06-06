@@ -36,6 +36,7 @@ export const topics = sqliteTable('topics', {
   programmingSpecJson: text('programming_spec_json'),
   generalSpecJson: text('general_spec_json'),
   sopTemplateId: text('sop_template_id'),
+  attentionTarget: text('attention_target'),
   currentModel: text('current_model'),
   currentProviderId: text('current_provider_id'),
   historyFrozenAt: integer('history_frozen_at'),
