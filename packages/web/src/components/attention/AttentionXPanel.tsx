@@ -480,6 +480,7 @@ export function AttentionXPanel({
               onSelect={selectMindNode}
               expandedIds={expandedMindIds}
               focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
+              projection={mindProjection}
             />
           </div>
           <MindMapDetail

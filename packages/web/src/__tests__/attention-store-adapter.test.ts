@@ -224,6 +224,28 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     expect(candidates.length).toBeLessThanOrEqual(12)
   })
 
+  it('12 轮以内的同一业务目标多轮对话保留为多个候选节点', () => {
+    const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
+    for (let i = 1; i <= 8; i++) {
+      const u = makeMessage({ id: `su${i}`, role: 'user', turn_id: `st${i}` })
+      const a = makeMessage({ id: `sa${i}`, role: 'assistant', turn_id: `st${i}` })
+      rows.push({ msg: u, parts: [part(`su${i}`, 'text', `token 中心平台接入第 ${i} 轮补充`)] })
+      rows.push({ msg: a, parts: [part(`sa${i}`, 'text', `平台接入方案第 ${i} 段回答`)] })
+    }
+    const { candidates } = aggregate(storeToRawEvents(buildInput(rows)))
+    expect(candidates).toHaveLength(8)
+    expect(candidates.map((candidate) => candidate.turn_id)).toEqual([
+      'st1',
+      'st2',
+      'st3',
+      'st4',
+      'st5',
+      'st6',
+      'st7',
+      'st8',
+    ])
+  })
+
   it('多轮同一业务目标的普通追问超过上限时不能整体压成 1 个候选节点', () => {
     const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
     for (let i = 1; i <= 20; i++) {

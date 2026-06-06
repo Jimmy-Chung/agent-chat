@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
 import { goalDistanceColor } from '@/lib/attention'
-import { buildMindMapProjection, type MindMapEdge, type MindMapNode } from '@/lib/attention/mind-map-projector'
+import { buildMindMapProjection, type MindMapEdge, type MindMapNode, type MindMapProjection } from '@/lib/attention/mind-map-projector'
 
 const WIDTH: Record<MindMapNode['kind'], number> = {
   goal: 250,
@@ -125,6 +125,7 @@ export default function MindMapGraph({
   onSelect,
   expandedIds,
   focusNodeId,
+  projection: providedProjection,
 }: {
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
@@ -133,10 +134,14 @@ export default function MindMapGraph({
   onSelect: (id: string) => void
   expandedIds: ReadonlySet<string>
   focusNodeId?: string | null
+  projection?: MindMapProjection
 }) {
   const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
   const didFitViewRef = useRef(false)
-  const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedIds), [nodes, goalAnchor, planItems, expandedIds])
+  const projection = useMemo(
+    () => providedProjection ?? buildMindMapProjection(nodes, goalAnchor, planItems, expandedIds),
+    [providedProjection, nodes, goalAnchor, planItems, expandedIds],
+  )
   const projectedNodes = useMemo(
     (): MindFlowNode[] => projection.nodes.map((node) => ({
       id: node.id,

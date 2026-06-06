@@ -8,7 +8,23 @@ import { AttentionXPanel } from '../components/attention/AttentionXPanel'
 afterEach(cleanup)
 
 vi.mock('../components/attention/MindMapGraph', () => ({
-  default: () => <div data-testid="mind-map-graph" />,
+  default: ({ projection, onSelect }: {
+    projection?: { nodes: Array<{ id: string; title: string; collapsed: boolean }> }
+    onSelect?: (id: string) => void
+  }) => (
+    <div data-testid="mind-map-graph">
+      {(projection?.nodes ?? []).map((node) => (
+        <button
+          key={node.id}
+          data-testid={`mind-node-${node.id}`}
+          data-collapsed={String(node.collapsed)}
+          onClick={() => onSelect?.(node.id)}
+        >
+          {node.id}:{node.title}
+        </button>
+      ))}
+    </div>
+  ),
 }))
 
 function node(over: Partial<TraceNode> = {}): TraceNode {
@@ -203,5 +219,42 @@ describe('Attention X 动态树详情', () => {
     expect(screen.queryByText('用户信息')).toBeNull()
     expect(screen.queryByText('AI 信息概要')).toBeNull()
     expect(screen.queryByText('Text 明细')).toBeNull()
+  })
+
+  it('点击聚合节点后展开子节点', () => {
+    const nodes = Array.from({ length: 14 }, (_, index) =>
+      node({
+        id: `cand_${index + 1}`,
+        user_message: `token 中心平台接入第 ${index + 1} 轮`,
+        conclusion: `接入方案第 ${index + 1} 段`,
+        exchanges: [{
+          id: `ex_${index + 1}`,
+          message_id: `m_${index + 1}`,
+          user_message: `token 中心平台接入第 ${index + 1} 轮`,
+          user_kind: 'instruction',
+          assistant_summary: `接入方案第 ${index + 1} 段`,
+          assistant_actions: ['solve'],
+          event_ids: [`e_${index + 1}`],
+          tool_count: 0,
+          ts_start: index * 2,
+          ts_end: index * 2 + 1,
+        }],
+      }),
+    )
+
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={nodes}
+        goalAnchor={{ raw_query: 'token 中心平台注册', normalized_goal: 'token 中心平台注册', ts: 0 }}
+        planItems={[]}
+        rawEvents={[]}
+      />,
+    )
+
+    const aggregate = screen.getAllByTestId(/^mind-node-agg_|^mind-node-user_/).find((entry) => entry.getAttribute('data-collapsed') === 'true')
+    expect(aggregate).toBeTruthy()
+    fireEvent.click(aggregate!)
+    expect(screen.getAllByTestId(/^mind-node-nested_/).length).toBeGreaterThan(0)
   })
 })
