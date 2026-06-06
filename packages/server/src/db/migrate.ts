@@ -208,6 +208,8 @@ export async function runMigrations() {
           interpret_json TEXT NOT NULL,
           trace_nodes_json TEXT NOT NULL,
           plan_items_json TEXT NOT NULL,
+          mind_projection_json TEXT,
+          degraded_reason TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         )
@@ -221,6 +223,25 @@ export async function runMigrations() {
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0012_attention_goal_snapshots')
+    }
+  }
+
+  // Run 0013: persist server-owned attention projection/degraded state
+  {
+    const hash = '0013_attention_server_projection'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      try { await d1.prepare(`ALTER TABLE attention_goal_snapshots ADD COLUMN mind_projection_json TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE attention_goal_snapshots ADD COLUMN degraded_reason TEXT`).run() } catch { /* column may already exist */ }
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0013_attention_server_projection')
     }
   }
 

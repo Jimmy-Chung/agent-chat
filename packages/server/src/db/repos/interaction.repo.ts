@@ -76,6 +76,17 @@ export async function listPendingInteractions(
     .filter((i) => i.status === 'pending')
 }
 
+export async function listInteractionsByTopic(
+  topicId: string,
+): Promise<Interaction[]> {
+  const rows = await getDb()
+    .select()
+    .from(interactions)
+    .where(eq(interactions.topicId, topicId))
+    .all()
+  return rows.map(toDomain)
+}
+
 function toDomain(row: Record<string, unknown>): Interaction {
   return {
     id: row.id as string,

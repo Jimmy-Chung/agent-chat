@@ -1,22 +1,11 @@
-// S3 (AIT-221) React hook：把实时骨架（S1）与 LLM 语义（S2）连起来。
-// AIT-226：Attention 面板不再使用本地语义兜底；LLM 不可用时不返回推断节点。
-// AIT-231：Attention 图按目标历史持久化，同一目标切回时基于当前完整会话重绘并覆盖快照。
+// Attention 面板数据流：server 负责节点生成/治理/落库；前端只触发重绘并渲染快照。
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Message, MessagePart } from '@agent-chat/protocol'
+import { extractGoalAnchor } from '@agent-chat/protocol'
 import { useMessageStore } from '@/stores/message-store'
 import { getServerBase } from '@/lib/server-url'
-import { aggregate, type CandidateNode } from './aggregator'
-import { storeToRawEvents, extractGoalAnchor, type TodoSnapshotItem } from './store-adapter'
-import {
-  planInterpret,
-  makeInterpretKey,
-  buildTrace,
-  buildInterpretPrompt,
-  callInterpret,
-  type InterpretResult,
-} from './orchestrator'
 import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from './types'
 
 export interface AttentionGoalMeta {
@@ -54,7 +43,7 @@ export interface AttentionTrace {
 const EMPTY_MESSAGES: never[] = []
 const STALE_PENDING_USER_MESSAGE_MS = 2 * 60 * 1000
 
-export function hasActiveAttentionMessage(messages: Message[], now = Date.now()): boolean {
+export function hasActiveAttentionMessage(messages: { role: string; status: string; started_at: number }[], now = Date.now()): boolean {
   return messages.some((message) => {
     if (message.status === 'streaming' || message.status === 'retrying') return true
     if (message.role !== 'user' || message.status !== 'pending') return false
@@ -86,15 +75,16 @@ interface PersistedAttentionGoalSnapshot extends AttentionGoalMeta {
   interpret_json: string
   trace_nodes_json: string
   plan_items_json: string
+  mind_projection_json?: string | null
+  degraded_reason?: string | null
 }
 
 interface LoadedSnapshot {
-  meta: AttentionGoalMeta
+  meta: PersistedAttentionGoalSnapshot
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
   rawEvents: RawEvent[]
-  interpret: InterpretResult
 }
 
 function safeParse<T>(json: string | null | undefined): T | null {
@@ -107,7 +97,8 @@ function safeParse<T>(json: string | null | undefined): T | null {
 }
 
 function getToken(): string | undefined {
-  return typeof localStorage !== 'undefined' ? localStorage.getItem('AGENT_CHAT_TOKEN') || undefined : undefined
+  if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') return undefined
+  return localStorage.getItem('AGENT_CHAT_TOKEN') || undefined
 }
 
 function authHeaders(token?: string): HeadersInit {
@@ -124,14 +115,13 @@ export function toLoadedSnapshot(snapshot: PersistedAttentionGoalSnapshot): Load
   const goalAnchor = snapshot.goal_json ? safeParse<GoalAnchor | null>(snapshot.goal_json) : null
   const planItems = safeParse<PlanItem[]>(snapshot.plan_items_json)
   const rawEvents = safeParse<RawEvent[]>(snapshot.raw_events_json)
-  const interpret = safeParse<InterpretResult>(snapshot.interpret_json)
-  if (!nodes || !planItems || !rawEvents || !interpret) return null
+  if (!nodes || !planItems || !rawEvents) return null
   if (nodes.length === 0 || rawEvents.length === 0) return null
-  return { meta: snapshot, nodes, goalAnchor, planItems, rawEvents, interpret }
+  return { meta: snapshot, nodes, goalAnchor, planItems, rawEvents }
 }
 
 async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T | null> {
-  const res = await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(8_000) })
+  const res = await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(12_000) })
   if (!res.ok) return null
   return res.json() as Promise<T>
 }
@@ -146,7 +136,7 @@ async function listAttentionGoals(input: { topicId: string; serverBase: string; 
 
 async function ensureDefaultGoal(input: {
   topicId: string
-  goalText: string
+  goalText?: string
   serverBase: string
   token?: string
 }): Promise<AttentionGoalMeta | null> {
@@ -155,7 +145,7 @@ async function ensureDefaultGoal(input: {
     {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders(input.token) },
-      body: JSON.stringify({ goalText: input.goalText, title: '默认目标' }),
+      body: JSON.stringify({ goalText: input.goalText ?? '', title: '默认目标' }),
     },
   )
   return body?.goal ?? null
@@ -211,82 +201,49 @@ async function loadGoalSnapshot(input: {
   goalId: string
   serverBase: string
   token?: string
-}): Promise<LoadedSnapshot | null> {
+}): Promise<{ snapshot: LoadedSnapshot | null; degradedReason: string | null }> {
   const body = await requestJson<{ snapshot?: PersistedAttentionGoalSnapshot }>(
     `${input.serverBase}/api/agent-chat/v1/attention/goals/${input.goalId}/snapshot`,
     { headers: authHeaders(input.token) },
   )
-  return body?.snapshot ? toLoadedSnapshot(body.snapshot) : null
+  const degradedReason = body?.snapshot?.degraded_reason ?? null
+  return { snapshot: body?.snapshot ? toLoadedSnapshot(body.snapshot) : null, degradedReason }
 }
 
-async function saveGoalSnapshot(input: {
+async function rebuildGoalSnapshot(input: {
   goalId: string
   serverBase: string
   token?: string
-  goalAnchor: GoalAnchor | null
-  rawEvents: RawEvent[]
-  candidates: CandidateNode[]
-  interpret: InterpretResult
-  nodes: TraceNode[]
-  planItems: PlanItem[]
-  sourceMessageCount: number
-  sourceLastEventTs: number
-}): Promise<void> {
-  await fetch(`${input.serverBase}/api/agent-chat/v1/attention/goals/${input.goalId}/snapshot`, {
-    method: 'PUT',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeaders(input.token),
-    },
-    body: JSON.stringify({
-      goalJson: JSON.stringify(input.goalAnchor),
-      rawEventsJson: JSON.stringify(input.rawEvents),
-      candidatesJson: JSON.stringify(input.candidates),
-      interpretJson: JSON.stringify(input.interpret),
-      traceNodesJson: JSON.stringify(input.nodes),
-      planItemsJson: JSON.stringify(input.planItems),
-      sourceMessageCount: input.sourceMessageCount,
-      sourceLastEventTs: input.sourceLastEventTs,
-    }),
-    signal: AbortSignal.timeout(8_000),
-  }).catch(() => undefined)
+}): Promise<{ snapshot: LoadedSnapshot | null; degradedReason: string | null }> {
+  const body = await requestJson<{
+    ok?: boolean
+    degraded?: boolean
+    reason?: string
+    snapshot?: PersistedAttentionGoalSnapshot
+  }>(
+    `${input.serverBase}/api/agent-chat/v1/attention/goals/${input.goalId}/rebuild`,
+    { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders(input.token) }, body: '{}' },
+  )
+  const degradedReason = body?.degraded ? body.reason ?? body.snapshot?.degraded_reason ?? 'unknown' : body?.snapshot?.degraded_reason ?? null
+  return { snapshot: body?.snapshot ? toLoadedSnapshot(body.snapshot) : null, degradedReason }
 }
 
 export function useAttentionTrace(topicId: string): AttentionTrace {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
-  const partsByMessage = useMessageStore((s) => s.partsByMessage)
-  const todos = useMessageStore((s) => s.todosByTopic[topicId]) as TodoSnapshotItem[] | undefined
-  const plan = useMessageStore((s) => s.planByTopic[topicId])
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId] ?? 'idle')
-  const interactionsById = useMessageStore((s) => s.interactions)
-  const interactions = useMemo(
-    () => Object.values(interactionsById).filter((interaction) => interaction.topicId === topicId),
-    [interactionsById, topicId],
-  )
-
-  const rawEvents = useMemo(
-    () => storeToRawEvents({ messages, partsByMessage, interactions, todos, plan }),
-    [messages, partsByMessage, interactions, todos, plan],
-  )
   const hasLiveMessages = useMemo(() => hasActiveAttentionMessage(messages), [messages])
-  const aggregated = useMemo(() => aggregate(rawEvents), [rawEvents])
-  const candidates = aggregated.candidates
-  const livePlanItems = aggregated.planItems
-  const defaultGoalAnchor = useMemo(
-    () => resolveGoalAnchor({ explicitTarget: null, explicitUpdatedAt: null, messages, partsByMessage }),
-    [messages, partsByMessage],
+  const sourceSignal = useMemo(
+    () => `${messages.length}:${messages.reduce((max, message) => Math.max(max, message.finished_at ?? message.started_at), 0)}`,
+    [messages],
   )
-  const defaultGoalText = defaultGoalAnchor?.normalized_goal?.trim() || defaultGoalAnchor?.raw_query?.trim() || ''
-  const lastEventTs = rawEvents.length > 0 ? rawEvents[rawEvents.length - 1].ts : 0
 
   const [goals, setGoals] = useState<AttentionGoalMeta[]>([])
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null)
   const [goalDraft, setGoalDraft] = useState('')
-  const [interpret, setInterpret] = useState<{ key: string; result: InterpretResult } | null>(null)
   const [snapshot, setSnapshot] = useState<LoadedSnapshot | null>(null)
   const [llmUnavailable, setLlmUnavailable] = useState(false)
-  const lastKeyRef = useRef<string | null>(null)
-  const forceRedrawRef = useRef(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const lastRebuildKeyRef = useRef<string | null>(null)
 
   const reloadGoals = useCallback(async () => {
     const serverBase = getServerBase()
@@ -295,7 +252,23 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     setGoals(loaded)
     const active = loaded.find((goal) => goal.active) ?? loaded[0] ?? null
     setActiveGoalId((prev) => (prev && loaded.some((goal) => goal.id === prev) ? prev : active?.id ?? null))
-  }, [topicId])
+  }, [sourceSignal, topicId])
+
+  const rebuild = useCallback(async (goalId: string, opts: { force?: boolean } = {}) => {
+    if (!goalId) return
+    const key = `${goalId}:${sourceSignal}`
+    if (!opts.force && lastRebuildKeyRef.current === key) return
+    lastRebuildKeyRef.current = key
+    setIsAnalyzing(true)
+    const result = await rebuildGoalSnapshot({ goalId, serverBase: getServerBase(), token: getToken() }).catch(() => ({
+      snapshot: null,
+      degradedReason: 'fetch_error',
+    }))
+    setIsAnalyzing(false)
+    if (result.snapshot) setSnapshot(result.snapshot)
+    setLlmUnavailable(!!result.degradedReason)
+    void reloadGoals()
+  }, [reloadGoals, sourceSignal])
 
   useEffect(() => {
     let cancelled = false
@@ -304,8 +277,8 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     listAttentionGoals({ topicId, serverBase, token }).then(async (loaded) => {
       if (cancelled) return
       let nextGoals = loaded
-      if (!nextGoals.some((goal) => goal.is_default) && defaultGoalText) {
-        const defaultGoal = await ensureDefaultGoal({ topicId, goalText: defaultGoalText, serverBase, token })
+      if (!nextGoals.some((goal) => goal.is_default)) {
+        const defaultGoal = await ensureDefaultGoal({ topicId, serverBase, token })
         if (cancelled) return
         if (defaultGoal) nextGoals = await listAttentionGoals({ topicId, serverBase, token })
       }
@@ -317,18 +290,12 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     return () => {
       cancelled = true
     }
-  }, [defaultGoalText, topicId])
+  }, [topicId])
 
   const activeGoal = useMemo(
     () => goals.find((goal) => goal.id === activeGoalId) ?? null,
     [activeGoalId, goals],
   )
-  const goalText = activeGoal?.goal_text?.trim() || defaultGoalText
-  const goalAnchor = useMemo<GoalAnchor | null>(() => {
-    if (!goalText) return null
-    return { raw_query: goalText, normalized_goal: goalText, ts: activeGoal?.created_at ?? defaultGoalAnchor?.ts ?? 0 }
-  }, [activeGoal?.created_at, defaultGoalAnchor?.ts, goalText])
-  const goalKey = activeGoal?.id ?? goalAnchor?.normalized_goal ?? ''
 
   useEffect(() => {
     if (activeGoal) setGoalDraft(activeGoal.goal_text)
@@ -342,116 +309,41 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     let cancelled = false
     loadGoalSnapshot({ goalId: activeGoalId, serverBase: getServerBase(), token: getToken() }).then((loaded) => {
       if (cancelled) return
-      setSnapshot(loaded)
-      setInterpret(null)
-      const forced = forceRedrawRef.current
-      forceRedrawRef.current = false
-      const snapshotIsCurrent =
-        !!loaded &&
-        loaded.meta.source_message_count === messages.length &&
-        loaded.meta.source_last_event_ts === lastEventTs
-      lastKeyRef.current = !forced && snapshotIsCurrent
-        ? makeInterpretKey(candidates.length, lastEventTs, goalKey)
-        : null
+      setSnapshot(loaded.snapshot)
+      setLlmUnavailable(!!loaded.degradedReason && !loaded.snapshot)
+      if (!loaded.snapshot && !loaded.degradedReason) void rebuild(activeGoalId, { force: true })
     }).catch(() => {
       if (!cancelled) setSnapshot(null)
     })
     return () => {
       cancelled = true
     }
-  }, [activeGoalId, candidates.length, goalKey, lastEventTs, messages.length])
+  }, [activeGoalId, rebuild])
 
   useEffect(() => {
-    if (!activeGoalId) return
-    const { shouldCall, cacheKey } = planInterpret({
-      candidateCount: candidates.length,
-      lastEventTs,
-      goalKey,
-      agentStatus: hasLiveMessages ? agentStatus : 'idle',
-      lastInterpretedKey: forceRedrawRef.current ? null : lastKeyRef.current,
-    })
-    if (!shouldCall) return
-    lastKeyRef.current = cacheKey
-    forceRedrawRef.current = false
-    setLlmUnavailable(false)
-    let cancelled = false
-    const prompt = buildInterpretPrompt(candidates, goalAnchor)
-    const token = getToken()
-    const serverBase = getServerBase()
-    callInterpret(prompt, { serverBase, token }).then((result) => {
-      if (cancelled) return
-      if (result) {
-        setInterpret({ key: cacheKey, result })
-        setLlmUnavailable(false)
-        return
-      }
-      setInterpret(null)
-      setLlmUnavailable(true)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [activeGoalId, candidates, lastEventTs, agentStatus, goalAnchor, hasLiveMessages, goalKey])
-
-  const inProgress = hasLiveMessages && agentStatus !== 'idle'
-  const currentKey = makeInterpretKey(candidates.length, lastEventTs, goalKey)
-  const semanticGoalAnchor = useMemo<GoalAnchor | null>(() => {
-    const normalized = interpret?.key === currentKey ? interpret.result.normalizedGoal?.trim() : ''
-    if (!normalized) return goalAnchor
-    return { raw_query: goalAnchor?.raw_query ?? normalized, normalized_goal: normalized, ts: goalAnchor?.ts ?? 0 }
-  }, [currentKey, goalAnchor, interpret])
-  const liveNodes = useMemo(
-    () => interpret?.key === currentKey
-      ? buildTrace(candidates, semanticGoalAnchor, interpret.result, { inProgress })
-      : [],
-    [candidates, currentKey, semanticGoalAnchor, interpret, inProgress],
-  )
-  const useSnapshot = !!snapshot && snapshot.meta.id === activeGoalId && (!interpret || interpret.key !== currentKey)
-  const nodes = useSnapshot ? snapshot.nodes : liveNodes
-  const displayGoalAnchor = useSnapshot ? snapshot.goalAnchor : semanticGoalAnchor
-  const displayPlanItems = useSnapshot ? snapshot.planItems : livePlanItems
-  const displayRawEvents = useSnapshot ? snapshot.rawEvents : rawEvents
-
-  useEffect(() => {
-    if (!activeGoalId || !interpret || interpret.key !== currentKey || !liveNodes.length) return
-    const token = getToken()
-    const serverBase = getServerBase()
-    void saveGoalSnapshot({
-      goalId: activeGoalId,
-      serverBase,
-      token,
-      goalAnchor: semanticGoalAnchor,
-      rawEvents,
-      candidates,
-      interpret: interpret.result,
-      nodes: liveNodes,
-      planItems: livePlanItems,
-      sourceMessageCount: messages.length,
-      sourceLastEventTs: lastEventTs,
-    }).then(() => {
-      void reloadGoals()
-    })
-  }, [activeGoalId, candidates, currentKey, interpret, lastEventTs, liveNodes, livePlanItems, messages.length, rawEvents, reloadGoals, semanticGoalAnchor])
+    if (!activeGoalId || hasLiveMessages || agentStatus !== 'idle') return
+    void rebuild(activeGoalId)
+  }, [activeGoalId, agentStatus, hasLiveMessages, rebuild, sourceSignal])
 
   const createGoal = useCallback(async (goalTextInput?: string) => {
     const next = (goalTextInput ?? goalDraft).trim()
     if (!next) return
     const created = await createAttentionGoal({ topicId, goalText: next, serverBase: getServerBase(), token: getToken() })
     if (!created) return
-    forceRedrawRef.current = true
     setGoals((prev) => [created, ...prev.map((goal) => ({ ...goal, active: false }))])
     setActiveGoalId(created.id)
     setGoalDraft(created.goal_text)
-  }, [goalDraft, topicId])
+    await rebuild(created.id, { force: true })
+  }, [goalDraft, rebuild, topicId])
 
   const selectGoal = useCallback(async (goalId: string) => {
     const activated = await activateAttentionGoal({ goalId, serverBase: getServerBase(), token: getToken() })
     if (!activated) return
-    forceRedrawRef.current = true
     setGoals((prev) => prev.map((goal) => ({ ...goal, active: goal.id === goalId })))
     setActiveGoalId(goalId)
     setGoalDraft(activated.goal_text)
-  }, [])
+    await rebuild(goalId, { force: true })
+  }, [rebuild])
 
   const renameGoal = useCallback(async (goalId: string, title: string) => {
     const renamed = await renameAttentionGoal({ goalId, title, serverBase: getServerBase(), token: getToken() })
@@ -460,11 +352,11 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   }, [])
 
   return {
-    nodes,
-    goalAnchor: displayGoalAnchor,
-    planItems: displayPlanItems,
-    rawEvents: displayRawEvents,
-    isAnalyzing: inProgress || (!!activeGoalId && !!lastKeyRef.current && !nodes.length && !llmUnavailable),
+    nodes: snapshot?.nodes ?? [],
+    goalAnchor: snapshot?.goalAnchor ?? (activeGoal ? { raw_query: activeGoal.goal_text, normalized_goal: activeGoal.goal_text, ts: activeGoal.created_at } : null),
+    planItems: snapshot?.planItems ?? [],
+    rawEvents: snapshot?.rawEvents ?? [],
+    isAnalyzing: isAnalyzing || (hasLiveMessages && agentStatus !== 'idle'),
     llmUnavailable,
     goals,
     activeGoal,

@@ -203,6 +203,8 @@ export const attentionGoalSnapshots = sqliteTable('attention_goal_snapshots', {
   interpretJson: text('interpret_json').notNull(),
   traceNodesJson: text('trace_nodes_json').notNull(),
   planItemsJson: text('plan_items_json').notNull(),
+  mindProjectionJson: text('mind_projection_json'),
+  degradedReason: text('degraded_reason'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 }, (table) => [

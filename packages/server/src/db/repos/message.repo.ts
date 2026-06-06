@@ -88,6 +88,18 @@ export async function listMessagesByTopic(
   return rows.map(toMessageDomain).reverse()
 }
 
+export async function listMessagesAndPartsByTopic(
+  topicId: string,
+  limit = 500,
+): Promise<{ messages: Message[]; partsByMessage: Record<string, MessagePart[]> }> {
+  const topicMessages = await listMessagesByTopic(topicId, limit)
+  const partsByMessage: Record<string, MessagePart[]> = {}
+  for (const message of topicMessages) {
+    partsByMessage[message.id] = await getMessageParts(message.id)
+  }
+  return { messages: topicMessages, partsByMessage }
+}
+
 // ─── MessagePart CRUD ──────────────────────────────────────────────
 
 export async function createMessagePart(input: {

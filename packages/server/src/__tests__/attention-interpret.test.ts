@@ -8,6 +8,7 @@ import {
 } from '../routes/attention'
 import type { AppConfig } from '../config'
 import * as topicRepo from '../db/repos/topic.repo'
+import * as messageRepo from '../db/repos/message.repo'
 
 const PATH = '/api/agent-chat/v1/attention/interpret'
 const GOOD_LLM: AttentionLlmConfig = {
@@ -238,6 +239,120 @@ describe('Attention goal snapshots', () => {
       const snapshotBody = (await snapshotRes.json()) as { snapshot: { source_message_count: number; trace_nodes_json: string } }
       expect(snapshotBody.snapshot.source_message_count).toBe(20)
       expect(JSON.parse(snapshotBody.snapshot.trace_nodes_json)).toEqual([{ id: 'n1' }])
+    } finally {
+      teardownTestDb()
+    }
+  })
+})
+
+describe('Attention server rebuild pipeline', () => {
+  it('TC-AIT-SRV-01/02 rebuild 从 D1 读取消息生成多节点快照，不依赖前端上传 prompt/messages', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention rebuild', kind: 'normal', agentType: 'general' })
+      const user1 = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user1.id, kind: 'text', contentJson: JSON.stringify({ content: '如何注册 helm 平台到 token 中心？' }) })
+      const assistant1 = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistant1.id, kind: 'text', contentJson: JSON.stringify({ content: '需要创建平台表、成员关系和券码校验流程。' }) })
+      const user2 = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user2.id, kind: 'text', contentJson: JSON.stringify({ content: '那券码购买和验证链路怎么设计？' }) })
+      const assistant2 = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistant2.id, kind: 'text', contentJson: JSON.stringify({ content: '建议用订单、券码库存、兑换记录和应用侧验证 API。' }) })
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '设计 token 中心平台注册和券码验证', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async () => openAiResponse(JSON.stringify({
+        normalizedGoal: '设计 token 中心平台注册和券码验证',
+        nodes: [
+          {
+            userSummary: '如何管理业务平台在 token 中心的注册',
+            assistantSummary: '方案包含平台注册、成员关系和券码校验流程',
+            aggregateTitle: '平台注册治理',
+            sameTopic: true,
+            closeCurrentTopic: false,
+            reason: '第一轮围绕平台注册',
+            goalAlignment: 9,
+          },
+          {
+            userSummary: '如何设计券码购买与应用验证链路',
+            assistantSummary: '方案包含订单、库存、兑换记录和验证 API',
+            aggregateTitle: '券码购买验证',
+            sameTopic: true,
+            closeCurrentTopic: true,
+            reason: '第二轮延续券码链路',
+            goalAlignment: 9,
+          },
+        ],
+      }))) as unknown as typeof fetch
+      try {
+        const rebuildRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        expect(rebuildRes.status).toBe(200)
+        const rebuildBody = (await rebuildRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; raw_events_json: string; mind_projection_json: string | null } }
+        expect(rebuildBody.ok).toBe(true)
+        const nodes = JSON.parse(rebuildBody.snapshot.trace_nodes_json) as Array<{ user_message: string; source_message_ids: string[] }>
+        expect(nodes.length).toBeGreaterThan(1)
+        expect(nodes[0].user_message).toBe('如何管理业务平台在 token 中心的注册')
+        expect(nodes.flatMap((node) => node.source_message_ids)).toEqual(expect.arrayContaining([user1.id, user2.id]))
+        expect(JSON.parse(rebuildBody.snapshot.raw_events_json).length).toBeGreaterThan(0)
+        expect(rebuildBody.snapshot.mind_projection_json).toBeTruthy()
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      teardownTestDb()
+    }
+  })
+
+  it('TC-AIT-SRV-04 LLM timeout 时标记 degraded，不写空图假 snapshot', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention degraded', kind: 'normal', agentType: 'general' })
+      const user = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user.id, kind: 'text', contentJson: JSON.stringify({ content: '帮我分析注意力面板' }) })
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '分析注意力面板', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async () => {
+        const e = new Error('timeout')
+        e.name = 'TimeoutError'
+        throw e
+      }) as unknown as typeof fetch
+      try {
+        const rebuildRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        expect(rebuildRes.status).toBe(200)
+        const rebuildBody = (await rebuildRes.json()) as { ok: boolean; degraded: boolean; reason: string; snapshot: { degraded_reason: string; trace_nodes_json: string; source_message_count: number } }
+        expect(rebuildBody.ok).toBe(false)
+        expect(rebuildBody.degraded).toBe(true)
+        expect(rebuildBody.reason).toBe('timeout')
+        expect(rebuildBody.snapshot.degraded_reason).toBe('timeout')
+        expect(rebuildBody.snapshot.trace_nodes_json).toBe('[]')
+        expect(rebuildBody.snapshot.source_message_count).toBe(0)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
     } finally {
       teardownTestDb()
     }

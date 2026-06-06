@@ -24,6 +24,8 @@ export interface AttentionGoalSnapshot extends AttentionGoalSnapshotMeta {
   interpret_json: string
   trace_nodes_json: string
   plan_items_json: string
+  mind_projection_json: string | null
+  degraded_reason: string | null
 }
 
 const EMPTY_JSON = '[]'
@@ -101,6 +103,8 @@ export async function createAttentionGoal(input: {
     interpretJson: '{}',
     traceNodesJson: EMPTY_JSON,
     planItemsJson: EMPTY_JSON,
+    mindProjectionJson: null,
+    degradedReason: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -139,8 +143,10 @@ export async function upsertAttentionGoalSnapshot(input: {
   interpretJson: string
   traceNodesJson: string
   planItemsJson: string
+  mindProjectionJson?: string | null
   sourceMessageCount: number
   sourceLastEventTs: number
+  degradedReason?: string | null
 }): Promise<AttentionGoalSnapshot | null> {
   const existing = await getAttentionGoalSnapshot(input.id)
   if (!existing) return null
@@ -153,8 +159,27 @@ export async function upsertAttentionGoalSnapshot(input: {
       interpretJson: input.interpretJson,
       traceNodesJson: input.traceNodesJson,
       planItemsJson: input.planItemsJson,
+      mindProjectionJson: input.mindProjectionJson ?? null,
+      degradedReason: input.degradedReason ?? null,
       sourceMessageCount: input.sourceMessageCount,
       sourceLastEventTs: input.sourceLastEventTs,
+      updatedAt: Date.now(),
+    })
+    .where(eq(attentionGoalSnapshots.id, input.id))
+    .run()
+  return getAttentionGoalSnapshot(input.id)
+}
+
+export async function markAttentionGoalSnapshotDegraded(input: {
+  id: string
+  reason: string
+}): Promise<AttentionGoalSnapshot | null> {
+  const existing = await getAttentionGoalSnapshot(input.id)
+  if (!existing) return null
+  await getDb()
+    .update(attentionGoalSnapshots)
+    .set({
+      degradedReason: input.reason,
       updatedAt: Date.now(),
     })
     .where(eq(attentionGoalSnapshots.id, input.id))
@@ -196,5 +221,7 @@ function toSnapshot(row: Record<string, unknown>): AttentionGoalSnapshot {
     interpret_json: (row.interpretJson as string) || '{}',
     trace_nodes_json: (row.traceNodesJson as string) || EMPTY_JSON,
     plan_items_json: (row.planItemsJson as string) || EMPTY_JSON,
+    mind_projection_json: (row.mindProjectionJson as string) || null,
+    degraded_reason: (row.degradedReason as string) || null,
   }
 }

@@ -282,3 +282,102 @@ export {
 } from './frame'
 
 export type { WSFrame } from './frame'
+
+// Attention shared pipeline
+export type {
+  EventKind,
+  UserMessageKind,
+  AssistantActionKind,
+  RawEvent,
+  AlignmentStatus,
+  NodeStatus,
+  TraceExchange,
+  TraceNode,
+  PlanItem,
+  GoalAnchor,
+} from './attention/types'
+
+export {
+  storeToRawEvents,
+  extractGoalAnchor,
+  classifyUserKind,
+} from './attention/store-adapter'
+
+export type {
+  TodoSnapshotItem,
+  StoreToRawEventsInput,
+  AttentionInteraction,
+} from './attention/store-adapter'
+
+export {
+  aggregate,
+  groupExchanges,
+  candidatesToLoadingNodes,
+} from './attention/aggregator'
+
+export type {
+  CandidateNode,
+  ExchangeGroup,
+} from './attention/aggregator'
+
+export {
+  buildTrace,
+  buildInterpretPrompt,
+  candidateText,
+  localSummary,
+  makeInterpretKey,
+  planInterpret,
+} from './attention/orchestrator'
+
+export type {
+  InterpretResult as AttentionInterpretResult,
+} from './attention/orchestrator'
+
+export {
+  tokenize,
+  cosineSimilarity,
+  computeGoalDistance,
+  goalAlignmentToDistance,
+  subGoalDistance,
+  goalDistanceTone,
+  goalDistanceColor,
+} from './attention/goal-distance'
+
+export type {
+  GoalDistanceTone,
+} from './attention/goal-distance'
+
+export {
+  governConversationTree,
+} from './attention/conversation-tree'
+
+export type {
+  ConversationTreeNodeKind,
+  ConversationRelation,
+  CollapseReason,
+  AggregationInfo,
+  ConversationTreeNode,
+  ConversationTree,
+  ConversationTreeOptions,
+} from './attention/conversation-tree'
+
+export {
+  buildMindMapProjection,
+} from './attention/mind-map-projector'
+
+export type {
+  MindMapNodeKind,
+  MindMapEdgeKind,
+  MindMapNode,
+  MindMapEdge,
+  MindMapProjection,
+} from './attention/mind-map-projector'
+
+export {
+  projectPlanGraph,
+} from './attention/plan-projector'
+
+export type {
+  PlanGraphItem,
+  PlanGraph,
+} from './attention/plan-projector'

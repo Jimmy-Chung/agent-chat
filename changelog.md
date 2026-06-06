@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-06 [v1.10.10] — feat: Attention 计算下沉到 server
+
+- Attention 节点生成、LLM interpret、主线/支线治理、聚合投影和快照落库迁移到 server，前端只负责读取快照、触发重绘和渲染。
+- 新增 `/attention/goals/:goalId/rebuild`，server 基于 D1 的 messages、message_parts、interactions 重建图，不再依赖前端上传 prompt/rawEvents/candidates/nodes。
+- LLM timeout/degraded 时只记录 degraded reason，不写入空图假快照，避免刷新后出现单个假节点或右侧无明细。
+- Attention 纯算法迁入 protocol 共享模块，web 侧保留原路径 re-export，主线/支线/聚合逻辑保持一致。
+- 新增 server rebuild 和前端 server-owned hook 回归测试。
+- 版本显示更新为 `v1.10.10`。
+
 ## 2026-06-06 [v1.10.9] — fix: Attention 空图不再显示根占位节点
 
 - AIT-233：修复 Attention 展开面板在没有有效 trace 节点时仍渲染目标 root 占位，导致看起来“只有一个节点”且右侧没有消息明细的问题。

@@ -14,6 +14,9 @@ import {
   upsertAttentionGoalSnapshot,
 } from '../db/repos/attention_goal_snapshot.repo'
 import { logGatewayEvent } from '../server-logs'
+import { rebuildAttentionGoalSnapshot } from '../services/attention-rebuild'
+import { extractGoalAnchor } from '@agent-chat/protocol'
+import { listMessagesAndPartsByTopic } from '../db/repos/message.repo'
 
 export interface AttentionLlmConfig {
   apiKey: string
@@ -225,8 +228,12 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     } catch {
       return c.json({ ok: false, error: 'bad_request' }, 400)
     }
-    const goalText = typeof body.goalText === 'string' ? body.goalText.trim() : ''
+    let goalText = typeof body.goalText === 'string' ? body.goalText.trim() : ''
     const title = typeof body.title === 'string' ? body.title.trim() : null
+    if (!goalText) {
+      const { messages, partsByMessage } = await listMessagesAndPartsByTopic(topicId)
+      goalText = extractGoalAnchor({ messages, partsByMessage })?.normalized_goal?.trim() ?? ''
+    }
     if (!goalText) return c.json({ ok: false, error: 'bad_request' }, 400)
     const goal = await ensureDefaultAttentionGoal({ topicId, goalText, title })
     return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
@@ -269,6 +276,27 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
   })
 
+  r.post('/api/agent-chat/v1/attention/goals/:goalId/rebuild', async (c) => {
+    const cfg = getConfig()
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    let body: { maxTokens?: unknown } = {}
+    try {
+      body = await c.req.json()
+    } catch {
+      body = {}
+    }
+    const llm = cfg?.attentionLlm ?? { apiKey: '', baseUrl: '', model: '' }
+    const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : undefined
+    const result = await rebuildAttentionGoalSnapshot({
+      goalId: c.req.param('goalId'),
+      llm,
+      interpretTrace,
+      maxTokens,
+    })
+    if (result.reason === 'not_found') return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json(result, 200, { 'Cache-Control': 'no-store' })
+  })
+
   r.get('/api/agent-chat/v1/attention/goals/:goalId/snapshot', async (c) => {
     if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
     const snapshot = await getAttentionGoalSnapshot(c.req.param('goalId'))
@@ -291,6 +319,8 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     const traceNodesJson = typeof body.traceNodesJson === 'string' ? body.traceNodesJson : ''
     const planItemsJson = typeof body.planItemsJson === 'string' ? body.planItemsJson : ''
     const goalJson = typeof body.goalJson === 'string' ? body.goalJson : null
+    const mindProjectionJson = typeof body.mindProjectionJson === 'string' ? body.mindProjectionJson : null
+    const degradedReason = typeof body.degradedReason === 'string' ? body.degradedReason : null
     const sourceMessageCount = typeof body.sourceMessageCount === 'number' ? body.sourceMessageCount : 0
     const sourceLastEventTs = typeof body.sourceLastEventTs === 'number' ? body.sourceLastEventTs : 0
     if (!rawEventsJson || !candidatesJson || !interpretJson || !traceNodesJson || !planItemsJson) {
@@ -304,8 +334,10 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
       interpretJson,
       traceNodesJson,
       planItemsJson,
+      mindProjectionJson,
       sourceMessageCount,
       sourceLastEventTs,
+      degradedReason,
     })
     if (!snapshot) return c.json({ ok: false, error: 'not_found' }, 404)
     return c.json({ ok: true, snapshot }, 200, { 'Cache-Control': 'no-store' })
