@@ -345,6 +345,17 @@ function summarizeUserMessages(messages: string[]): string {
 function compactTurnsToPhases(turns: CandidateNode[], maxPhases = 12): CandidateNode[] {
   if (turns.length <= maxPhases) return turns
 
+  const bucketTurns = (source: CandidateNode[]): CandidateNode[] => {
+    const phases: CandidateNode[] = []
+    for (let i = 0; i < maxPhases; i++) {
+      const start = Math.floor((i * source.length) / maxPhases)
+      const end = Math.floor(((i + 1) * source.length) / maxPhases)
+      const bucket = source.slice(start, Math.max(start + 1, end))
+      phases.push(bucket.reduce((acc, item) => mergeCandidates(acc, item)))
+    }
+    return phases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
+  }
+
   const initialPhases: CandidateNode[] = []
   for (const turn of turns) {
     const prev = initialPhases[initialPhases.length - 1]
@@ -356,29 +367,14 @@ function compactTurnsToPhases(turns: CandidateNode[], maxPhases = 12): Candidate
   }
 
   if (initialPhases.length === 1 && turns.length > maxPhases) {
-    const phases: CandidateNode[] = []
-    for (let i = 0; i < maxPhases; i++) {
-      const start = Math.floor((i * turns.length) / maxPhases)
-      const end = Math.floor(((i + 1) * turns.length) / maxPhases)
-      const bucket = turns.slice(start, Math.max(start + 1, end))
-      phases.push(bucket.reduce((acc, item) => mergeCandidates(acc, item)))
-    }
-    return phases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
+    return bucketTurns(turns)
   }
 
   if (initialPhases.length <= maxPhases) {
-    return initialPhases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
+    return bucketTurns(turns)
   }
 
-  const phases: CandidateNode[] = []
-  for (let i = 0; i < maxPhases; i++) {
-    const start = Math.floor((i * initialPhases.length) / maxPhases)
-    const end = Math.floor(((i + 1) * initialPhases.length) / maxPhases)
-    const bucket = initialPhases.slice(start, Math.max(start + 1, end))
-    phases.push(bucket.reduce((acc, item) => mergeCandidates(acc, item)))
-  }
-
-  return phases.map((p, i) => ({ ...p, id: `cand_${i + 1}` }))
+  return bucketTurns(initialPhases)
 }
 
 // ── Exchange grouping for recursive drill-down ────────────────────────────────
