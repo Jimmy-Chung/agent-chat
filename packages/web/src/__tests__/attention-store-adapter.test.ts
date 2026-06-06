@@ -224,6 +224,20 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     expect(candidates.length).toBeLessThanOrEqual(12)
   })
 
+  it('多轮同一业务目标的普通追问超过上限时不能整体压成 1 个候选节点', () => {
+    const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
+    for (let i = 1; i <= 20; i++) {
+      const u = makeMessage({ id: `bu${i}`, role: 'user', turn_id: `bt${i}` })
+      const a = makeMessage({ id: `ba${i}`, role: 'assistant', turn_id: `bt${i}` })
+      rows.push({ msg: u, parts: [part(`bu${i}`, 'text', `token 中心平台注册流程第 ${i} 步补充说明`)] })
+      rows.push({ msg: a, parts: [part(`ba${i}`, 'text', `平台注册方案第 ${i} 段回答`)] })
+    }
+    const { candidates } = aggregate(storeToRawEvents(buildInput(rows)))
+    expect(candidates.length).toBeGreaterThan(1)
+    expect(candidates.length).toBeLessThanOrEqual(12)
+    expect(candidates.reduce((sum, c) => sum + c.exchanges.length, 0)).toBe(20)
+  })
+
   it('goalAnchor = 第一条 user 消息文本', () => {
     const s = makeMessage({ id: 's', role: 'system', turn_id: 't0' })
     const u1 = makeMessage({ id: 'u1', role: 'user', turn_id: 't1' })

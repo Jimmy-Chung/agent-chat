@@ -446,15 +446,18 @@ export function Sidebar() {
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
   const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
   const workspacePath = useWsStore((s) => s.workspacePath)
+  const workspacePathStatus = useWsStore((s) => s.workspacePathStatus)
   const setWorkspacePath = useWsStore((s) => s.setWorkspacePath)
+  const setWorkspacePathStatus = useWsStore((s) => s.setWorkspacePathStatus)
 
   // Fetch workspace root path once connected for footer display
   useEffect(() => {
     if (wsStatus !== 'connected') return
+    setWorkspacePathStatus('loading')
     fetchWorkspaceBrowse()
       .then((w) => setWorkspacePath(w.workspacePath ?? null))
       .catch(() => setWorkspacePath(null))
-  }, [wsStatus, setWorkspacePath])
+  }, [wsStatus, setWorkspacePath, setWorkspacePathStatus])
 
   // Auto-select the tab that contains the currently active provider
   useEffect(() => {
@@ -802,19 +805,25 @@ export function Sidebar() {
           className="flex shrink-0 flex-col gap-1.5 px-3.5 py-2.5 text-xs"
           style={{ borderTop: '1px solid var(--hairline)', color: 'var(--fg-dim)' }}
         >
-          {workspacePath && (
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>工作区目录：</span>
-              <Tooltip content={workspacePath} side="top" delayMs={200} className="min-w-0">
-                <span
-                  className="block max-w-full truncate text-[10.5px]"
-                  style={{ color: 'var(--fg-regular)', fontFamily: 'var(--font-mono)' }}
-                >
-                  {workspacePath}
-                </span>
-              </Tooltip>
-            </div>
-          )}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>工作区目录：</span>
+            <Tooltip
+              content={workspacePath || (workspacePathStatus === 'loading' ? '正在读取工作区目录' : '未能读取工作区目录')}
+              side="top"
+              delayMs={200}
+              className="min-w-0"
+            >
+              <span
+                className="block max-w-full truncate text-[10.5px]"
+                style={{
+                  color: workspacePath ? 'var(--fg-regular)' : 'var(--fg-muted)',
+                  fontFamily: workspacePath ? 'var(--font-mono)' : 'inherit',
+                }}
+              >
+                {workspacePath || (workspacePathStatus === 'loading' ? '读取中…' : '未连接')}
+              </span>
+            </Tooltip>
+          </div>
           <div className="flex items-center gap-2">
             <PiStatusBadge
               wsStatus={wsStatus}
@@ -828,14 +837,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.10.4</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.10.5</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.4</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.5</span>
               </Tooltip>
             </div>
           </div>
