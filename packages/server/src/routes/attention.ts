@@ -4,6 +4,15 @@
 // key 不出 server；任何失败都降级（返回 degraded 标记，不 500），前端展示配置提示。
 import { Hono } from 'hono'
 import type { AppConfig } from '../config'
+import {
+  activateAttentionGoal,
+  createAttentionGoal,
+  ensureDefaultAttentionGoal,
+  getAttentionGoalSnapshot,
+  listAttentionGoals,
+  renameAttentionGoal,
+  upsertAttentionGoalSnapshot,
+} from '../db/repos/attention_goal_snapshot.repo'
 
 export interface AttentionLlmConfig {
   apiKey: string
@@ -149,15 +158,18 @@ export async function interpretTrace(
 export function createAttentionRoutes(getConfig: () => AppConfig | null) {
   const r = new Hono()
 
+  function authorized(auth: string | undefined): boolean {
+    const cfg = getConfig()
+    if (!cfg?.token) return true
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined
+    return token === cfg.token
+  }
+
   r.post('/api/agent-chat/v1/attention/interpret', async (c) => {
     const cfg = getConfig()
 
     // 鉴权：复用 AGENT_CHAT_TOKEN（Bearer）。未配置 token 时（本地 dev）放行。
-    if (cfg?.token) {
-      const auth = c.req.header('Authorization')
-      const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined
-      if (token !== cfg.token) return c.json({ error: 'Unauthorized' }, 401)
-    }
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
 
     let body: { prompt?: unknown; maxTokens?: unknown }
     try {
@@ -174,6 +186,108 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     const result = await interpretTrace(body.prompt, llm, { maxTokens })
     // 降级也返回 200（带 degraded 标记），不 500 —— 前端据此展示配置提示。
     return c.json(result, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.get('/api/agent-chat/v1/attention/goals/:topicId', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const topicId = c.req.param('topicId')
+    const goals = await listAttentionGoals(topicId)
+    return c.json({ ok: true, goals }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.post('/api/agent-chat/v1/attention/goals/:topicId/default', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const topicId = c.req.param('topicId')
+    let body: Record<string, unknown>
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ ok: false, error: 'bad_request' }, 400)
+    }
+    const goalText = typeof body.goalText === 'string' ? body.goalText.trim() : ''
+    const title = typeof body.title === 'string' ? body.title.trim() : null
+    if (!goalText) return c.json({ ok: false, error: 'bad_request' }, 400)
+    const goal = await ensureDefaultAttentionGoal({ topicId, goalText, title })
+    return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.post('/api/agent-chat/v1/attention/goals/:topicId', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const topicId = c.req.param('topicId')
+    let body: Record<string, unknown>
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ ok: false, error: 'bad_request' }, 400)
+    }
+    const goalText = typeof body.goalText === 'string' ? body.goalText.trim() : ''
+    const title = typeof body.title === 'string' ? body.title.trim() : null
+    if (!goalText) return c.json({ ok: false, error: 'bad_request' }, 400)
+    const goal = await createAttentionGoal({ topicId, goalText, title, active: true })
+    return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.post('/api/agent-chat/v1/attention/goals/:goalId/activate', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const goal = await activateAttentionGoal(c.req.param('goalId'))
+    if (!goal) return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.patch('/api/agent-chat/v1/attention/goals/:goalId', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    let body: Record<string, unknown>
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ ok: false, error: 'bad_request' }, 400)
+    }
+    const title = typeof body.title === 'string' ? body.title.trim() || null : null
+    const goal = await renameAttentionGoal({ id: c.req.param('goalId'), title })
+    if (!goal) return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.get('/api/agent-chat/v1/attention/goals/:goalId/snapshot', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const snapshot = await getAttentionGoalSnapshot(c.req.param('goalId'))
+    if (!snapshot) return c.json({ ok: false, error: 'not_found' }, 404, { 'Cache-Control': 'no-store' })
+    return c.json({ ok: true, snapshot }, 200, { 'Cache-Control': 'no-store' })
+  })
+
+  r.put('/api/agent-chat/v1/attention/goals/:goalId/snapshot', async (c) => {
+    if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
+    const goalId = c.req.param('goalId')
+    let body: Record<string, unknown>
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ ok: false, error: 'bad_request' }, 400)
+    }
+    const rawEventsJson = typeof body.rawEventsJson === 'string' ? body.rawEventsJson : ''
+    const candidatesJson = typeof body.candidatesJson === 'string' ? body.candidatesJson : ''
+    const interpretJson = typeof body.interpretJson === 'string' ? body.interpretJson : ''
+    const traceNodesJson = typeof body.traceNodesJson === 'string' ? body.traceNodesJson : ''
+    const planItemsJson = typeof body.planItemsJson === 'string' ? body.planItemsJson : ''
+    const goalJson = typeof body.goalJson === 'string' ? body.goalJson : null
+    const sourceMessageCount = typeof body.sourceMessageCount === 'number' ? body.sourceMessageCount : 0
+    const sourceLastEventTs = typeof body.sourceLastEventTs === 'number' ? body.sourceLastEventTs : 0
+    if (!rawEventsJson || !candidatesJson || !interpretJson || !traceNodesJson || !planItemsJson) {
+      return c.json({ ok: false, error: 'bad_request' }, 400)
+    }
+    const snapshot = await upsertAttentionGoalSnapshot({
+      id: goalId,
+      goalJson,
+      rawEventsJson,
+      candidatesJson,
+      interpretJson,
+      traceNodesJson,
+      planItemsJson,
+      sourceMessageCount,
+      sourceLastEventTs,
+    })
+    if (!snapshot) return c.json({ ok: false, error: 'not_found' }, 404)
+    return c.json({ ok: true, snapshot }, 200, { 'Cache-Control': 'no-store' })
   })
 
   return r

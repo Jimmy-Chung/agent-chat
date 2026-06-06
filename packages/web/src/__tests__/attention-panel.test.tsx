@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import type { GoalAnchor, RawEvent, TraceNode } from '../lib/attention'
 import { buildGraphData, NODE_W, NODE_GAP } from '../lib/attention/graph-projector'
 import { AttentionPanelContent } from '../components/attention/AttentionPanelContent'
@@ -140,11 +140,11 @@ describe('TC-AIT-222-04 点选 + 详情', () => {
 })
 
 describe('Attention X 动态树详情', () => {
-  it('LLM 不可用时展示配置提示且不渲染动态树', () => {
+  it('LLM 不可用且没有快照节点时展示配置提示且不渲染动态树', () => {
     render(
       <AttentionXPanel
         topicId="topic_1"
-        nodes={[node({ conclusion: '本地兜底不应展示' })]}
+        nodes={[]}
         goalAnchor={GOAL}
         planItems={[]}
         rawEvents={[]}
@@ -156,6 +156,61 @@ describe('Attention X 动态树详情', () => {
     expect(screen.getByText('请进行正确的 LLM 配置以激活注意力面板。')).toBeTruthy()
     expect(screen.queryByTestId('mind-map-graph')).toBeNull()
     expect(screen.queryByText('本地兜底不应展示')).toBeNull()
+  })
+
+  it('LLM 不可用但已有快照节点时继续展示快照并提示无法重绘', async () => {
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={[node({ conclusion: '已保存快照' })]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        rawEvents={[]}
+        llmUnavailable
+      />,
+    )
+
+    expect(screen.getByText('LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('mind-map-graph')).toBeTruthy())
+  })
+
+  it('展示目标历史，创建目标、切换目标、改名分别触发对应回调', () => {
+    const createGoal = vi.fn()
+    const selectGoal = vi.fn()
+    const renameGoal = vi.fn()
+    const changeDraft = vi.fn()
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={[node()]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        rawEvents={[]}
+        goals={[
+          { id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true },
+          { id: 'g2', topic_id: 'topic_1', goal_text: '第二个目标内容', title: '第二目标', is_default: false, active: false, source_message_count: 20, source_last_event_ts: 20, created_at: 2, updated_at: 2, has_snapshot: true },
+        ]}
+        activeGoal={{ id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true }}
+        activeGoalId="g1"
+        goalDraft="更清晰的新目标"
+        onGoalDraftChange={changeDraft}
+        onCreateGoal={createGoal}
+        onSelectGoal={selectGoal}
+        onRenameGoal={renameGoal}
+      />,
+    )
+
+    expect(screen.getByText('默认目标')).toBeTruthy()
+    fireEvent.click(screen.getByText('第二目标'))
+    expect(selectGoal).toHaveBeenCalledWith('g2')
+    fireEvent.click(screen.getByText('创建目标'))
+    expect(createGoal).toHaveBeenCalled()
+    fireEvent.change(screen.getByPlaceholderText('描述一个更清晰的话题目标，Enter 创建新目标'), { target: { value: '新目标' } })
+    expect(changeDraft).toHaveBeenCalledWith('新目标')
+    fireEvent.change(screen.getByPlaceholderText('只改历史显示名，不改目标内容'), { target: { value: '改名后' } })
+    fireEvent.click(screen.getByText('改名'))
+    expect(renameGoal).toHaveBeenCalledWith('g1', '改名后')
+    expect(screen.getByText('目标内容：第一句话目标')).toBeTruthy()
   })
 
   it('右侧详情按时间交错展示消息，并把 thinking/tool/todo/plan 合并到执行明细', () => {

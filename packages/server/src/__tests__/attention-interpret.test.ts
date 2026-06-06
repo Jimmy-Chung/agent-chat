@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { setupTestDb, teardownTestDb } from './db-helper'
 import {
   interpretTrace,
   parseInterpretation,
@@ -6,6 +7,7 @@ import {
   type AttentionLlmConfig,
 } from '../routes/attention'
 import type { AppConfig } from '../config'
+import * as topicRepo from '../db/repos/topic.repo'
 
 const PATH = '/api/agent-chat/v1/attention/interpret'
 const GOOD_LLM: AttentionLlmConfig = {
@@ -161,5 +163,83 @@ describe('TC-AIT-220-04 鉴权', () => {
       body: JSON.stringify({ prompt: 'x' }),
     })
     expect(res.status).toBe(200)
+  })
+})
+
+describe('Attention goal snapshots', () => {
+  it('维护目标历史：默认目标进入历史、切换激活、改名不改目标内容、快照按 goalId 保存', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention goals', kind: 'normal', agentType: 'general' })
+      const app = createAttentionRoutes(() => cfg())
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '第一句话目标', title: '默认目标' }),
+      })
+      expect(defaultRes.status).toBe(200)
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string; goal_text: string; is_default: boolean; active: boolean } }
+      expect(defaultBody.goal.goal_text).toBe('第一句话目标')
+      expect(defaultBody.goal.is_default).toBe(true)
+      expect(defaultBody.goal.active).toBe(true)
+
+      const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '第二个目标', title: '第二目标' }),
+      })
+      const secondBody = (await secondRes.json()) as { goal: { id: string; active: boolean } }
+      expect(secondBody.goal.active).toBe(true)
+
+      const renamedRes = await app.request(`/api/agent-chat/v1/attention/goals/${secondBody.goal.id}`, {
+        method: 'PATCH',
+        headers: auth,
+        body: JSON.stringify({ title: '可读名称' }),
+      })
+      const renamedBody = (await renamedRes.json()) as { goal: { title: string; goal_text: string } }
+      expect(renamedBody.goal.title).toBe('可读名称')
+      expect(renamedBody.goal.goal_text).toBe('第二个目标')
+
+      const activateDefaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/activate`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer secret' },
+      })
+      expect(activateDefaultRes.status).toBe(200)
+
+      const listRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}`, {
+        headers: { Authorization: 'Bearer secret' },
+      })
+      const listBody = (await listRes.json()) as { goals: Array<{ id: string; active: boolean; title: string | null }> }
+      expect(listBody.goals).toHaveLength(2)
+      expect(listBody.goals.find((goal) => goal.id === defaultBody.goal.id)?.active).toBe(true)
+      expect(listBody.goals.find((goal) => goal.id === secondBody.goal.id)?.active).toBe(false)
+
+      const putRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/snapshot`, {
+        method: 'PUT',
+        headers: auth,
+        body: JSON.stringify({
+          goalJson: JSON.stringify({ raw_query: '第一句话目标', normalized_goal: '第一句话目标', ts: 1 }),
+          rawEventsJson: JSON.stringify([{ id: 'e1' }]),
+          candidatesJson: JSON.stringify([{ id: 'c1' }]),
+          interpretJson: JSON.stringify({ conclusion: ['方案'], goalAlignment: [8] }),
+          traceNodesJson: JSON.stringify([{ id: 'n1' }]),
+          planItemsJson: JSON.stringify([]),
+          sourceMessageCount: 20,
+          sourceLastEventTs: 123,
+        }),
+      })
+      expect(putRes.status).toBe(200)
+
+      const snapshotRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/snapshot`, {
+        headers: { Authorization: 'Bearer secret' },
+      })
+      const snapshotBody = (await snapshotRes.json()) as { snapshot: { source_message_count: number; trace_nodes_json: string } }
+      expect(snapshotBody.snapshot.source_message_count).toBe(20)
+      expect(JSON.parse(snapshotBody.snapshot.trace_nodes_json)).toEqual([{ id: 'n1' }])
+    } finally {
+      teardownTestDb()
+    }
   })
 })

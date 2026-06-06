@@ -184,6 +184,31 @@ export const interactions = sqliteTable('interactions', {
   resolvedAt: integer('resolved_at'),
 })
 
+// ─── attention_goal_snapshots ───────────────────────────────────────
+
+export const attentionGoalSnapshots = sqliteTable('attention_goal_snapshots', {
+  id: text('id').primaryKey(),
+  topicId: text('topic_id')
+    .notNull()
+    .references(() => topics.id, { onDelete: 'cascade' }),
+  goalText: text('goal_text').notNull(),
+  title: text('title'),
+  isDefault: integer('is_default', { mode: 'boolean' }).default(false).notNull(),
+  active: integer('active', { mode: 'boolean' }).default(false).notNull(),
+  sourceMessageCount: integer('source_message_count').notNull(),
+  sourceLastEventTs: integer('source_last_event_ts').notNull(),
+  goalJson: text('goal_json'),
+  rawEventsJson: text('raw_events_json').notNull(),
+  candidatesJson: text('candidates_json').notNull(),
+  interpretJson: text('interpret_json').notNull(),
+  traceNodesJson: text('trace_nodes_json').notNull(),
+  planItemsJson: text('plan_items_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => [
+  index('idx_attention_goal_topic_updated').on(table.topicId, table.updatedAt),
+])
+
 // ─── usage_records ──────────────────────────────────────────────────
 
 export const usageRecords = sqliteTable(

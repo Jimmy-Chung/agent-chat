@@ -73,6 +73,8 @@ export async function runMigrations() {
       CREATE TABLE IF NOT EXISTS cron_jobs (id TEXT PRIMARY KEY, origin_topic_id TEXT, pi_cron_id TEXT NOT NULL, cron_expr TEXT NOT NULL, prompt TEXT NOT NULL, tags_json TEXT, status TEXT NOT NULL, next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS cron_runs (id TEXT PRIMARY KEY, cron_id TEXT NOT NULL, triggered_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, result_message_id TEXT);
       CREATE TABLE IF NOT EXISTS interactions (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, message_id TEXT, kind TEXT NOT NULL, prompt TEXT NOT NULL, options_json TEXT, status TEXT NOT NULL, response_json TEXT, created_at INTEGER NOT NULL, resolved_at INTEGER);
+      CREATE TABLE IF NOT EXISTS attention_goal_snapshots (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, goal_text TEXT NOT NULL, title TEXT, is_default INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 0, source_message_count INTEGER NOT NULL, source_last_event_ts INTEGER NOT NULL, goal_json TEXT, raw_events_json TEXT NOT NULL, candidates_json TEXT NOT NULL, interpret_json TEXT NOT NULL, trace_nodes_json TEXT NOT NULL, plan_items_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS idx_attention_goal_topic_updated ON attention_goal_snapshots(topic_id, updated_at);
       CREATE TABLE IF NOT EXISTS usage_records (id INTEGER PRIMARY KEY, topic_id TEXT, message_id TEXT, model TEXT NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, cost_micro_usd INTEGER, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_usage_topic_time ON usage_records(topic_id, created_at);
       CREATE INDEX IF NOT EXISTS idx_usage_model_time ON usage_records(model, created_at);
@@ -178,6 +180,47 @@ export async function runMigrations() {
         .bind(hash, Date.now())
         .run()
       logger.info('Applied migration: 0011_attention_target')
+    }
+  }
+
+  // Run 0012: persist attention goal snapshots
+  {
+    const hash = '0012_attention_goal_snapshots'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      await d1.prepare(`
+        CREATE TABLE IF NOT EXISTS attention_goal_snapshots (
+          id TEXT PRIMARY KEY,
+          topic_id TEXT NOT NULL,
+          goal_text TEXT NOT NULL,
+          title TEXT,
+          is_default INTEGER NOT NULL DEFAULT 0,
+          active INTEGER NOT NULL DEFAULT 0,
+          source_message_count INTEGER NOT NULL,
+          source_last_event_ts INTEGER NOT NULL,
+          goal_json TEXT,
+          raw_events_json TEXT NOT NULL,
+          candidates_json TEXT NOT NULL,
+          interpret_json TEXT NOT NULL,
+          trace_nodes_json TEXT NOT NULL,
+          plan_items_json TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      `).run()
+      await d1.prepare(`
+        CREATE INDEX IF NOT EXISTS idx_attention_goal_topic_updated
+        ON attention_goal_snapshots(topic_id, updated_at)
+      `).run()
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0012_attention_goal_snapshots')
     }
   }
 
