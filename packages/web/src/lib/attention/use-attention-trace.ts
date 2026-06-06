@@ -222,7 +222,12 @@ async function rebuildGoalSnapshot(input: {
     snapshot?: PersistedAttentionGoalSnapshot
   }>(
     `${input.serverBase}/api/agent-chat/v1/attention/goals/${input.goalId}/rebuild`,
-    { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders(input.token) }, body: '{}' },
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(input.token) },
+      body: '{}',
+      signal: AbortSignal.timeout(55_000),
+    },
   )
   const degradedReason = body?.degraded ? body.reason ?? body.snapshot?.degraded_reason ?? 'unknown' : body?.snapshot?.degraded_reason ?? null
   return { snapshot: body?.snapshot ? toLoadedSnapshot(body.snapshot) : null, degradedReason }

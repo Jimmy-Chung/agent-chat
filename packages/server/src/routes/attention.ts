@@ -39,7 +39,7 @@ export interface InterpretResult {
   normalizedGoal?: string
 }
 
-const DEFAULT_TIMEOUT_MS = 12_000
+const DEFAULT_TIMEOUT_MS = 45_000
 const MAX_OUTPUT_TOKENS = 700
 
 const SYSTEM_PROMPT =

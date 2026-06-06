@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-06 [v1.10.11] — fix: Attention 大会话重绘超时
+
+- Attention server rebuild 的 LLM interpret timeout 从 12s 提高到 45s，覆盖历史会话和目标切换后的完整会话重绘。
+- 前端触发 rebuild 的请求 timeout 提高到 55s，避免前端先于 server 中断。
+- 版本显示更新为 `v1.10.11`。
+
 ## 2026-06-06 [v1.10.10] — feat: Attention 计算下沉到 server
 
 - Attention 节点生成、LLM interpret、主线/支线治理、聚合投影和快照落库迁移到 server，前端只负责读取快照、触发重绘和渲染。
