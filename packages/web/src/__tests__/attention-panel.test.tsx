@@ -158,6 +158,22 @@ describe('Attention X 动态树详情', () => {
     expect(screen.queryByText('本地兜底不应展示')).toBeNull()
   })
 
+  it('没有有效 trace 节点且还未进入 LLM 空态时不渲染 goal root 假节点', () => {
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={[]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        rawEvents={[]}
+      />,
+    )
+
+    expect(screen.getByText('暂无有效注意力节点')).toBeTruthy()
+    expect(screen.queryByTestId('mind-map-graph')).toBeNull()
+    expect(screen.queryByText('消息明细')).toBeNull()
+  })
+
   it('LLM 不可用但已有快照节点时继续展示快照并提示无法重绘', async () => {
     render(
       <AttentionXPanel

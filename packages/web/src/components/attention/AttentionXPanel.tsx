@@ -506,6 +506,8 @@ export function AttentionXPanel({
               </div>
             </div>
           </div>
+        ) : nodes.length === 0 ? (
+          <EmptyHint text="暂无有效注意力节点" />
         ) : (
         <div className="flex h-full min-h-0 flex-col">
         {llmUnavailable && (
