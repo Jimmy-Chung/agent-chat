@@ -226,7 +226,8 @@ function AttentionMiniNode({ node }: { node: MindMapNode }) {
 }
 
 function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: string; closing: boolean; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailable } = useAttentionTrace(topicId)
+  const attention = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailable } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -279,6 +280,14 @@ function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: str
           planItems={planItems}
           rawEvents={rawEvents}
           llmUnavailable={llmUnavailable}
+          goals={attention.goals}
+          activeGoal={attention.activeGoal}
+          activeGoalId={attention.activeGoalId}
+          goalDraft={attention.goalDraft}
+          onGoalDraftChange={attention.setGoalDraft}
+          onCreateGoal={() => void attention.createGoal()}
+          onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
+          onRenameGoal={(goalId, title) => void attention.renameGoal(goalId, title)}
           focusCurrent
           chrome={false}
         />

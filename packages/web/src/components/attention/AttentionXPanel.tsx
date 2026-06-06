@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
-import type { GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
+import type { AttentionGoalMeta, GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
+import { attentionGoalTitle } from '@/lib/attention'
 import { resolveFocusMessageId } from '@/lib/attention'
 import { getWsClient } from '@/lib/ws-client'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { useMessageStore } from '@/stores/message-store'
-import { useTopicStore } from '@/stores/topic-store'
 
 const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
   ssr: false,
@@ -327,6 +327,14 @@ export function AttentionXPanel({
   planItems,
   rawEvents,
   llmUnavailable = false,
+  goals = [],
+  activeGoal = null,
+  activeGoalId = null,
+  goalDraft = '',
+  onGoalDraftChange,
+  onCreateGoal,
+  onSelectGoal,
+  onRenameGoal,
   focusCurrent = false,
   chrome = true,
 }: {
@@ -336,14 +344,21 @@ export function AttentionXPanel({
   planItems: PlanItem[]
   rawEvents: RawEvent[]
   llmUnavailable?: boolean
+  goals?: AttentionGoalMeta[]
+  activeGoal?: AttentionGoalMeta | null
+  activeGoalId?: string | null
+  goalDraft?: string
+  onGoalDraftChange?: (value: string) => void
+  onCreateGoal?: () => void
+  onSelectGoal?: (goalId: string) => void
+  onRenameGoal?: (goalId: string, title: string) => void
   focusCurrent?: boolean
   chrome?: boolean
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
   const focusMessage = useMessageStore((s) => s.focusMessage)
-  const topic = useTopicStore((s) => s.topics.find((entry) => entry.id === topicId) ?? null)
-  const [targetDraft, setTargetDraft] = useState(topic?.attention_target ?? '')
+  const [renameDraft, setRenameDraft] = useState('')
   const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
@@ -352,40 +367,20 @@ export function AttentionXPanel({
     null
   const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
   useEffect(() => {
-    setTargetDraft(topic?.attention_target ?? '')
-  }, [topic?.attention_target, topic?.updated_at, topicId])
-
-  const persistAttentionTarget = useCallback((next: string | null) => {
-    const sent = getWsClient().send({
-      type: 'topic.setAttentionTarget',
-      data: { id: topicId, target: next },
-    })
-    if (!sent) return false
-    if (topic) {
-      useTopicStore.getState().upsertTopic({
-        ...topic,
-        attention_target: next,
-      })
-    }
-    return true
-  }, [topic, topicId])
-
-  const saveAttentionTarget = useCallback(() => {
-    const normalized = targetDraft.trim() || null
-    persistAttentionTarget(normalized)
-  }, [persistAttentionTarget, targetDraft])
-
-  const clearAttentionTarget = useCallback(() => {
-    if (persistAttentionTarget(null)) {
-      setTargetDraft('')
-    }
-  }, [persistAttentionTarget])
+    setRenameDraft(activeGoal ? attentionGoalTitle(activeGoal) : '')
+  }, [activeGoal?.id, activeGoal?.title, activeGoal?.goal_text])
 
   const handleTargetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    saveAttentionTarget()
-  }, [saveAttentionTarget])
+    onCreateGoal?.()
+  }, [onCreateGoal])
+
+  const handleRenameKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter' || !activeGoalId) return
+    event.preventDefault()
+    onRenameGoal?.(activeGoalId, renameDraft)
+  }, [activeGoalId, onRenameGoal, renameDraft])
   const selectMindNode = (id: string) => {
     setSelectedMindId(id)
     const node = mindProjection.nodes.find((entry) => entry.id === id)
@@ -418,12 +413,12 @@ export function AttentionXPanel({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>目标</div>
+            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>当前目标</div>
             <input
-              value={targetDraft}
-              onChange={(event) => setTargetDraft(event.target.value)}
+              value={goalDraft}
+              onChange={(event) => onGoalDraftChange?.(event.target.value)}
               onKeyDown={handleTargetKeyDown}
-              placeholder="留空则使用话题第一句"
+              placeholder="描述一个更清晰的话题目标，Enter 创建新目标"
               className="min-w-0 flex-1 rounded-md px-3 py-2 text-[12px] outline-none"
               style={{
                 background: 'rgba(0,0,0,0.18)',
@@ -433,25 +428,67 @@ export function AttentionXPanel({
             />
             <button
               type="button"
-              onClick={saveAttentionTarget}
+              onClick={onCreateGoal}
               className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
               style={{ background: 'var(--glass-2)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
             >
-              保存
-            </button>
-            <button
-              type="button"
-              onClick={clearAttentionTarget}
-              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
-              style={{ background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--hairline)' }}
-            >
-              清空
+              创建目标
             </button>
           </div>
-        </div>
+          {goals.length > 0 && (
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {goals.map((goal) => (
+                <button
+                  key={goal.id}
+                  type="button"
+                  onClick={() => onSelectGoal?.(goal.id)}
+                  className="max-w-[180px] truncate rounded-md px-2.5 py-1 text-[11px] transition-opacity hover:opacity-85"
+                  title={`${attentionGoalTitle(goal)}\n${goal.goal_text}`}
+                  style={{
+                    background: goal.id === activeGoalId ? 'rgba(111,227,154,0.14)' : 'rgba(255,255,255,0.04)',
+                    color: goal.id === activeGoalId ? '#6FE39A' : 'var(--fg-regular)',
+                    border: `1px solid ${goal.id === activeGoalId ? 'rgba(111,227,154,0.36)' : 'var(--hairline)'}`,
+                  }}
+                >
+                  {attentionGoalTitle(goal)}
+                </button>
+              ))}
+            </div>
+          )}
+          {activeGoal && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>历史名</div>
+              <input
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                onKeyDown={handleRenameKeyDown}
+                placeholder="只改历史显示名，不改目标内容"
+                className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-[11px] outline-none"
+                style={{
+                  background: 'rgba(0,0,0,0.12)',
+                  border: '1px solid var(--hairline)',
+                  color: 'var(--fg-regular)',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => activeGoalId && onRenameGoal?.(activeGoalId, renameDraft)}
+                className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
+                style={{ background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--hairline)' }}
+              >
+                改名
+              </button>
+            </div>
+          )}
+          {activeGoal && (
+            <div className="truncate text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
+              目标内容：{activeGoal.goal_text}
+            </div>
+          )}
+          </div>
       )}
       <div className="min-h-0 flex-1">
-        {llmUnavailable ? (
+        {llmUnavailable && nodes.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6">
             <div
               className="max-w-[420px] rounded-xl px-5 py-4 text-center"
@@ -470,7 +507,13 @@ export function AttentionXPanel({
             </div>
           </div>
         ) : (
-        <div className="flex h-full min-h-0">
+        <div className="flex h-full min-h-0 flex-col">
+        {llmUnavailable && (
+          <div className="px-4 py-2 text-[11px]" style={{ color: '#F7C26B', borderBottom: '1px solid var(--hairline)' }}>
+            LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1">
           <div className="min-w-0 flex-1">
             <MindMapGraph
               nodes={nodes}
@@ -490,6 +533,7 @@ export function AttentionXPanel({
             planItems={planItems}
             onFocus={(messageId) => focusMessage(topicId, messageId)}
           />
+        </div>
         </div>
         )}
       </div>
