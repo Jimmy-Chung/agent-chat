@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { InteractionCard } from '../components/chat/InteractionCard'
+import { useMessageStore } from '../stores/message-store'
 
 const sendMock = vi.fn()
 
@@ -11,6 +12,7 @@ vi.mock('@/lib/ws-client', () => ({
 afterEach(() => {
   cleanup()
   sendMock.mockClear()
+  useMessageStore.setState({ interactions: {} })
 })
 
 describe('InteractionCard', () => {
@@ -39,5 +41,7 @@ describe('InteractionCard', () => {
         choice: rawChoice,
       },
     })
+    expect(useMessageStore.getState().interactions.toolu_choice_1.response).toBe(rawChoice)
+    expect(useMessageStore.getState().interactions.toolu_choice_1.status).toBe('resolved')
   })
 })

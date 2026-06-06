@@ -4,6 +4,7 @@
 
 - 修复 adapter `interaction.request` 的原始 `interactionId` 被 agent-chat 重新生成，导致用户选择后 adapter/CLI 无法匹配等待中的 tool call，出现 `[cli_error] CLI produced no output` 且后续回复认为用户跳过选择的问题。
 - 选择项现在原样回传 adapter，不再把前端展示用的短 label 当作实际 choice payload。
+- Attention 面板纳入 adapter 选择/审批事件，用户选择会进入轨迹输入；LLM 解释改为输出用户侧归纳、AI 侧归纳、节点标题、同问题域判断与收束判断，节点展示优先使用语义摘要而不是照搬原话。
 - 新增 server/web 回归测试覆盖 `toolu_*` interaction id 保留、choice 原样转发、前端点击发送原始 option。
 - 版本显示更新为 `v1.10.2`。
 

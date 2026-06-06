@@ -63,6 +63,8 @@ function readableSummary(text: string | null | undefined, fallback: string): str
 }
 
 function traceTitle(node: TraceNode): string {
+  if (node.aggregate_title?.trim()) return readableSummary(node.aggregate_title, '节点概要')
+  if (node.user_summary?.trim()) return readableSummary(node.user_summary, '用户侧概要')
   if (node.user_message_count && node.user_message_count > 1) {
     const combined = (node.exchanges ?? [])
       .map((exchange) => exchange.user_message)

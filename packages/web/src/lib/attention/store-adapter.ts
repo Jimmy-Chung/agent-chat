@@ -16,10 +16,24 @@ export interface StoreToRawEventsInput {
   messages: Message[]
   /** messageId → 该消息的 parts（任意顺序，内部按 ordinal 排序）。 */
   partsByMessage: Record<string, MessagePart[]>
+  /** topic 下的 adapter 交互卡片（选择/审批），用于把用户选择纳入注意力轨迹。 */
+  interactions?: AttentionInteraction[]
   /** topic 当前 todo 全量快照（todosByTopic[topicId]）。 */
   todos?: TodoSnapshotItem[]
   /** topic 当前 plan 文本快照（planByTopic[topicId]）。 */
   plan?: string
+}
+
+export interface AttentionInteraction {
+  interactionId: string
+  messageId?: string
+  topicId: string
+  interactionKind: string
+  prompt: string
+  options?: string[]
+  status?: 'pending' | 'resolved' | 'timeout'
+  response?: string
+  defaultTimeoutMs?: number
 }
 
 interface ToolCallContent {
@@ -115,16 +129,31 @@ function sortMessages(a: Message, b: Message): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
+function compactText(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized
+}
+
+function interactionAction(kind: string): string {
+  if (kind === 'choice') return 'options'
+  if (kind === 'approval') return 'ask'
+  return 'ask'
+}
+
 export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
   const events: RawEvent[] = []
   const toolUseById = new Map<string, RawEvent>()
   const messages = [...input.messages].sort(sortMessages)
+  const messageTsById = new Map<string, number>()
+  const messageTurnById = new Map<string, string | null>()
   let maxTs = 0
 
   for (const msg of messages) {
     const role = mapRole(msg.role)
     const baseTs = msg.started_at
     maxTs = Math.max(maxTs, baseTs, msg.finished_at ?? 0)
+    messageTsById.set(msg.id, baseTs)
+    messageTurnById.set(msg.id, msg.turn_id)
     const parts = [...(input.partsByMessage[msg.id] ?? [])].sort((a, b) => a.ordinal - b.ordinal)
 
     for (const part of parts) {
@@ -187,6 +216,46 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
 
   const snapshotTs = maxTs || Date.now()
 
+  for (const inter of input.interactions ?? []) {
+    const baseTs = (inter.messageId ? messageTsById.get(inter.messageId) : undefined) ?? snapshotTs
+    const turnId = inter.messageId ? messageTurnById.get(inter.messageId) ?? undefined : undefined
+    const options = inter.options?.map((option) => compactText(option, 160)).filter(Boolean) ?? []
+    events.push({
+      id: `interaction_request_${inter.interactionId}`,
+      ts: baseTs + 0.25,
+      kind: 'message',
+      role: 'assistant',
+      turn_id: turnId,
+      payload: {
+        text: [
+          `需要用户${inter.interactionKind === 'choice' ? '选择' : '确认'}：${compactText(inter.prompt, 300)}`,
+          options.length ? `候选项：${options.join('；')}` : '',
+        ].filter(Boolean).join('\n'),
+        assistant_action: interactionAction(inter.interactionKind),
+        interaction_id: inter.interactionId,
+        interaction_kind: inter.interactionKind,
+        options: inter.options ?? [],
+        status: inter.status ?? 'pending',
+      },
+    })
+    if (inter.status === 'resolved' && inter.response?.trim()) {
+      events.push({
+        id: `interaction_response_${inter.interactionId}`,
+        ts: baseTs + 0.5,
+        kind: 'message',
+        role: 'user',
+        turn_id: turnId,
+        payload: {
+          text: `用户选择：${compactText(inter.response, 240)}`,
+          user_kind: 'choice',
+          interaction_id: inter.interactionId,
+          interaction_prompt: inter.prompt,
+          interaction_kind: inter.interactionKind,
+        },
+      })
+    }
+  }
+
   // todo / plan 取最新全量快照（store 里本就是覆盖式的最新状态）
   if (input.todos && input.todos.length > 0) {
     events.push({
@@ -205,5 +274,8 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
     })
   }
 
-  return events
+  return events.sort((a, b) => {
+    if (a.ts !== b.ts) return a.ts - b.ts
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
 }

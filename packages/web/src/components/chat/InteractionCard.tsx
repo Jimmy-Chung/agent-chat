@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { getWsClient } from '@/lib/ws-client'
+import { useMessageStore } from '@/stores/message-store'
 
 export interface InteractionCardProps {
   interactionId: string
@@ -80,6 +81,7 @@ export function InteractionCard({
     if (!isPending) return
     setResolved(true)
     setResolvedChoice(parseLabel(choice))
+    persistInteraction('resolved', choice)
     getWsClient().send({
       type: 'user.action',
       data: { topicId, action: 'choose', interactionId, choice },
@@ -90,6 +92,7 @@ export function InteractionCard({
     if (!isPending) return
     setResolved(true)
     setResolvedChoice('Approve')
+    persistInteraction('resolved', 'Approve')
     getWsClient().send({
       type: 'user.action',
       data: { topicId, action: 'approve', interactionId },
@@ -100,9 +103,26 @@ export function InteractionCard({
     if (!isPending) return
     setResolved(true)
     setResolvedChoice('Reject')
+    persistInteraction('resolved', 'Reject')
     getWsClient().send({
       type: 'user.action',
       data: { topicId, action: 'reject', interactionId },
+    })
+  }
+
+  function persistInteraction(nextStatus: 'resolved' | 'timeout', nextResponse: string) {
+    const existing = useMessageStore.getState().interactions[interactionId]
+    useMessageStore.getState().setInteraction(interactionId, {
+      ...existing,
+      interactionId,
+      topicId,
+      messageId: existing?.messageId ?? '',
+      interactionKind,
+      prompt,
+      options,
+      status: nextStatus,
+      response: nextResponse,
+      defaultTimeoutMs,
     })
   }
 
