@@ -316,6 +316,45 @@ describe('Topic handler — topic.create', () => {
     expect(errorEvent).toBeDefined()
     expect(errorEvent.data.code).toBe('PI_SESSION_FAILED')
   })
+
+  it('persists selected model even when live session model switch fails', async () => {
+    const handler = await getHandler('client:topic.setModel')
+    const topic = await topicRepo.createTopic({
+      name: 'Bad Model Topic',
+      kind: 'normal',
+      agentType: 'general',
+      currentProviderId: 'pi-deepseek',
+      currentModel: 'deepseek-4pro',
+    })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-bad-model' })
+    mockPi.rpc.mockRejectedValue(new Error('model_error'))
+
+    await handler({}, {
+      d: {
+        id: topic.id,
+        model: 'deepseek-v4-pro',
+      },
+    })
+
+    const updated = await topicRepo.getTopic(topic.id)
+    expect(updated?.current_model).toBe('deepseek-v4-pro')
+    expect(mockPi.rpc).toHaveBeenCalledWith('setSessionModel', {
+      sessionId: 'sess-bad-model',
+      model: 'deepseek-v4-pro',
+    })
+    expect(mockHub.getBroadcastEvents()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'topic.updated',
+          data: expect.objectContaining({ current_model: 'deepseek-v4-pro' }),
+        }),
+        expect.objectContaining({
+          type: 'error',
+          data: expect.objectContaining({ code: 'MODEL_SWITCH_FAILED' }),
+        }),
+      ]),
+    )
+  })
 })
 
 describe('Topic handler — topic.rename', () => {

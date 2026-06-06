@@ -303,6 +303,7 @@ export function AttentionXPanel({
   goalAnchor,
   planItems,
   rawEvents,
+  llmUnavailable = false,
   focusCurrent = false,
   chrome = true,
 }: {
@@ -311,6 +312,7 @@ export function AttentionXPanel({
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
   rawEvents: RawEvent[]
+  llmUnavailable?: boolean
   focusCurrent?: boolean
   chrome?: boolean
 }) {
@@ -355,6 +357,25 @@ export function AttentionXPanel({
         </div>
       )}
       <div className="min-h-0 flex-1">
+        {llmUnavailable ? (
+          <div className="flex h-full items-center justify-center px-6">
+            <div
+              className="max-w-[420px] rounded-xl px-5 py-4 text-center"
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                border: '1px solid var(--hairline)',
+                color: 'var(--fg-regular)',
+              }}
+            >
+              <div className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>
+                注意力面板未激活
+              </div>
+              <div className="mt-2 text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+                请进行正确的 LLM 配置以激活注意力面板。
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="flex h-full min-h-0">
           <div className="min-w-0 flex-1">
             <MindMapGraph
@@ -369,6 +390,7 @@ export function AttentionXPanel({
           </div>
           <MindMapDetail selected={selectedMindNode} traceNodes={nodes} rawEvents={rawEvents} planItems={planItems} />
         </div>
+        )}
       </div>
     </div>
   )

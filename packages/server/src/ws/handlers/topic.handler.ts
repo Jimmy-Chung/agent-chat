@@ -192,6 +192,13 @@ export function registerTopicHandlers(
     const topic = await topicRepo.getTopic(data.id)
     if (!topic) return
 
+    const updated = await topicRepo.updateTopic(data.id, {
+      current_model: data.model,
+    })
+    if (updated) {
+      broadcaster.broadcast('topic.updated', updated)
+    }
+
     if (topic.pi_session_id) {
       try {
         const result = await pi.rpc('setSessionModel', {
@@ -201,7 +208,7 @@ export function registerTopicHandlers(
         if (!result?.ok) {
           broadcaster.broadcast('error', {
             code: 'MODEL_SWITCH_FAILED',
-            message: '模型切换失败',
+            message: '模型已保存，但当前会话切换失败；重新进入话题后会使用新模型',
             details: {
               topicId: data.id,
               model: data.model,
@@ -213,22 +220,14 @@ export function registerTopicHandlers(
         logger.warn({ err }, 'Failed to set model on PI')
         broadcaster.broadcast('error', {
           code: 'MODEL_SWITCH_FAILED',
-          message: '模型切换失败',
+          message: '模型已保存，但当前会话切换失败；重新进入话题后会使用新模型',
           details: {
             topicId: data.id,
             model: data.model,
             error: err instanceof Error ? err.message : String(err),
           },
         })
-        return
       }
-    }
-
-    const updated = await topicRepo.updateTopic(data.id, {
-      current_model: data.model,
-    })
-    if (updated) {
-      broadcaster.broadcast('topic.updated', updated)
     }
   })
 

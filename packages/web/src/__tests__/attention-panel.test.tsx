@@ -123,6 +123,24 @@ describe('TC-AIT-222-04 点选 + 详情', () => {
 })
 
 describe('Attention X 动态树详情', () => {
+  it('LLM 不可用时展示配置提示且不渲染动态树', () => {
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={[node({ conclusion: '本地兜底不应展示' })]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        rawEvents={[]}
+        llmUnavailable
+      />,
+    )
+
+    expect(screen.getByText('注意力面板未激活')).toBeTruthy()
+    expect(screen.getByText('请进行正确的 LLM 配置以激活注意力面板。')).toBeTruthy()
+    expect(screen.queryByTestId('mind-map-graph')).toBeNull()
+    expect(screen.queryByText('本地兜底不应展示')).toBeNull()
+  })
+
   it('右侧详情按时间交错展示消息，并把 thinking/tool/todo/plan 合并到执行明细', () => {
     const attentionNode = node({
       id: 'cand_1',

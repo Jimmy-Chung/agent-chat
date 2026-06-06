@@ -151,7 +151,7 @@ export function InspectorPanel() {
 }
 
 function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpand: () => void }) {
-  const { nodes, goalAnchor, planItems } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, llmUnavailable } = useAttentionTrace(topicId)
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
   const currentNode =
     projection.nodes.find((node) => node.current) ??
@@ -170,7 +170,11 @@ function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpan
         <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(270deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
         <div className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(111,227,154,0.16), transparent 32%), radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '100% 100%, 24px 24px' }} />
-        {currentNode ? (
+        {llmUnavailable ? (
+          <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+            请进行正确的 LLM 配置以激活注意力面板。
+          </div>
+        ) : currentNode ? (
           <AttentionMiniNode key={currentNode.id} node={currentNode} />
         ) : (
           <div className="relative z-[3] px-5 text-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
@@ -222,7 +226,7 @@ function AttentionMiniNode({ node }: { node: MindMapNode }) {
 }
 
 function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: string; closing: boolean; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents } = useAttentionTrace(topicId)
+  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailable } = useAttentionTrace(topicId)
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -274,6 +278,7 @@ function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: str
           goalAnchor={goalAnchor}
           planItems={planItems}
           rawEvents={rawEvents}
+          llmUnavailable={llmUnavailable}
           focusCurrent
           chrome={false}
         />

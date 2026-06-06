@@ -893,6 +893,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const data = topicSetModelSchema.parse(frame.d)
         const topic = await topicRepo.getTopic(data.id)
         if (!topic) break
+        const updated = await topicRepo.updateTopic(data.id, { current_model: data.model })
+        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
         if (topic.pi_session_id) {
           const pi = await this.ensurePiClient()
           if (pi && await this.ensureSession(pi, topic.pi_session_id)) {
@@ -901,7 +903,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               if (!result?.ok) {
                 this.broadcastAll('error', {
                   code: 'MODEL_SWITCH_FAILED',
-                  message: '模型切换失败',
+                  message: '模型已保存，但当前会话切换失败；重新进入话题后会使用新模型',
                   details: {
                     topicId: data.id,
                     model: data.model,
@@ -913,19 +915,16 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               logger.warn({ err }, 'Failed to set model on PI')
               this.broadcastAll('error', {
                 code: 'MODEL_SWITCH_FAILED',
-                message: '模型切换失败',
+                message: '模型已保存，但当前会话切换失败；重新进入话题后会使用新模型',
                 details: {
                   topicId: data.id,
                   model: data.model,
                   error: err instanceof Error ? err.message : String(err),
                 },
               })
-              break
             }
           }
         }
-        const updated = await topicRepo.updateTopic(data.id, { current_model: data.model })
-        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
         break
       }
 

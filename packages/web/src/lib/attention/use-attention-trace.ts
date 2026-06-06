@@ -1,5 +1,6 @@
 // S3 (AIT-221) React hook：把实时骨架（S1）与 LLM 语义（S2）连起来。
-// 骨架随 store 实时演进；agent 落定时调一次 interpret，结果缓存；server 失败全程 cosine 兜底。
+// 骨架随 store 实时演进；agent 落定时调一次 interpret，结果缓存。
+// AIT-226：Attention 面板不再使用本地语义兜底；LLM 不可用时不返回推断节点。
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -9,6 +10,7 @@ import { aggregate } from './aggregator'
 import { storeToRawEvents, extractGoalAnchor, type TodoSnapshotItem } from './store-adapter'
 import {
   planInterpret,
+  makeInterpretKey,
   buildTrace,
   buildInterpretPrompt,
   callInterpret,
@@ -22,6 +24,7 @@ export interface AttentionTrace {
   planItems: PlanItem[]
   rawEvents: RawEvent[]
   isAnalyzing: boolean
+  llmUnavailable: boolean
 }
 
 const EMPTY_MESSAGES: never[] = []
@@ -46,7 +49,8 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   )
   const lastEventTs = rawEvents.length > 0 ? rawEvents[rawEvents.length - 1].ts : 0
 
-  const [interpret, setInterpret] = useState<InterpretResult | null>(null)
+  const [interpret, setInterpret] = useState<{ key: string; result: InterpretResult } | null>(null)
+  const [llmUnavailable, setLlmUnavailable] = useState(false)
   const lastKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -58,13 +62,19 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     })
     if (!shouldCall) return
     lastKeyRef.current = cacheKey // 先占位，避免重复触发
+    setLlmUnavailable(false)
     let cancelled = false
     const prompt = buildInterpretPrompt(candidates, goalAnchor)
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('AGENT_CHAT_TOKEN') || undefined : undefined
     callInterpret(prompt, { serverBase: getServerBase(), token }).then((result) => {
       if (cancelled) return
-      if (result) setInterpret(result)
-      // result 为 null（server 不可用/降级）：保持 cosine 兜底，不清空已有结果
+      if (result) {
+        setInterpret({ key: cacheKey, result })
+        setLlmUnavailable(false)
+        return
+      }
+      setInterpret(null)
+      setLlmUnavailable(true)
     })
     return () => {
       cancelled = true
@@ -72,10 +82,13 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   }, [candidates, lastEventTs, agentStatus, goalAnchor])
 
   const inProgress = agentStatus !== 'idle'
+  const currentKey = makeInterpretKey(candidates.length, lastEventTs)
   const nodes = useMemo(
-    () => buildTrace(candidates, goalAnchor, interpret, { inProgress }),
-    [candidates, goalAnchor, interpret, inProgress],
+    () => interpret?.key === currentKey
+      ? buildTrace(candidates, goalAnchor, interpret.result, { inProgress })
+      : [],
+    [candidates, currentKey, goalAnchor, interpret, inProgress],
   )
 
-  return { nodes, goalAnchor, planItems, rawEvents, isAnalyzing: inProgress }
+  return { nodes, goalAnchor, planItems, rawEvents, isAnalyzing: inProgress, llmUnavailable }
 }
