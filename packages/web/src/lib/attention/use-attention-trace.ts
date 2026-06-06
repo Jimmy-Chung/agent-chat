@@ -35,10 +35,15 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   const todos = useMessageStore((s) => s.todosByTopic[topicId]) as TodoSnapshotItem[] | undefined
   const plan = useMessageStore((s) => s.planByTopic[topicId])
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId] ?? 'idle')
+  const interactionsById = useMessageStore((s) => s.interactions)
+  const interactions = useMemo(
+    () => Object.values(interactionsById).filter((interaction) => interaction.topicId === topicId),
+    [interactionsById, topicId],
+  )
 
   const rawEvents = useMemo(
-    () => storeToRawEvents({ messages, partsByMessage, todos, plan }),
-    [messages, partsByMessage, todos, plan],
+    () => storeToRawEvents({ messages, partsByMessage, interactions, todos, plan }),
+    [messages, partsByMessage, interactions, todos, plan],
   )
   const aggregated = useMemo(() => aggregate(rawEvents), [rawEvents])
   const candidates = aggregated.candidates
@@ -83,12 +88,17 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
 
   const inProgress = agentStatus !== 'idle'
   const currentKey = makeInterpretKey(candidates.length, lastEventTs)
+  const semanticGoalAnchor = useMemo<GoalAnchor | null>(() => {
+    const normalized = interpret?.key === currentKey ? interpret.result.normalizedGoal?.trim() : ''
+    if (!normalized) return goalAnchor
+    return { raw_query: goalAnchor?.raw_query ?? normalized, normalized_goal: normalized, ts: goalAnchor?.ts ?? 0 }
+  }, [currentKey, goalAnchor, interpret])
   const nodes = useMemo(
     () => interpret?.key === currentKey
-      ? buildTrace(candidates, goalAnchor, interpret.result, { inProgress })
+      ? buildTrace(candidates, semanticGoalAnchor, interpret.result, { inProgress })
       : [],
-    [candidates, currentKey, goalAnchor, interpret, inProgress],
+    [candidates, currentKey, semanticGoalAnchor, interpret, inProgress],
   )
 
-  return { nodes, goalAnchor, planItems, rawEvents, isAnalyzing: inProgress, llmUnavailable }
+  return { nodes, goalAnchor: semanticGoalAnchor, planItems, rawEvents, isAnalyzing: inProgress, llmUnavailable }
 }

@@ -38,7 +38,12 @@ export type TraceNode = {
   parent_id: string | null
   branch_id: string
 
-  user_message: string // 用户原话（这是节点的主体）
+  user_message: string // 节点主体。LLM 可用时为用户侧语义归纳，否则为用户原话
+  user_summary?: string
+  assistant_summary?: string
+  aggregate_title?: string
+  same_topic?: boolean
+  close_current_topic?: boolean
   intent: string // 模型对用户意图的归纳（可选）
   rationale: string | null
   conclusion: string | null // 这次交互完成了什么 / 发现了什么

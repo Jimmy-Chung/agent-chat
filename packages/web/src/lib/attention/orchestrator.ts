@@ -9,6 +9,13 @@ import { computeGoalDistance, goalAlignmentToDistance } from './goal-distance'
 export interface InterpretResult {
   conclusion: string[]
   goalAlignment: number[]
+  userSummary?: string[]
+  assistantSummary?: string[]
+  aggregateTitle?: string[]
+  sameTopic?: boolean[]
+  closeCurrentTopic?: boolean[]
+  nodeReason?: string[]
+  normalizedGoal?: string
 }
 
 export function candidateText(c: CandidateNode): string {
@@ -57,12 +64,16 @@ export function buildTrace(
   interpret: InterpretResult | null,
   opts: { inProgress?: boolean } = {},
 ): TraceNode[] {
-  const goalText = goalAnchor?.normalized_goal ?? ''
+  const goalText = interpret?.normalizedGoal ?? goalAnchor?.normalized_goal ?? ''
   const lastIdx = candidates.length - 1
   return candidates.map((c, i) => {
     const llmConclusion = interpret?.conclusion[i]
     const hasLlm = typeof llmConclusion === 'string' && llmConclusion.trim().length > 0
-    const conclusion = hasLlm ? (llmConclusion as string) : localSummary(c)
+    const userSummary = interpret?.userSummary?.[i]?.trim()
+    const assistantSummary = interpret?.assistantSummary?.[i]?.trim()
+    const aggregateTitle = interpret?.aggregateTitle?.[i]?.trim()
+    const reason = interpret?.nodeReason?.[i]?.trim()
+    const conclusion = assistantSummary || (hasLlm ? (llmConclusion as string) : localSummary(c))
     const goal_distance = hasLlm
       ? goalAlignmentToDistance(interpret?.goalAlignment[i] ?? 5)
       : computeGoalDistance(goalText, candidateText(c))
@@ -71,9 +82,14 @@ export function buildTrace(
       id: c.id,
       parent_id: null,
       branch_id: 'main',
-      user_message: c.user_message,
-      intent: '',
-      rationale: null,
+      user_message: userSummary || aggregateTitle || c.user_message,
+      user_summary: userSummary || undefined,
+      assistant_summary: assistantSummary || undefined,
+      aggregate_title: aggregateTitle || undefined,
+      same_topic: interpret?.sameTopic?.[i],
+      close_current_topic: interpret?.closeCurrentTopic?.[i],
+      intent: aggregateTitle || userSummary || '',
+      rationale: reason || null,
       conclusion,
       planned_ref: null,
       alignment: 'unplanned',
@@ -97,16 +113,39 @@ export function buildInterpretPrompt(candidates: CandidateNode[], goalAnchor: Go
   candidates.forEach((c, i) => {
     const tools = c.tools
       .slice(0, 5)
-      .map((t) => String((t.payload as Record<string, unknown>).name ?? ''))
+      .map((t) => {
+        const payload = t.payload as Record<string, unknown>
+        const name = String(payload.name ?? '')
+        const input = compactJson(payload.input, 220)
+        const output = compactJson(payload.output, 160)
+        return [name, input ? `input=${input}` : '', output ? `output=${output}` : ''].filter(Boolean).join(' ')
+      })
       .filter(Boolean)
-      .join(', ')
-    const reply = c.exchanges[c.exchanges.length - 1]?.assistant_summary ?? ''
-    lines.push(`[${i}] 用户：「${c.user_message.slice(0, 80)}」`)
-    if (tools) lines.push(`    工具：${tools}`)
-    if (reply) lines.push(`    回复：「${reply.slice(0, 80)}」`)
+      .join(' | ')
+    lines.push(`[${i}]`)
+    c.exchanges.slice(-3).forEach((exchange, exIndex) => {
+      lines.push(`    用户${exIndex + 1}：「${compactPlain(exchange.user_message, 180)}」`)
+      if (exchange.prev_ai_summary) lines.push(`    上文AI：「${compactPlain(exchange.prev_ai_summary, 160)}」`)
+      if (exchange.assistant_summary) lines.push(`    AI${exIndex + 1}：「${compactPlain(exchange.assistant_summary, 260)}」`)
+    })
+    if (tools) lines.push(`    工具/外部输入：${tools}`)
   })
-  lines.push('', '请按节点顺序输出 JSON：{"nodes":[{"conclusion":"≤15字","goalAlignment":0-10}, ...]}')
+  lines.push(
+    '',
+    '请按节点顺序输出 JSON：{"normalizedGoal":"总目标的归一化表达","nodes":[{"userSummary":"用户侧问题/决定的归纳，不照搬原话","assistantSummary":"AI侧结论/方案的归纳，不照搬原话","aggregateTitle":"适合节点标题的短语","sameTopic":true,"closeCurrentTopic":false,"reason":"判断依据","goalAlignment":0-10}, ...]}',
+  )
   return lines.join('\n')
+}
+
+function compactPlain(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized
+}
+
+function compactJson(value: unknown, max: number): string {
+  if (value === undefined || value === null || value === '') return ''
+  const raw = typeof value === 'string' ? value : JSON.stringify(value)
+  return compactPlain(raw, max)
 }
 
 /** 调 S2 server 代理。任何失败（含 degraded）→ null（面板层显示 LLM 配置提示）。 */
@@ -130,9 +169,26 @@ export async function callInterpret(
       ok?: boolean
       conclusion?: string[]
       goalAlignment?: number[]
+      userSummary?: string[]
+      assistantSummary?: string[]
+      aggregateTitle?: string[]
+      sameTopic?: boolean[]
+      closeCurrentTopic?: boolean[]
+      nodeReason?: string[]
+      normalizedGoal?: string
     }
     if (!data.ok || !Array.isArray(data.conclusion) || !Array.isArray(data.goalAlignment)) return null
-    return { conclusion: data.conclusion, goalAlignment: data.goalAlignment }
+    return {
+      conclusion: data.conclusion,
+      goalAlignment: data.goalAlignment,
+      userSummary: Array.isArray(data.userSummary) ? data.userSummary : undefined,
+      assistantSummary: Array.isArray(data.assistantSummary) ? data.assistantSummary : undefined,
+      aggregateTitle: Array.isArray(data.aggregateTitle) ? data.aggregateTitle : undefined,
+      sameTopic: Array.isArray(data.sameTopic) ? data.sameTopic : undefined,
+      closeCurrentTopic: Array.isArray(data.closeCurrentTopic) ? data.closeCurrentTopic : undefined,
+      nodeReason: Array.isArray(data.nodeReason) ? data.nodeReason : undefined,
+      normalizedGoal: typeof data.normalizedGoal === 'string' ? data.normalizedGoal : undefined,
+    }
   } catch {
     return null
   }

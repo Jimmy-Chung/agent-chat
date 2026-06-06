@@ -61,13 +61,19 @@ describe('TC-AIT-220-02 正常解析', () => {
     const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
       calledUrl = String(url)
       authHeader = (init?.headers as Record<string, string>)?.Authorization ?? ''
-      return openAiResponse('{"nodes":[{"conclusion":"修复端口泄漏","goalAlignment":9},{"conclusion":"跑偏查 schema","goalAlignment":3}]}')
+      return openAiResponse('{"normalizedGoal":"修复 SSE 端口泄漏","nodes":[{"userSummary":"定位端口泄漏","assistantSummary":"确认 SSE 连接未释放","aggregateTitle":"SSE 端口泄漏","sameTopic":true,"closeCurrentTopic":false,"reason":"仍在定位","goalAlignment":9},{"userSummary":"查看 schema","assistantSummary":"检查数据库结构","aggregateTitle":"schema 检查","sameTopic":false,"closeCurrentTopic":true,"reason":"切换到数据层","goalAlignment":3}]}')
     }) as unknown as typeof fetch
 
     const r = await interpretTrace('两个节点', GOOD_LLM, { fetchImpl, timeoutMs: 1000 })
     expect(r.ok).toBe(true)
-    expect(r.conclusion).toEqual(['修复端口泄漏', '跑偏查 schema'])
+    expect(r.conclusion).toEqual(['确认 SSE 连接未释放', '检查数据库结构'])
     expect(r.goalAlignment).toEqual([9, 3])
+    expect(r.userSummary).toEqual(['定位端口泄漏', '查看 schema'])
+    expect(r.aggregateTitle).toEqual(['SSE 端口泄漏', 'schema 检查'])
+    expect(r.sameTopic).toEqual([true, false])
+    expect(r.closeCurrentTopic).toEqual([false, true])
+    expect(r.nodeReason).toEqual(['仍在定位', '切换到数据层'])
+    expect(r.normalizedGoal).toBe('修复 SSE 端口泄漏')
     // 调到了正确的 OpenAI 兼容 endpoint，带 key
     expect(calledUrl).toBe('https://llm.example.com/v1/chat/completions')
     expect(authHeader).toBe('Bearer sk-test')
@@ -77,6 +83,8 @@ describe('TC-AIT-220-02 正常解析', () => {
     const p = parseInterpretation('[{"conclusion":"a","goalAlignment":99},{"conclusion":"b","goalAlignment":-5}]')
     expect(p?.conclusion).toEqual(['a', 'b'])
     expect(p?.goalAlignment).toEqual([10, 0])
+    expect(p?.sameTopic).toEqual([true, true])
+    expect(p?.closeCurrentTopic).toEqual([false, false])
   })
 
   it('parseInterpretation 非法 JSON → null', () => {

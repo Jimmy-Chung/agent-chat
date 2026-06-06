@@ -5,6 +5,7 @@ import {
   planInterpret,
   makeInterpretKey,
   buildTrace,
+  buildInterpretPrompt,
   callInterpret,
 } from '../lib/attention/orchestrator'
 import { computeGoalDistance } from '../lib/attention/goal-distance'
@@ -128,6 +129,54 @@ describe('TC-AIT-221-04 进行中 → 落定', () => {
     expect(nodes[1].is_loading).toBe(false)
     // goalAlignment 2 → distance 0.8
     expect(nodes[1].goal_distance).toBeCloseTo(0.8, 5)
+  })
+})
+
+// ── TC-AIT-229-02：LLM 语义摘要驱动节点标题/结论 ────────────────────────────
+describe('TC-AIT-229-02 语义节点摘要', () => {
+  it('buildTrace 使用 userSummary / assistantSummary / aggregateTitle，而不是照搬原文', () => {
+    const cands = candidatesFrom([
+      [
+        '那我如何注册平台呢，比如我要一个叫 helm 的平台，它需要注册成为这个 token 中心的成员',
+        '可以设计平台注册表、券码购买和应用校验链路。',
+      ],
+    ])
+    const nodes = buildTrace(cands, GOAL, {
+      conclusion: ['注册方案'],
+      goalAlignment: [8],
+      userSummary: ['如何管理业务平台在 token 中心的注册'],
+      assistantSummary: ['设计平台注册、券码购买与应用校验方案'],
+      aggregateTitle: ['平台接入 token 中心'],
+      sameTopic: [true],
+      closeCurrentTopic: [true],
+      nodeReason: ['AI 已给出完整接入方案'],
+      normalizedGoal: '管理平台接入 token 中心',
+    })
+
+    expect(nodes[0].user_message).toBe('如何管理业务平台在 token 中心的注册')
+    expect(nodes[0].intent).toBe('平台接入 token 中心')
+    expect(nodes[0].conclusion).toBe('设计平台注册、券码购买与应用校验方案')
+    expect(nodes[0].same_topic).toBe(true)
+    expect(nodes[0].close_current_topic).toBe(true)
+    expect(nodes[0].rationale).toBe('AI 已给出完整接入方案')
+  })
+
+  it('buildInterpretPrompt 包含交互选择和工具输入，要求输出语义字段', () => {
+    const cands = candidatesFrom([
+      ['用户选择：Next.js — 前后端一体', '继续按 Next.js 方案推进'],
+    ])
+    cands[0].tools.push({
+      id: 'tool-1',
+      ts: 3000,
+      kind: 'tool_use',
+      role: 'assistant',
+      payload: { name: 'Read', input: { path: '/workspace/app.ts' }, output: 'export const x = 1' },
+    })
+    const prompt = buildInterpretPrompt(cands, GOAL)
+    expect(prompt).toContain('用户选择：Next.js')
+    expect(prompt).toContain('input={"path":"/workspace/app.ts"}')
+    expect(prompt).toContain('userSummary')
+    expect(prompt).toContain('sameTopic')
   })
 })
 

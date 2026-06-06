@@ -173,6 +173,42 @@ describe('TC-AIT-219-04 todos/plan 映射', () => {
   })
 })
 
+// ── TC-AIT-229-01：adapter 选择进入注意力轨迹 ───────────────────────────────
+describe('TC-AIT-229-01 交互选择映射', () => {
+  it('interaction request/response 会转成 assistant 提问与 user choice 事件', () => {
+    const u = makeMessage({ id: 'u', role: 'user', turn_id: 't1', started_at: 1000 })
+    const a = makeMessage({ id: 'a', role: 'assistant', turn_id: 't1', started_at: 2000 })
+    const events = storeToRawEvents(
+      buildInput([
+        { msg: u, parts: [part('u', 'text', '帮我搭一个平台')] },
+        { msg: a, parts: [part('a', 'text', '请选择技术栈')] },
+      ], {
+        interactions: [{
+          interactionId: 'toolu_choice_1',
+          messageId: 'a',
+          topicId: 'topic-1',
+          interactionKind: 'choice',
+          prompt: '技术栈用哪套？',
+          options: ['Next.js — 前后端一体', 'Hono — API 优先'],
+          status: 'resolved',
+          response: 'Next.js — 前后端一体',
+        }],
+      }),
+    )
+    const request = events.find((e) => e.id === 'interaction_request_toolu_choice_1')
+    const response = events.find((e) => e.id === 'interaction_response_toolu_choice_1')
+    expect(request?.role).toBe('assistant')
+    expect(request?.payload.assistant_action).toBe('options')
+    expect(request?.payload.text).toContain('技术栈用哪套')
+    expect(response?.role).toBe('user')
+    expect(response?.payload.user_kind).toBe('choice')
+    expect(response?.payload.text).toContain('Next.js')
+
+    const { candidates } = aggregate(events)
+    expect(candidates.some((c) => c.user_kind === 'choice' && c.user_message.includes('Next.js'))).toBe(true)
+  })
+})
+
 // ── TC-AIT-219-05：aggregate ≤12 + goalAnchor ────────────────────────────────
 describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
   it('20 个用户回合压到 ≤12 个候选节点', () => {
