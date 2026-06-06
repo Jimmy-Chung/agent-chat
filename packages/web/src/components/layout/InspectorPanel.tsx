@@ -7,7 +7,7 @@ import { useMessageStore } from '@/stores/message-store'
 import { useUiStore } from '@/stores/ui-store'
 import { useCronStore } from '@/stores/cron-store'
 import { getWsClient } from '@/lib/ws-client'
-import { useAttentionTrace } from '@/lib/attention'
+import { useAttentionTrace, type AttentionTrace } from '@/lib/attention'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
 import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
@@ -137,27 +137,63 @@ export function InspectorPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
-        {tab === 'attention' && activeTopicId && <AttentionInspectorTab topicId={activeTopicId} onExpand={openAttentionOverlay} />}
+        {tab === 'attention' && activeTopicId && (
+          <AttentionInspectorAttention
+            topicId={activeTopicId}
+            expanded={attentionExpanded}
+            closing={attentionClosing}
+            onExpand={openAttentionOverlay}
+            onClose={closeAttentionOverlay}
+          />
+        )}
         {tab === 'todo' && <TodoTab todos={todos} />}
         {tab === 'plan' && <PlanTab plan={plan} />}
         {tab === 'artifacts' && <ArtifactsTab artifacts={artifacts} />}
         {tab === 'cron' && <CronTab topicId={activeTopicId} />}
       </div>
-      {attentionExpanded && activeTopicId && (
-        <AttentionInspectorOverlay topicId={activeTopicId} closing={attentionClosing} onClose={closeAttentionOverlay} />
-      )}
     </div>
   )
 }
 
-function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpand: () => void }) {
-  const { nodes, goalAnchor, planItems, llmUnavailable } = useAttentionTrace(topicId)
+function AttentionInspectorAttention({
+  topicId,
+  expanded,
+  closing,
+  onExpand,
+  onClose,
+}: {
+  topicId: string
+  expanded: boolean
+  closing: boolean
+  onExpand: () => void
+  onClose: () => void
+}) {
+  const attention = useAttentionTrace(topicId)
+  return (
+    <>
+      <AttentionInspectorTab attention={attention} onExpand={onExpand} />
+      {expanded && (
+        <AttentionInspectorOverlay topicId={topicId} attention={attention} closing={closing} onClose={onClose} />
+      )}
+    </>
+  )
+}
+
+function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTrace; onExpand: () => void }) {
+  const { nodes, goalAnchor, planItems, llmUnavailable, isLoadingSnapshot } = attention
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
   const currentNode =
     projection.nodes.find((node) => node.current) ??
     [...projection.nodes].reverse().find((node) => node.kind !== 'goal') ??
     projection.nodes[0] ??
     null
+  const nonGoalNodes = projection.nodes.filter((node) => node.kind !== 'goal')
+  const currentIndex = currentNode ? nonGoalNodes.findIndex((node) => node.id === currentNode.id) : -1
+  const lineMode = currentIndex <= 0
+    ? 'first'
+    : currentIndex === nonGoalNodes.length - 1
+      ? 'last'
+      : 'middle'
 
   return (
     <div className="relative flex min-h-full flex-col overflow-hidden">
@@ -170,12 +206,16 @@ function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpan
         <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
         <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(270deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
         <div className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(111,227,154,0.16), transparent 32%), radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '100% 100%, 24px 24px' }} />
-        {llmUnavailable ? (
+        {isLoadingSnapshot && !nodes.length ? (
+          <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+            加载注意力节点快照…
+          </div>
+        ) : llmUnavailable ? (
           <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
             请进行正确的 LLM 配置以激活注意力面板。
           </div>
         ) : currentNode ? (
-          <AttentionMiniNode key={currentNode.id} node={currentNode} />
+          <AttentionMiniNode key={currentNode.id} node={currentNode} lineMode={lineMode} />
         ) : (
           <div className="relative z-[3] px-5 text-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
             暂无注意力节点
@@ -189,44 +229,51 @@ function AttentionInspectorTab({ topicId, onExpand }: { topicId: string; onExpan
   )
 }
 
-function AttentionMiniNode({ node }: { node: MindMapNode }) {
+function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'first' | 'middle' | 'last' }) {
   const color = node.kind === 'goal'
     ? '#6FE39A'
     : node.relation === 'branch'
       ? '#F7A26B'
       : '#7DB7FF'
+  const showLeftLine = lineMode === 'middle' || lineMode === 'last'
+  const showRightLine = lineMode === 'first' || lineMode === 'middle'
 
   return (
-    <div
-      className="relative z-[3] w-[230px] rounded-lg px-3 py-3"
-      style={{
-        background: node.kind === 'goal' ? 'rgba(111,227,154,0.12)' : 'var(--glass-modal, rgba(20,22,27,0.92))',
-        border: `1px solid ${node.current ? 'rgba(111,227,154,0.52)' : 'var(--hairline-2)'}`,
-        boxShadow: node.current
-          ? '0 0 0 2px rgba(111,227,154,0.38), 0 0 34px rgba(111,227,154,0.22), 0 16px 42px rgba(0,0,0,0.42)'
-          : '0 16px 42px rgba(0,0,0,0.42)',
-        animation: 'attention-mini-enter 260ms cubic-bezier(0.22,1,0.36,1) both, attention-pulse 1.6s ease-in-out infinite',
-      }}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
-        <span className="text-[10px]" style={{ color }}>
-          {node.current ? '当前节点' : node.kind === 'aggregate' ? '聚合节点' : '注意力节点'}
-        </span>
-        {node.relation === 'branch' && <span className="ml-auto text-[10px]" style={{ color: '#F7A26B' }}>支线</span>}
+    <div className="relative z-[3] flex w-full items-center justify-center">
+      {showLeftLine && <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(125,183,255,0), rgba(125,183,255,0.55))' }} />}
+      {!showLeftLine && <div className="flex-1" />}
+      <div
+        className="relative w-[230px] shrink-0 rounded-lg px-3 py-3"
+        style={{
+          background: node.kind === 'goal' ? 'rgba(111,227,154,0.12)' : 'var(--glass-modal, rgba(20,22,27,0.92))',
+          border: `1px solid ${node.current ? 'rgba(111,227,154,0.52)' : 'var(--hairline-2)'}`,
+          boxShadow: node.current
+            ? '0 0 0 2px rgba(111,227,154,0.38), 0 0 34px rgba(111,227,154,0.22), 0 16px 42px rgba(0,0,0,0.42)'
+            : '0 16px 42px rgba(0,0,0,0.42)',
+          animation: 'attention-mini-enter 260ms cubic-bezier(0.22,1,0.36,1) both, attention-pulse 1.6s ease-in-out infinite',
+        }}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+          <span className="text-[10px]" style={{ color }}>
+            {node.current ? '当前节点' : node.kind === 'aggregate' ? '聚合节点' : '注意力节点'}
+          </span>
+          {node.relation === 'branch' && <span className="ml-auto text-[10px]" style={{ color: '#F7A26B' }}>支线</span>}
+        </div>
+        <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+          {node.title}
+        </div>
+        <div className="mt-1 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+          {node.subtitle}
+        </div>
       </div>
-      <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
-        {node.title}
-      </div>
-      <div className="mt-1 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
-        {node.subtitle}
-      </div>
+      {showRightLine && <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(125,183,255,0.55), rgba(125,183,255,0))' }} />}
+      {!showRightLine && <div className="flex-1" />}
     </div>
   )
 }
 
-function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: string; closing: boolean; onClose: () => void }) {
-  const attention = useAttentionTrace(topicId)
+function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
   const { nodes, goalAnchor, planItems, rawEvents, llmUnavailable } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
 
@@ -250,7 +297,7 @@ function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: str
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-0 right-0 top-0 z-30 flex w-[min(1180px,calc(100vw-260px))] flex-col overflow-hidden"
+      className="fixed bottom-0 right-0 top-0 z-40 flex w-[min(1180px,calc(100vw-260px))] flex-col overflow-hidden"
       style={{
         background: 'rgba(16,18,23,0.98)',
         WebkitBackdropFilter: 'blur(60px) saturate(200%)',
@@ -287,7 +334,7 @@ function AttentionInspectorOverlay({ topicId, closing, onClose }: { topicId: str
           onGoalDraftChange={attention.setGoalDraft}
           onCreateGoal={() => void attention.createGoal()}
           onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
-          onRenameGoal={(goalId, title) => void attention.renameGoal(goalId, title)}
+          loadingSnapshot={attention.isLoadingSnapshot}
           focusCurrent
         />
       </div>

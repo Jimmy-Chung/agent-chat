@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-07 [v1.10.13] — fix: Attention 面板明细、目标与快照交互
+
+- Attention 消息明细优先展示真实 raw message，并把 adapter choice/approval 的问题与候选项纳入节点明细。
+- 恢复图节点右上角 Focus 定位入口，并让展开后的子交互节点定位到各自原始消息。
+- 普通 Attention 面板与全尺寸面板共用同一份快照数据，普通节点展示补齐首/中/末节点延长线。
+- 全尺寸面板顶部改为 `attention panel` 标题，移除历史名改名模块；默认目标外最多允许 2 个新目标，目标按钮 hover 显示完整内容。
+- 读取大快照时增加加载态；已有有效快照不再被 idle 自动重绘覆盖，目标切换或消息源变化时仍触发完整重绘。
+- 版本显示更新为 `v1.10.13`。
+
 ## 2026-06-06 [v1.10.12] — fix: Attention LLM 输出解析兼容
 
 - Attention interpret 输出 token 上限从 700 提高到 2400，降低大图 JSON 被截断导致 `parse_error` 的概率。

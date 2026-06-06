@@ -20,6 +20,12 @@ import '@xyflow/react/dist/style.css'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
 import { goalDistanceColor } from '@/lib/attention'
 import { buildMindMapProjection, type MindMapEdge, type MindMapNode, type MindMapProjection } from '@/lib/attention/mind-map-projector'
+import { Tooltip } from '@/components/ui/Tooltip'
+
+interface MindMapFlowNodeData extends Record<string, unknown> {
+  node: MindMapNode
+  onFocus?: (messageId: string) => void
+}
 
 const WIDTH: Record<MindMapNode['kind'], number> = {
   goal: 250,
@@ -34,12 +40,13 @@ const KIND_LABEL: Record<MindMapNode['kind'], string> = {
 }
 
 function MindMapFlowNode({ data, selected }: NodeProps) {
-  const node = data as unknown as MindMapNode
+  const { node, onFocus } = data as MindMapFlowNodeData
   const color = node.kind === 'goal'
     ? '#6FE39A'
     : node.relation === 'branch'
       ? '#F7A26B'
       : goalDistanceColor(node.goalDistance)
+  const focusMessageId = node.focusMessageId
 
   return (
     <div
@@ -69,10 +76,32 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
         </span>
         {node.collapsed && <span className="text-[10px]" style={{ color: 'var(--fg-muted)' }}>已聚合</span>}
         {node.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前</span>}
-        {node.status === 'running' && <span className="ml-auto text-[10px]" style={{ color: '#F7C26B' }}>运行中</span>}
+        <span className="ml-auto" />
+        {node.status === 'running' && <span className="text-[10px]" style={{ color: '#F7C26B' }}>运行中</span>}
+        {focusMessageId && (
+          <Tooltip content="回到消息面板中的对应消息" side="top" delayMs={180}>
+            <button
+              type="button"
+              aria-label="定位到对应消息"
+              className="nodrag nopan inline-flex h-5 w-5 items-center justify-center rounded text-[12px] font-semibold transition-opacity hover:opacity-85"
+              style={{
+                background: 'rgba(10,132,255,0.14)',
+                border: '1px solid rgba(10,132,255,0.38)',
+                color: '#7DB7FF',
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onFocus?.(focusMessageId)
+              }}
+            >
+              ↗
+            </button>
+          </Tooltip>
+        )}
         {node.hasChildren && (
           <span
-            className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-[13px] font-semibold"
+            className="inline-flex h-5 w-5 items-center justify-center rounded text-[13px] font-semibold"
             style={{
               background: node.collapsed ? 'rgba(10,132,255,0.18)' : 'rgba(111,227,154,0.16)',
               border: node.collapsed ? '1px solid rgba(10,132,255,0.45)' : '1px solid rgba(111,227,154,0.38)',
@@ -123,6 +152,7 @@ export default function MindMapGraph({
   planItems,
   selectedId,
   onSelect,
+  onFocus,
   expandedIds,
   focusNodeId,
   projection: providedProjection,
@@ -132,6 +162,7 @@ export default function MindMapGraph({
   planItems: PlanItem[]
   selectedId: string | null
   onSelect: (id: string) => void
+  onFocus?: (messageId: string) => void
   expandedIds: ReadonlySet<string>
   focusNodeId?: string | null
   projection?: MindMapProjection
@@ -147,10 +178,10 @@ export default function MindMapGraph({
       id: node.id,
       type: 'mind',
       position: draggedPositionsRef.current[node.id] ?? node.position,
-      data: node as unknown as Record<string, unknown>,
+      data: { node, onFocus },
       selected: node.id === selectedId,
     })),
-    [projection.nodes, selectedId],
+    [onFocus, projection.nodes, selectedId],
   )
   const [displayNodes, setDisplayNodes] = useState<MindFlowNode[]>(projectedNodes)
   useEffect(() => {

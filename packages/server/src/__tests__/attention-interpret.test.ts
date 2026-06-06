@@ -224,6 +224,20 @@ describe('Attention goal snapshots', () => {
       const secondBody = (await secondRes.json()) as { goal: { id: string; active: boolean } }
       expect(secondBody.goal.active).toBe(true)
 
+      const thirdRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '第三个目标', title: '第三目标' }),
+      })
+      expect(thirdRes.status).toBe(200)
+
+      const fourthRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '第四个目标', title: '第四目标' }),
+      })
+      expect(fourthRes.status).toBe(409)
+
       const renamedRes = await app.request(`/api/agent-chat/v1/attention/goals/${secondBody.goal.id}`, {
         method: 'PATCH',
         headers: auth,
@@ -243,7 +257,7 @@ describe('Attention goal snapshots', () => {
         headers: { Authorization: 'Bearer secret' },
       })
       const listBody = (await listRes.json()) as { goals: Array<{ id: string; active: boolean; title: string | null }> }
-      expect(listBody.goals).toHaveLength(2)
+      expect(listBody.goals).toHaveLength(3)
       expect(listBody.goals.find((goal) => goal.id === defaultBody.goal.id)?.active).toBe(true)
       expect(listBody.goals.find((goal) => goal.id === secondBody.goal.id)?.active).toBe(false)
 

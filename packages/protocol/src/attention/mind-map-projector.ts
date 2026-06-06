@@ -17,6 +17,7 @@ export interface MindMapNode {
   collapsed: boolean
   depth: number
   sourceNodeIds: string[]
+  focusMessageId?: string | null
   aggregation: AggregationInfo | null
   hasChildren: boolean
   status?: TraceNode['status']
@@ -80,6 +81,20 @@ function traceMessageCount(node: TraceNode): number {
   return Math.max(node.user_message_count ?? 0, node.exchanges?.length ?? 0)
 }
 
+function firstFocusMessageId(node: TraceNode): string | null {
+  return node.source_message_ids.find(Boolean) ?? node.exchanges?.map((exchange) => exchange.message_id).find(Boolean) ?? null
+}
+
+function focusMessageForSources(traceNodes: TraceNode[], sourceNodeIds: string[]): string | null {
+  const sourceSet = new Set(sourceNodeIds)
+  for (const node of traceNodes) {
+    if (!sourceSet.has(node.id)) continue
+    const messageId = firstFocusMessageId(node)
+    if (messageId) return messageId
+  }
+  return null
+}
+
 function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
   const sourceSet = new Set(sourceNodeIds)
   const sources = traceNodes.filter((node) => sourceSet.has(node.id))
@@ -121,6 +136,7 @@ export function buildMindMapProjection(
     collapsed: false,
     depth: 0,
     sourceNodeIds: traceNodes.map((node) => node.id),
+    focusMessageId: focusMessageForSources(traceNodes, traceNodes.map((node) => node.id)),
     aggregation: null,
     hasChildren: true,
     status: traceNodes.some((node) => node.status === 'running') ? 'running' : 'done',
@@ -195,6 +211,7 @@ export function buildMindMapProjection(
       collapsed: isMultiTrace ? !expandedIds.has(id) : false,
       depth: topic?.depth ?? 1,
       sourceNodeIds: [traceNode.id],
+      focusMessageId: firstFocusMessageId(traceNode),
       aggregation: isMultiTrace ? multiTraceAggregation(traceNode) : null,
       hasChildren: isMultiTrace,
       status: traceNode.status,
@@ -220,6 +237,7 @@ export function buildMindMapProjection(
           collapsed: false,
           depth: (topic?.depth ?? 1) + 1,
           sourceNodeIds: [traceNode.id],
+          focusMessageId: exchange.message_id || firstFocusMessageId(traceNode),
           aggregation: null,
           hasChildren: false,
           status: traceNode.status,
@@ -257,6 +275,7 @@ export function buildMindMapProjection(
       collapsed: !expandedIds.has(id),
       depth: topic.depth,
       sourceNodeIds: topic.sourceNodeIds,
+      focusMessageId: focusMessageForSources(traceNodes, topic.sourceNodeIds),
       aggregation: topic.aggregation,
       hasChildren: topic.childIds.length > 0,
       status: topic.status,

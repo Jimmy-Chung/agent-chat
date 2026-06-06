@@ -28,6 +28,7 @@ export interface AttentionTrace {
   planItems: PlanItem[]
   rawEvents: RawEvent[]
   isAnalyzing: boolean
+  isLoadingSnapshot: boolean
   llmUnavailable: boolean
   goals: AttentionGoalMeta[]
   activeGoal: AttentionGoalMeta | null
@@ -237,9 +238,13 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   const messages = useMessageStore((s) => s.byTopic[topicId] ?? EMPTY_MESSAGES)
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId] ?? 'idle')
   const hasLiveMessages = useMemo(() => hasActiveAttentionMessage(messages), [messages])
-  const sourceSignal = useMemo(
-    () => `${messages.length}:${messages.reduce((max, message) => Math.max(max, message.finished_at ?? message.started_at), 0)}`,
+  const sourceLastEventTs = useMemo(
+    () => messages.reduce((max, message) => Math.max(max, message.finished_at ?? message.started_at), 0),
     [messages],
+  )
+  const sourceSignal = useMemo(
+    () => `${messages.length}:${sourceLastEventTs}`,
+    [messages.length, sourceLastEventTs],
   )
 
   const [goals, setGoals] = useState<AttentionGoalMeta[]>([])
@@ -248,6 +253,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   const [snapshot, setSnapshot] = useState<LoadedSnapshot | null>(null)
   const [llmUnavailable, setLlmUnavailable] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
   const lastRebuildKeyRef = useRef<string | null>(null)
 
   const reloadGoals = useCallback(async () => {
@@ -312,13 +318,19 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
       return
     }
     let cancelled = false
+    setIsLoadingSnapshot(true)
     loadGoalSnapshot({ goalId: activeGoalId, serverBase: getServerBase(), token: getToken() }).then((loaded) => {
       if (cancelled) return
-      setSnapshot(loaded.snapshot)
+      setSnapshot((current) => {
+        if (!loaded.snapshot && current?.meta.id === activeGoalId) return current
+        return loaded.snapshot
+      })
       setLlmUnavailable(!!loaded.degradedReason && !loaded.snapshot)
       if (!loaded.snapshot && !loaded.degradedReason) void rebuild(activeGoalId, { force: true })
     }).catch(() => {
       if (!cancelled) setSnapshot(null)
+    }).finally(() => {
+      if (!cancelled) setIsLoadingSnapshot(false)
     })
     return () => {
       cancelled = true
@@ -327,19 +339,29 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
 
   useEffect(() => {
     if (!activeGoalId || hasLiveMessages || agentStatus !== 'idle') return
+    if (isLoadingSnapshot) return
+    if (!messages.length) return
+    if (
+      snapshot?.meta.id === activeGoalId &&
+      snapshot.meta.source_message_count === messages.length &&
+      snapshot.meta.source_last_event_ts === sourceLastEventTs
+    ) {
+      return
+    }
     void rebuild(activeGoalId)
-  }, [activeGoalId, agentStatus, hasLiveMessages, rebuild, sourceSignal])
+  }, [activeGoalId, agentStatus, hasLiveMessages, isLoadingSnapshot, messages.length, rebuild, snapshot?.meta.id, snapshot?.meta.source_last_event_ts, snapshot?.meta.source_message_count, sourceLastEventTs, sourceSignal])
 
   const createGoal = useCallback(async (goalTextInput?: string) => {
     const next = (goalTextInput ?? goalDraft).trim()
     if (!next) return
+    if (goals.filter((goal) => !goal.is_default).length >= 2) return
     const created = await createAttentionGoal({ topicId, goalText: next, serverBase: getServerBase(), token: getToken() })
     if (!created) return
     setGoals((prev) => [created, ...prev.map((goal) => ({ ...goal, active: false }))])
     setActiveGoalId(created.id)
     setGoalDraft(created.goal_text)
     await rebuild(created.id, { force: true })
-  }, [goalDraft, rebuild, topicId])
+  }, [goalDraft, goals, rebuild, topicId])
 
   const selectGoal = useCallback(async (goalId: string) => {
     const activated = await activateAttentionGoal({ goalId, serverBase: getServerBase(), token: getToken() })
@@ -362,6 +384,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     planItems: snapshot?.planItems ?? [],
     rawEvents: snapshot?.rawEvents ?? [],
     isAnalyzing: isAnalyzing || (hasLiveMessages && agentStatus !== 'idle'),
+    isLoadingSnapshot,
     llmUnavailable,
     goals,
     activeGoal,

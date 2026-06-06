@@ -4,24 +4,40 @@ import type { GoalAnchor, RawEvent, TraceNode } from '../lib/attention'
 import { buildGraphData, NODE_W, NODE_GAP } from '../lib/attention/graph-projector'
 import { AttentionPanelContent } from '../components/attention/AttentionPanelContent'
 import { AttentionXPanel } from '../components/attention/AttentionXPanel'
+import { useMessageStore } from '../stores/message-store'
 
 afterEach(cleanup)
 
 vi.mock('../components/attention/MindMapGraph', () => ({
-  default: ({ projection, onSelect }: {
-    projection?: { nodes: Array<{ id: string; title: string; collapsed: boolean }> }
+  default: ({ projection, onSelect, onFocus }: {
+    projection?: { nodes: Array<{ id: string; title: string; collapsed: boolean; focusMessageId?: string | null }> }
     onSelect?: (id: string) => void
+    onFocus?: (messageId: string) => void
   }) => (
     <div data-testid="mind-map-graph">
       {(projection?.nodes ?? []).map((node) => (
-        <button
+        <div
           key={node.id}
+          role="button"
+          tabIndex={0}
           data-testid={`mind-node-${node.id}`}
           data-collapsed={String(node.collapsed)}
           onClick={() => onSelect?.(node.id)}
         >
           {node.id}:{node.title}
-        </button>
+          {node.focusMessageId && (
+            <button
+              type="button"
+              aria-label={`定位到对应消息 ${node.id}`}
+              onClick={(event) => {
+                event.stopPropagation()
+                onFocus?.(node.focusMessageId!)
+              }}
+            >
+              Focus
+            </button>
+          )}
+        </div>
       ))}
     </div>
   ),
@@ -140,6 +156,10 @@ describe('TC-AIT-222-04 点选 + 详情', () => {
 })
 
 describe('Attention X 动态树详情', () => {
+  afterEach(() => {
+    useMessageStore.setState({ focusedMessageTarget: null })
+  })
+
   it('LLM 不可用且没有快照节点时展示配置提示且不渲染动态树', () => {
     render(
       <AttentionXPanel
@@ -190,10 +210,9 @@ describe('Attention X 动态树详情', () => {
     await waitFor(() => expect(screen.getByTestId('mind-map-graph')).toBeTruthy())
   })
 
-  it('展示目标历史，创建目标、切换目标、改名分别触发对应回调', () => {
+  it('展示目标历史，创建目标、切换目标，并在两个自定义目标后禁用创建', () => {
     const createGoal = vi.fn()
     const selectGoal = vi.fn()
-    const renameGoal = vi.fn()
     const changeDraft = vi.fn()
     render(
       <AttentionXPanel
@@ -205,6 +224,7 @@ describe('Attention X 动态树详情', () => {
         goals={[
           { id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true },
           { id: 'g2', topic_id: 'topic_1', goal_text: '第二个目标内容', title: '第二目标', is_default: false, active: false, source_message_count: 20, source_last_event_ts: 20, created_at: 2, updated_at: 2, has_snapshot: true },
+          { id: 'g3', topic_id: 'topic_1', goal_text: '第三个目标内容', title: '第三目标', is_default: false, active: false, source_message_count: 20, source_last_event_ts: 20, created_at: 3, updated_at: 3, has_snapshot: true },
         ]}
         activeGoal={{ id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true }}
         activeGoalId="g1"
@@ -212,20 +232,19 @@ describe('Attention X 动态树详情', () => {
         onGoalDraftChange={changeDraft}
         onCreateGoal={createGoal}
         onSelectGoal={selectGoal}
-        onRenameGoal={renameGoal}
       />,
     )
 
     expect(screen.getByText('默认目标')).toBeTruthy()
     fireEvent.click(screen.getByText('第二目标'))
     expect(selectGoal).toHaveBeenCalledWith('g2')
-    fireEvent.click(screen.getByText('创建目标'))
-    expect(createGoal).toHaveBeenCalled()
+    expect(screen.getByText('第三目标')).toBeTruthy()
+    expect(screen.getByText('默认目标外最多创建 2 个目标。')).toBeTruthy()
+    expect((screen.getByText('创建目标') as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByPlaceholderText('描述一个更清晰的话题目标，Enter 创建新目标'), { target: { value: '新目标' } })
     expect(changeDraft).toHaveBeenCalledWith('新目标')
-    fireEvent.change(screen.getByPlaceholderText('只改历史显示名，不改目标内容'), { target: { value: '改名后' } })
-    fireEvent.click(screen.getByText('改名'))
-    expect(renameGoal).toHaveBeenCalledWith('g1', '改名后')
+    expect(screen.queryByText('历史名')).toBeNull()
+    expect(screen.queryByText('改名')).toBeNull()
     expect(screen.getByText('目标内容：第一句话目标')).toBeTruthy()
   })
 
@@ -234,7 +253,8 @@ describe('Attention X 动态树详情', () => {
       id: 'cand_1',
       user_message: '帮我做 todo web 应用',
       conclusion: '完成 todo 页面',
-      event_ids: ['think_1', 'tool_1', 'plan_1'],
+      event_ids: ['assistant_1', 'interaction_request_1', 'assistant_2', 'think_1', 'tool_1', 'plan_1'],
+      source_message_ids: ['m1', 'm2'],
       exchanges: [
         {
           id: 'ex1',
@@ -263,6 +283,11 @@ describe('Attention X 动态树详情', () => {
       ],
     })
     const rawEvents: RawEvent[] = [
+      { id: 'user_1', ts: 1, kind: 'message', role: 'user', message_id: 'm1', payload: { text: '帮我做 todo web 应用' } },
+      { id: 'assistant_1', ts: 2, kind: 'message', role: 'assistant', message_id: 'a1', payload: { text: '真实 AI 回复：我会先确认技术栈。' } },
+      { id: 'interaction_request_1', ts: 2.5, kind: 'message', role: 'assistant', message_id: 'a1', payload: { text: '需要用户选择：请选择技术栈', options: ['Vue', 'React'] } },
+      { id: 'user_2', ts: 3, kind: 'message', role: 'user', message_id: 'm2', payload: { text: '选 vue' } },
+      { id: 'assistant_2', ts: 4, kind: 'message', role: 'assistant', message_id: 'a2', payload: { text: '真实 AI 回复：已按 Vue 实现第一版。' } },
       { id: 'think_1', ts: 2, kind: 'thinking', role: 'assistant', payload: { text: '分析技术栈选项' } },
       { id: 'tool_1', ts: 4, kind: 'tool_use', role: 'assistant', payload: { name: 'edit_file', input: { path: 'Todo.vue' }, output: '写入完成' } },
       { id: 'plan_1', ts: 5, kind: 'plan', role: 'assistant', payload: { text: '实现、检查、回归' } },
@@ -280,9 +305,11 @@ describe('Attention X 动态树详情', () => {
 
     expect(screen.getByText('消息明细')).toBeTruthy()
     expect(screen.getByText('帮我做 todo web 应用')).toBeTruthy()
-    expect(screen.getByText('我先确认技术栈并准备实现。')).toBeTruthy()
+    expect(screen.getByText('真实 AI 回复：我会先确认技术栈。')).toBeTruthy()
+    expect(screen.getByText(/需要用户选择：请选择技术栈/)).toBeTruthy()
+    expect(screen.getByText(/候选项：Vue；React/)).toBeTruthy()
     expect(screen.getByText('选 vue')).toBeTruthy()
-    expect(screen.getByText('已按 Vue 方案实现第一版。')).toBeTruthy()
+    expect(screen.getByText('真实 AI 回复：已按 Vue 实现第一版。')).toBeTruthy()
     expect(screen.getByText('执行明细 · 1 个工具')).toBeTruthy()
     expect(screen.getByText('思考')).toBeTruthy()
     expect(screen.getByText('edit_file')).toBeTruthy()
@@ -327,5 +354,42 @@ describe('Attention X 动态树详情', () => {
     expect(aggregate).toBeTruthy()
     fireEvent.click(aggregate!)
     expect(screen.getAllByTestId(/^mind-node-nested_/).length).toBeGreaterThan(0)
+  })
+
+  it('点击图节点右上角定位入口时跳转对应消息且不触发展开', () => {
+    const attentionNode = node({
+      id: 'cand_1',
+      user_message: '帮我修登录',
+      source_message_ids: ['m_1'],
+      exchanges: [{
+        id: 'ex_1',
+        message_id: 'm_1',
+        user_message: '帮我修登录',
+        user_kind: 'instruction',
+        assistant_summary: '定位登录问题',
+        assistant_actions: ['solve'],
+        event_ids: ['e_1'],
+        tool_count: 0,
+        ts_start: 1,
+        ts_end: 2,
+      }],
+    })
+
+    render(
+      <AttentionXPanel
+        topicId="topic_1"
+        nodes={[attentionNode]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        rawEvents={[]}
+      />,
+    )
+
+    fireEvent.click(screen.getByLabelText('定位到对应消息 user_cand_1'))
+    expect(useMessageStore.getState().focusedMessageTarget).toMatchObject({
+      topicId: 'topic_1',
+      messageId: 'm_1',
+    })
+    expect(screen.getByTestId('mind-node-user_cand_1').getAttribute('data-collapsed')).toBe('false')
   })
 })

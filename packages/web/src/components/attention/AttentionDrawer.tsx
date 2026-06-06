@@ -76,7 +76,7 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             onGoalDraftChange={attention.setGoalDraft}
             onCreateGoal={() => void attention.createGoal()}
             onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
-            onRenameGoal={(goalId, title) => void attention.renameGoal(goalId, title)}
+            loadingSnapshot={attention.isLoadingSnapshot}
           />
         </div>
       </div>

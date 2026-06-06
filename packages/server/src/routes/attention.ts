@@ -312,6 +312,10 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     const goalText = typeof body.goalText === 'string' ? body.goalText.trim() : ''
     const title = typeof body.title === 'string' ? body.title.trim() : null
     if (!goalText) return c.json({ ok: false, error: 'bad_request' }, 400)
+    const existingGoals = await listAttentionGoals(topicId)
+    if (existingGoals.filter((goal) => !goal.is_default).length >= 2) {
+      return c.json({ ok: false, error: 'goal_limit_exceeded' }, 409, { 'Cache-Control': 'no-store' })
+    }
     const goal = await createAttentionGoal({ topicId, goalText, title, active: true })
     return c.json({ ok: true, goal }, 200, { 'Cache-Control': 'no-store' })
   })

@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { AttentionGoalMeta, GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
 import { attentionGoalTitle } from '@/lib/attention'
 import { resolveFocusMessageId } from '@/lib/attention'
-import { getWsClient } from '@/lib/ws-client'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
@@ -36,6 +35,16 @@ function eventPreview(event: RawEvent): string {
     ? String(event.payload.output ?? JSON.stringify(event.payload.input ?? {}))
     : String(event.payload.text ?? '')
   return text.replace(/\s+/g, ' ').trim()
+}
+
+function rawMessageText(event: RawEvent): string {
+  const text = typeof event.payload.text === 'string' ? event.payload.text : ''
+  const options = Array.isArray(event.payload.options)
+    ? event.payload.options.map((option) => String(option)).filter(Boolean)
+    : []
+  if (!options.length) return text
+  const optionText = `候选项：${options.join('；')}`
+  return text.includes(optionText) ? text : [text, optionText].filter(Boolean).join('\n')
 }
 
 type MessageDetailItem = {
@@ -171,6 +180,13 @@ function DetailSection({
   )
 }
 
+function defaultMindNode(nodes: MindMapNode[]): MindMapNode | null {
+  return nodes.find((node) => node.current) ??
+    [...nodes].reverse().find((node) => node.kind !== 'goal') ??
+    nodes[0] ??
+    null
+}
+
 function MindMapDetail({
   selected,
   traceNodes,
@@ -191,14 +207,28 @@ function MindMapDetail({
   const sourceTraceNodes = selected.sourceNodeIds.map((id) => traceById.get(id)).filter(Boolean) as TraceNode[]
   const focusMessageId = resolveFocusMessageId(selected.sourceNodeIds, traceById)
   const eventIds = new Set(sourceTraceNodes.flatMap((node) => node.event_ids))
+  const sourceMessageIds = new Set(sourceTraceNodes.flatMap((node) => node.source_message_ids))
   const events = selected.kind === 'goal'
     ? rawEvents
-    : rawEvents.filter((event) => eventIds.has(event.id))
+    : rawEvents.filter((event) => eventIds.has(event.id) || (event.message_id ? sourceMessageIds.has(event.message_id) : false))
   const toolEvents = events.filter((event) => event.kind === 'tool_use')
   const relevantPlanItems = selected.kind === 'goal'
     ? planItems
     : projectPlanGraph(planItems, sourceTraceNodes).items.filter((item) => item.nodeIds.length > 0)
-  const messageItems = sourceTraceNodes.flatMap((node): MessageDetailItem[] => {
+  const rawMessageItems = events
+    .filter((event) => event.kind === 'message' && (event.role === 'user' || event.role === 'assistant'))
+    .map((event): MessageDetailItem | null => {
+      const text = rawMessageText(event).trim()
+      if (!text) return null
+      return {
+        id: event.id,
+        role: event.role as 'user' | 'assistant',
+        ts: event.ts,
+        text,
+      }
+    })
+    .filter(Boolean) as MessageDetailItem[]
+  const exchangeMessageItems = sourceTraceNodes.flatMap((node): MessageDetailItem[] => {
     const exchanges = node.exchanges ?? []
     if (exchanges.length) {
       return exchanges.flatMap((exchange, index): MessageDetailItem[] => {
@@ -230,7 +260,8 @@ function MindMapDetail({
       items.push({ id: `${node.id}-assistant`, role: 'assistant', ts: node.ts_end ?? node.ts_start, text: node.conclusion })
     }
     return items
-  }).sort((a, b) => a.ts - b.ts)
+  })
+  const messageItems = (rawMessageItems.length ? rawMessageItems : exchangeMessageItems).sort((a, b) => a.ts - b.ts)
   const executionItems: ExecutionDetailItem[] = [
     ...events
       .filter((event) => event.kind === 'thinking' || event.kind === 'tool_use' || event.kind === 'todo' || event.kind === 'plan')
@@ -334,7 +365,7 @@ export function AttentionXPanel({
   onGoalDraftChange,
   onCreateGoal,
   onSelectGoal,
-  onRenameGoal,
+  loadingSnapshot = false,
   focusCurrent = false,
   chrome = true,
 }: {
@@ -352,35 +383,27 @@ export function AttentionXPanel({
   onCreateGoal?: () => void
   onSelectGoal?: (goalId: string) => void
   onRenameGoal?: (goalId: string, title: string) => void
+  loadingSnapshot?: boolean
   focusCurrent?: boolean
   chrome?: boolean
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
   const focusMessage = useMessageStore((s) => s.focusMessage)
-  const [renameDraft, setRenameDraft] = useState('')
   const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
-    mindProjection.nodes.find((node) => node.current) ??
-    mindProjection.nodes[0] ??
-    null
-  const reloadHistory = () => getWsClient().send({ type: 'messages.load', data: { topicId } })
-  useEffect(() => {
-    setRenameDraft(activeGoal ? attentionGoalTitle(activeGoal) : '')
-  }, [activeGoal?.id, activeGoal?.title, activeGoal?.goal_text])
+    defaultMindNode(mindProjection.nodes)
+  const customGoalCount = goals.filter((goal) => !goal.is_default).length
+  const createDisabled = customGoalCount >= 2
 
   const handleTargetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
+    if (createDisabled) return
     onCreateGoal?.()
-  }, [onCreateGoal])
+  }, [createDisabled, onCreateGoal])
 
-  const handleRenameKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter' || !activeGoalId) return
-    event.preventDefault()
-    onRenameGoal?.(activeGoalId, renameDraft)
-  }, [activeGoalId, onRenameGoal, renameDraft])
   const selectMindNode = (id: string) => {
     setSelectedMindId(id)
     const node = mindProjection.nodes.find((entry) => entry.id === id)
@@ -398,16 +421,10 @@ export function AttentionXPanel({
       {chrome && (
         <div className="flex shrink-0 flex-col gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={reloadHistory}
-              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-80"
-              style={{ background: 'var(--glass-2)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
-            >
-              重新加载历史
-            </button>
-            <div className="rounded-md px-2.5 py-1 text-[11px] font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}>
-              动态树
-            </div>
+            <div className="text-[13px] font-semibold" style={{ color: 'var(--fg-strong)' }}>attention panel</div>
+            {loadingSnapshot && (
+              <div className="text-[11px]" style={{ color: '#F7C26B' }}>加载快照…</div>
+            )}
             <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
               {nodes.length} nodes · {planItems.length} plan/todo
             </div>
@@ -428,56 +445,42 @@ export function AttentionXPanel({
             />
             <button
               type="button"
+              disabled={createDisabled}
               onClick={onCreateGoal}
               className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
-              style={{ background: 'var(--glass-2)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
+              style={{
+                background: createDisabled ? 'rgba(255,255,255,0.03)' : 'var(--glass-2)',
+                color: createDisabled ? 'var(--fg-muted)' : 'var(--fg-strong)',
+                border: '1px solid var(--hairline)',
+                cursor: createDisabled ? 'not-allowed' : 'pointer',
+              }}
             >
               创建目标
             </button>
           </div>
+          {createDisabled && (
+            <div className="text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
+              默认目标外最多创建 2 个目标。
+            </div>
+          )}
           {goals.length > 0 && (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
               {goals.map((goal) => (
-                <button
-                  key={goal.id}
-                  type="button"
-                  onClick={() => onSelectGoal?.(goal.id)}
-                  className="max-w-[180px] truncate rounded-md px-2.5 py-1 text-[11px] transition-opacity hover:opacity-85"
-                  title={`${attentionGoalTitle(goal)}\n${goal.goal_text}`}
-                  style={{
-                    background: goal.id === activeGoalId ? 'rgba(111,227,154,0.14)' : 'rgba(255,255,255,0.04)',
-                    color: goal.id === activeGoalId ? '#6FE39A' : 'var(--fg-regular)',
-                    border: `1px solid ${goal.id === activeGoalId ? 'rgba(111,227,154,0.36)' : 'var(--hairline)'}`,
-                  }}
-                >
-                  {attentionGoalTitle(goal)}
-                </button>
+                <Tooltip key={goal.id} content={goal.goal_text} side="bottom" delayMs={180}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectGoal?.(goal.id)}
+                    className="max-w-[180px] truncate rounded-md px-2.5 py-1 text-[11px] transition-opacity hover:opacity-85"
+                    style={{
+                      background: goal.id === activeGoalId ? 'rgba(111,227,154,0.14)' : 'rgba(255,255,255,0.04)',
+                      color: goal.id === activeGoalId ? '#6FE39A' : 'var(--fg-regular)',
+                      border: `1px solid ${goal.id === activeGoalId ? 'rgba(111,227,154,0.36)' : 'var(--hairline)'}`,
+                    }}
+                  >
+                    {attentionGoalTitle(goal)}
+                  </button>
+                </Tooltip>
               ))}
-            </div>
-          )}
-          {activeGoal && (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>历史名</div>
-              <input
-                value={renameDraft}
-                onChange={(event) => setRenameDraft(event.target.value)}
-                onKeyDown={handleRenameKeyDown}
-                placeholder="只改历史显示名，不改目标内容"
-                className="min-w-0 flex-1 rounded-md px-3 py-1.5 text-[11px] outline-none"
-                style={{
-                  background: 'rgba(0,0,0,0.12)',
-                  border: '1px solid var(--hairline)',
-                  color: 'var(--fg-regular)',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => activeGoalId && onRenameGoal?.(activeGoalId, renameDraft)}
-                className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
-                style={{ background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--hairline)' }}
-              >
-                改名
-              </button>
             </div>
           )}
           {activeGoal && (
@@ -488,7 +491,9 @@ export function AttentionXPanel({
           </div>
       )}
       <div className="min-h-0 flex-1">
-        {llmUnavailable && nodes.length === 0 ? (
+        {loadingSnapshot && nodes.length === 0 ? (
+          <EmptyHint text="加载注意力节点快照…" />
+        ) : llmUnavailable && nodes.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6">
             <div
               className="max-w-[420px] rounded-xl px-5 py-4 text-center"
@@ -523,6 +528,7 @@ export function AttentionXPanel({
               planItems={planItems}
               selectedId={selectedMindNode?.id ?? null}
               onSelect={selectMindNode}
+              onFocus={(messageId) => focusMessage(topicId, messageId)}
               expandedIds={expandedMindIds}
               focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
               projection={mindProjection}

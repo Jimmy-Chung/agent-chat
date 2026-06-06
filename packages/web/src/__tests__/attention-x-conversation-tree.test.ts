@@ -358,7 +358,8 @@ describe('attention-x conversation tree governance', () => {
     const compacted = node('n1', {
       user_message: '帮我做一个 todo web 应用',
       user_message_count: 3,
-        exchanges: [
+      source_message_ids: ['m1', 'm2', 'm3'],
+      exchanges: [
         {
           id: 'ex1',
           message_id: 'm1',
@@ -410,6 +411,9 @@ describe('attention-x conversation tree governance', () => {
     expect(expanded.nodes.find((entry) => entry.id === 'user_n1')?.collapsed).toBe(false)
     expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex1')?.title).toContain('todo web 应用')
     expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex2')?.title).toBe('选 vue')
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1')?.focusMessageId).toBe('m1')
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex2')?.focusMessageId).toBe('m2')
+    expect(expanded.nodes.find((entry) => entry.id === 'user_n1_exchange_ex3')?.focusMessageId).toBe('m3')
     expect(expanded.edges.some((entry) => entry.source === 'user_n1' && entry.target === 'user_n1_exchange_ex1')).toBe(true)
   })
 })
