@@ -5,7 +5,6 @@ import {
   planInterpret,
   makeInterpretKey,
   buildTrace,
-  localSummary,
   callInterpret,
 } from '../lib/attention/orchestrator'
 import { computeGoalDistance } from '../lib/attention/goal-distance'
@@ -88,25 +87,9 @@ describe('TC-AIT-221-02 缓存命中', () => {
   })
 })
 
-// ── TC-AIT-221-03：server 失败 → cosine + 本地摘要，面板有内容 ───────────────
-describe('TC-AIT-221-03 降级兜底', () => {
-  it('interpret=null（server 不可用）时节点仍有结论与目标距离', () => {
-    const cands = candidatesFrom([
-      ['修复端口泄漏', '定位到 keepalive 缺失'],
-      ['查一下数据库 schema', '查看了表结构'],
-    ])
-    const nodes = buildTrace(cands, GOAL, null)
-    expect(nodes).toHaveLength(2)
-    for (const n of nodes) {
-      expect(n.conclusion && n.conclusion.length).toBeGreaterThan(0)
-      expect(n.goal_distance).toBeGreaterThanOrEqual(0)
-      expect(n.goal_distance).toBeLessThanOrEqual(1)
-    }
-    // 兜底结论来自本地摘要
-    expect(nodes[0].conclusion).toBe(localSummary(cands[0]))
-  })
-
-  it('callInterpret 遇到 degraded 响应 → null（交给 cosine 兜底）', async () => {
+// ── TC-AIT-226-01：server 失败 → 不进入本地语义兜底 ─────────────────────────
+describe('TC-AIT-226-01 LLM 不可用', () => {
+  it('callInterpret 遇到 degraded 响应 → null', async () => {
     const fetchImpl = (async () =>
       new Response(JSON.stringify({ ok: false, degraded: true, reason: 'not_configured' }), { status: 200 })) as unknown as typeof fetch
     const r = await callInterpret('p', { serverBase: 'https://s', fetchImpl, timeoutMs: 500 })

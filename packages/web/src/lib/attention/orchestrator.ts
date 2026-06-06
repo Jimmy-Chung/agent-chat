@@ -1,6 +1,6 @@
 // S3 (AIT-221) 编排核心（纯逻辑，可单测）：
 // - planInterpret：决定"何时调 interpret"（turn 落定 + 缓存命中守门，守成本红线）
-// - buildTrace：candidates(+可选 LLM 结果) → TraceNode[]（无 LLM 时 cosine + 本地摘要兜底）
+// - buildTrace：candidates(+可选 LLM 结果) → TraceNode[]。AIT-226 后面板层只在有 LLM 结果时调用。
 // - buildInterpretPrompt / callInterpret：组 prompt + 调 S2 server 代理
 import type { CandidateNode } from './aggregator'
 import type { GoalAnchor, TraceNode } from './types'
@@ -17,7 +17,7 @@ export function candidateText(c: CandidateNode): string {
   return [c.user_message, msgs, tools].join(' ')
 }
 
-/** 本地兜底结论：优先该回合 AI 摘要，否则截断 user_message。 */
+/** 本地摘要工具：优先该回合 AI 摘要，否则截断 user_message。面板层不再把它作为 LLM 失败兜底。 */
 export function localSummary(c: CandidateNode): string {
   const ex = c.exchanges[c.exchanges.length - 1]
   const s = ex?.assistant_summary?.trim()
@@ -47,7 +47,8 @@ export function planInterpret(input: {
 
 /**
  * candidates → TraceNode[]。
- * 有 LLM 结果用 conclusion + goalAlignment 映射；否则 cosine 目标距离 + 本地摘要兜底。
+ * 有 LLM 结果用 conclusion + goalAlignment 映射；无 LLM 结果时保留旧纯函数行为，
+ * 但 Attention 面板层不会在 interpret 缺失时调用它。
  * inProgress 时最后一个节点标记为「分析中」（running / is_loading）。
  */
 export function buildTrace(
@@ -108,7 +109,7 @@ export function buildInterpretPrompt(candidates: CandidateNode[], goalAnchor: Go
   return lines.join('\n')
 }
 
-/** 调 S2 server 代理。任何失败（含 degraded）→ null（调用方走 cosine fallback）。 */
+/** 调 S2 server 代理。任何失败（含 degraded）→ null（面板层显示 LLM 配置提示）。 */
 export async function callInterpret(
   prompt: string,
   opts: { serverBase: string; token?: string; fetchImpl?: typeof fetch; timeoutMs?: number },
