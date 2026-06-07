@@ -1,10 +1,9 @@
 'use client'
 
-import { useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { AttentionGoalMeta, GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
-import { attentionGoalTitle, resolveFocusMessageId } from '@/lib/attention'
-import { Tooltip } from '@/components/ui/Tooltip'
+import { resolveFocusMessageId } from '@/lib/attention'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { useMessageStore } from '@/stores/message-store'
@@ -133,14 +132,14 @@ function CollapsibleText({ text, className = '' }: { text: string; className?: s
 function MessageDetailRow({ item }: { item: MessageDetailItem }) {
   const isUser = item.role === 'user'
   return (
-    <div className="rounded-md p-2.5" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
-      <div className="mb-1.5 flex items-center gap-2">
+    <div className="rounded-[12px]" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)', padding: '11px 12px' }}>
+      <div className="flex items-center gap-2" style={{ marginBottom: 7 }}>
         <DetailBadge label={isUser ? 'U' : 'AI'} tone={isUser ? 'user' : 'assistant'} />
-        <span className="text-[11px] font-medium" style={{ color: 'var(--fg-strong)' }}>
+        <span className="text-[12px] font-semibold" style={{ color: 'var(--fg-strong)' }}>
           {isUser ? '用户' : 'AI'}
         </span>
       </div>
-      <CollapsibleText text={item.text} className="text-[11px]" />
+      <CollapsibleText text={item.text} className="text-[13px]" />
     </div>
   )
 }
@@ -160,18 +159,18 @@ function executionBadgeLabel(kind: ExecutionDetailItem['kind']): string {
 function ExecutionDetailRow({ item }: { item: ExecutionDetailItem }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="overflow-hidden rounded-md" style={{ border: '1px solid var(--hairline)', background: 'rgba(255,255,255,0.03)' }}>
+    <div className="overflow-hidden" style={{ border: '1px solid var(--hairline)', borderRadius: 10, background: 'rgba(255,255,255,0.03)' }}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-[11px]"
-        style={{ color: 'var(--fg-regular)' }}
+        className="flex w-full items-center gap-[9px] text-left text-[11px]"
+        style={{ color: 'var(--fg-regular)', padding: '9px 11px' }}
       >
         <DetailBadge label={executionBadgeLabel(item.kind)} tone={executionTone(item.kind)} />
-        <span className="shrink-0 font-medium">{item.title}</span>
-        <span className="truncate" style={{ color: 'var(--fg-dim)' }}>{item.preview.slice(0, 120)}</span>
+        <span className="shrink-0 font-medium text-[12px]" style={{ color: 'var(--fg-strong)' }}>{item.title}</span>
+        <span className="truncate text-[11.5px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>{item.preview.slice(0, 120)}</span>
       </button>
       {open && (
-        <div className="px-2.5 pb-2">
+        <div style={{ padding: '0 11px 9px' }}>
           <CollapsibleText
             text={typeof item.payload === 'string' ? item.payload : JSON.stringify(item.payload, null, 2)}
             className="text-[10.5px] text-[var(--fg-dim)]"
@@ -197,8 +196,8 @@ function DetailSection({
   empty?: boolean
 }) {
   return (
-    <section className="mb-4">
-      <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>{title}</div>
+    <section>
+      <div style={{ fontSize: 10, color: 'var(--fg-dim)', letterSpacing: '.10em', textTransform: 'uppercase', fontWeight: 600, margin: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>{title}</div>
       {empty ? (
         <div className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>暂无</div>
       ) : children}
@@ -256,8 +255,8 @@ function GoalUpdateModal({
 
   return (
     <div
-      className="absolute inset-0 z-40 grid place-items-center"
-      style={{ background: 'rgba(5,6,8,0.5)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
+      className="absolute z-40 grid place-items-center"
+      style={{ top: 52, right: 0, bottom: 0, left: 0, background: 'rgba(5,6,8,0.5)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
       onClick={onClose}
     >
       <div
@@ -624,7 +623,7 @@ function MindMapDetail({
       </div>
 
       {/* Scroll content */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto" style={{ padding: '14px 16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {selected.aggregation && (
           <section className="mb-4 rounded-lg p-3" style={{ border: '1px solid rgba(247,194,107,0.32)', background: 'rgba(247,194,107,0.08)' }}>
             <div className="text-[11px] font-semibold" style={{ color: '#F7C26B' }}>聚合过程</div>
@@ -646,7 +645,7 @@ function MindMapDetail({
           {filteredTimelineItems.length === 0 ? (
             <div className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>暂无</div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col" style={{ gap: 10 }}>
               {filteredTimelineItems.map((item) => <TimelineRow key={item.id} item={item} />)}
             </div>
           )}
@@ -666,15 +665,11 @@ export function AttentionXPanel({
   rawEvents,
   llmUnavailable = false,
   goals = [],
-  activeGoal = null,
   activeGoalId = null,
-  goalDraft = '',
-  onGoalDraftChange,
   onCreateGoal,
   onSelectGoal,
   loadingSnapshot = false,
   focusCurrent = false,
-  chrome = true,
   fitViewCallbackRef,
 }: {
   topicId: string
@@ -684,16 +679,11 @@ export function AttentionXPanel({
   rawEvents: RawEvent[]
   llmUnavailable?: boolean
   goals?: AttentionGoalMeta[]
-  activeGoal?: AttentionGoalMeta | null
   activeGoalId?: string | null
-  goalDraft?: string
-  onGoalDraftChange?: (value: string) => void
   onCreateGoal?: (goalText?: string) => void
   onSelectGoal?: (goalId: string) => void
-  onRenameGoal?: (goalId: string, title: string) => void
   loadingSnapshot?: boolean
   focusCurrent?: boolean
-  chrome?: boolean
   fitViewCallbackRef?: React.MutableRefObject<(() => void) | null>
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
@@ -706,13 +696,6 @@ export function AttentionXPanel({
     defaultMindNode(mindProjection.nodes)
   const customGoalCount = goals.filter((goal) => !goal.is_default).length
   const remainingGoalEdits = Math.max(0, 2 - customGoalCount)
-
-  const handleTargetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    if (customGoalCount >= 2) return
-    onCreateGoal?.()
-  }, [customGoalCount, onCreateGoal])
 
   const selectMindNode = (id: string) => {
     setSelectedMindId(id)
@@ -727,7 +710,6 @@ export function AttentionXPanel({
   }
 
   const handleSaveGoal = (text: string) => {
-    onGoalDraftChange?.(text)
     onCreateGoal?.(text)
   }
 
@@ -737,69 +719,6 @@ export function AttentionXPanel({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {/* Legacy chrome — shown only when chrome=true (standalone mode) */}
-      {chrome && (
-        <div className="flex shrink-0 flex-col gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-[13px] font-semibold" style={{ color: 'var(--fg-strong)' }}>attention panel</div>
-            {loadingSnapshot && (
-              <div className="text-[11px]" style={{ color: '#F7C26B' }}>加载快照…</div>
-            )}
-            <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-dim)' }}>
-              {nodes.length} nodes · {planItems.length} plan/todo
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-dim)' }}>当前目标</div>
-            <input
-              value={goalDraft}
-              onChange={(event) => onGoalDraftChange?.(event.target.value)}
-              onKeyDown={handleTargetKeyDown}
-              placeholder="描述一个更清晰的话题目标，Enter 创建新目标"
-              className="min-w-0 flex-1 rounded-md px-3 py-2 text-[12px] outline-none"
-              style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}
-            />
-            <button
-              type="button"
-              disabled={customGoalCount >= 2}
-              onClick={() => onCreateGoal?.()}
-              className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
-              style={{ background: customGoalCount >= 2 ? 'rgba(255,255,255,0.03)' : 'var(--glass-2)', color: customGoalCount >= 2 ? 'var(--fg-dim)' : 'var(--fg-strong)', border: '1px solid var(--hairline)', cursor: customGoalCount >= 2 ? 'not-allowed' : 'pointer' }}
-            >
-              创建目标
-            </button>
-          </div>
-          {customGoalCount >= 2 && (
-            <div className="text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>默认目标外最多创建 2 个目标。</div>
-          )}
-          {goals.length > 0 && (
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {goals.map((goal) => (
-                <Tooltip key={goal.id} content={goal.goal_text} side="bottom" delayMs={180}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectGoal?.(goal.id)}
-                    className="max-w-[180px] truncate rounded-md px-2.5 py-1 text-[11px] transition-opacity hover:opacity-85"
-                    style={{
-                      background: goal.id === activeGoalId ? 'rgba(111,227,154,0.14)' : 'rgba(255,255,255,0.04)',
-                      color: goal.id === activeGoalId ? '#6FE39A' : 'var(--fg-regular)',
-                      border: `1px solid ${goal.id === activeGoalId ? 'rgba(111,227,154,0.36)' : 'var(--hairline)'}`,
-                    }}
-                  >
-                    {attentionGoalTitle(goal)}
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-          )}
-          {activeGoal && (
-            <div className="truncate text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>
-              目标内容：{activeGoal.goal_text}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Main content */}
       <div className="min-h-0 flex-1">
         {loadingSnapshot && nodes.length === 0 ? (

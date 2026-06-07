@@ -35,10 +35,12 @@ const WIDTH: Record<MindMapNode['kind'], number> = {
   aggregate: 240,
 }
 
-const KIND_LABEL: Record<MindMapNode['kind'], string> = {
-  goal: '目标',
-  user: '用户',
-  aggregate: '聚合',
+function nodeKindLabel(node: MindMapNode): string {
+  if (node.current) return '当前节点'
+  if (node.relation === 'branch') return '支线'
+  if (node.kind === 'goal') return '目标'
+  if (node.kind === 'aggregate') return '聚合'
+  return '用户'
 }
 
 function nodeDotColor(node: MindMapNode): string {
@@ -50,8 +52,8 @@ function nodeDotColor(node: MindMapNode): string {
 }
 
 function nodeKindColor(node: MindMapNode): string {
-  if (node.kind === 'goal') return '#6cb1ff'
   if (node.current) return '#FFC48A'
+  if (node.kind === 'goal') return '#6cb1ff'
   if (node.relation === 'branch') return '#6cb1ff'
   if (node.kind === 'aggregate') return '#6cb1ff'
   return goalDistanceColor(node.goalDistance)
@@ -63,7 +65,7 @@ function nodeBorder(node: MindMapNode, selected: boolean): string {
   if (node.kind === 'goal') return '1px solid rgba(10,132,255,0.38)'
   if (node.relation === 'branch') return '1px dashed rgba(108,177,255,0.36)'
   if (node.kind === 'aggregate') return '1px solid rgba(10,132,255,0.26)'
-  return '1px solid var(--hairline-2)'
+  return '1px solid var(--hairline)'
 }
 
 function nodeBackground(node: MindMapNode): string {
@@ -76,7 +78,7 @@ function nodeBoxShadow(node: MindMapNode, selected: boolean): string {
   if (node.current) return 'none' // animation handles it
   if (node.kind === 'goal') return 'inset 0 1px 0 rgba(255,255,255,.06),0 10px 28px rgba(0,0,0,.4),0 0 22px rgba(10,132,255,.12)'
   if (selected) return '0 0 0 1px rgba(10,132,255,0.35),0 10px 26px rgba(0,0,0,0.38)'
-  return '0 6px 18px rgba(0,0,0,0.28)'
+  return 'inset 0 1px 0 rgba(255,255,255,.05),0 10px 28px rgba(0,0,0,.4)'
 }
 
 function FocusIcon() {
@@ -105,10 +107,7 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
   const dotColor = nodeDotColor(node)
   const kindColor = nodeKindColor(node)
   const focusMessageId = node.focusMessageId
-
-  const relationLabel = node.relation === 'branch'
-    ? `支线${KIND_LABEL[node.kind]}`
-    : KIND_LABEL[node.kind]
+  const kindLabel = nodeKindLabel(node)
 
   const tagText = node.kind === 'goal'
     ? node.subtitle
@@ -116,9 +115,19 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
       ? `已聚合 · ${node.aggregation?.turnCount ?? 0} 轮`
       : node.kind === 'aggregate'
         ? `已展开 · ${node.aggregation?.turnCount ?? 0} 轮`
-        : node.status === 'running'
-          ? '进行中'
+        : node.relation === 'branch'
+          ? '从当前分叉'
           : ''
+
+  const isCurrent = node.current
+  const focusBtnStyle: React.CSSProperties = {
+    width: 22, height: 22, borderRadius: 6,
+    display: 'grid', placeItems: 'center',
+    color: isCurrent ? '#FFC48A' : 'var(--fg-dim)',
+    background: isCurrent ? 'rgba(255,159,74,.12)' : 'rgba(255,255,255,.05)',
+    border: `1px solid ${isCurrent ? 'rgba(255,159,74,.4)' : 'var(--hairline)'}`,
+    cursor: 'default',
+  }
 
   return (
     <div
@@ -138,55 +147,51 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
 
-      {/* Header row: dot + kind + tag + actions */}
-      <div className="mb-2 flex items-center gap-[7px]">
+      {/* Header: dot · kind · tag · actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
         <span
-          className="h-2 w-2 shrink-0 rounded-full"
           style={{
+            width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
             background: dotColor,
-            boxShadow: `0 0 7px ${dotColor}`,
+            boxShadow: `0 0 ${node.current ? '9px' : '7px'} ${dotColor}`,
             animation: node.current ? 'attn-dot-blink 1.2s ease-in-out infinite' : undefined,
           }}
         />
-        <span className="text-[11px] font-semibold" style={{ color: kindColor, letterSpacing: '.02em' }}>
-          {relationLabel}
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.02em', color: kindColor }}>
+          {kindLabel}
         </span>
         {tagText && (
-          <span className="text-[10px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', letterSpacing: 0 }}>
+          <span style={{ fontSize: 10, color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', letterSpacing: 0 }}>
             {tagText}
           </span>
         )}
-        <div className="ml-auto flex gap-1">
-          {/* Focus button */}
+
+        {/* Actions */}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           {focusMessageId && (
             <Tooltip content="回到消息面板中的对应消息" side="top" delayMs={180}>
               <button
                 type="button"
-                className="nodrag nopan inline-flex h-[22px] w-[22px] items-center justify-center rounded-[6px]"
-                style={{
-                  color: 'var(--fg-dim)',
-                  background: 'rgba(255,255,255,.05)',
-                  border: '1px solid var(--hairline)',
-                }}
+                className="nodrag nopan"
+                style={focusBtnStyle}
                 onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onFocus?.(focusMessageId)
-                }}
+                onClick={(e) => { e.stopPropagation(); onFocus?.(focusMessageId) }}
               >
                 <FocusIcon />
               </button>
             </Tooltip>
           )}
-          {/* Expand/collapse toggle for aggregate */}
           {node.hasChildren && (
             <button
               type="button"
-              className="nodrag nopan inline-flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[12px] font-semibold"
+              className="nodrag nopan"
               style={{
-                color: node.collapsed ? '#6cb1ff' : '#6cb1ff',
-                background: node.collapsed ? 'rgba(10,132,255,0.10)' : 'rgba(10,132,255,0.10)',
-                border: '1px solid rgba(10,132,255,0.32)',
+                width: 22, height: 22, borderRadius: 6,
+                display: 'grid', placeItems: 'center',
+                color: '#6cb1ff',
+                background: 'rgba(10,132,255,.10)',
+                border: '1px solid rgba(10,132,255,.32)',
+                cursor: 'default',
               }}
               title={node.collapsed ? '展开' : '折叠'}
               onPointerDown={(e) => e.stopPropagation()}
@@ -202,52 +207,43 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
       </div>
 
       {/* Title */}
-      <div className="text-[14px] font-semibold leading-[1.35]" style={{ color: 'var(--fg-strong)', letterSpacing: '-.01em' }}>
+      <div style={{ fontSize: node.relation === 'branch' ? 13 : 14, fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-.01em', lineHeight: 1.35 }}>
         {node.title}
       </div>
 
-      {/* Subtitle (for user node with running state) */}
-      {node.kind !== 'goal' && node.subtitle && (
-        <div className="mt-[5px] text-[11px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', letterSpacing: 0 }}>
-          {node.subtitle}
+      {/* Subtitle */}
+      {node.kind !== 'goal' && (node.subtitle || node.current) && (
+        <div style={{ marginTop: 5, fontSize: 11, color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', letterSpacing: 0 }}>
+          {node.current ? (node.subtitle || 'user → AI · 进行中') : node.subtitle}
         </div>
       )}
 
-      {/* 更新目标 button — only on goal node */}
+      {/* 更新目标 row */}
       {node.kind === 'goal' && onUpdateGoal && (
         <button
           type="button"
-          className="nodrag nopan mt-[11px] flex h-[30px] w-full items-center justify-between rounded-[9px] px-[11px] text-[12.5px] font-semibold"
+          className="nodrag nopan"
           style={{
-            background: 'rgba(10,132,255,.12)',
-            border: '1px solid rgba(10,132,255,.32)',
-            color: '#6cb1ff',
-            letterSpacing: '-.005em',
+            marginTop: 11, display: 'flex', alignItems: 'center', gap: 6,
+            height: 30, padding: '0 11px', borderRadius: 9,
+            background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.32)',
+            color: '#6cb1ff', fontSize: 12.5, fontWeight: 600, letterSpacing: '-.005em',
+            width: '100%', justifyContent: 'space-between', cursor: 'default',
           }}
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onUpdateGoal()
-          }}
+          onClick={(e) => { e.stopPropagation(); onUpdateGoal() }}
         >
-          <span className="flex items-center gap-[6px]">
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <PencilIcon />
             更新目标
           </span>
           {remainingGoalEdits !== undefined && (
-            <span
-              className="text-[10px]"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                color: '#6cb1ff',
-                opacity: 0.85,
-                background: 'rgba(10,132,255,.12)',
-                border: '1px solid rgba(10,132,255,.26)',
-                borderRadius: 6,
-                padding: '0 5px',
-                letterSpacing: 0,
-              }}
-            >
+            <span style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10,
+              color: '#6cb1ff', opacity: 0.85,
+              background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.26)',
+              borderRadius: 6, padding: '0 5px',
+            }}>
               可改 {remainingGoalEdits}/2
             </span>
           )}
@@ -262,17 +258,63 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
 
 function MindMapEdgeComponent(props: EdgeProps) {
   const kind = (props.data as { kind?: MindMapEdge['kind'] } | undefined)?.kind ?? 'tree'
-  const stroke = kind === 'branch' ? '#6cb1ff' : '#0A84FF'
   return (
     <BezierEdge
       {...props}
       style={{
-        stroke,
-        strokeWidth: kind === 'branch' ? 1.7 : 2.2,
+        stroke: kind === 'branch' ? '#6cb1ff' : '#0A84FF',
+        strokeWidth: kind === 'branch' ? 2 : 2.2,
         strokeOpacity: kind === 'branch' ? 0.55 : 0.85,
         strokeDasharray: kind === 'branch' ? '5 5' : undefined,
       }}
     />
+  )
+}
+
+function CanvasLegend() {
+  return (
+    <div
+      style={{
+        position: 'absolute', left: 16, bottom: 14, zIndex: 6,
+        display: 'flex', gap: 16,
+        fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--fg-dim)',
+        background: 'rgba(11,12,15,.6)', border: '1px solid var(--hairline)',
+        borderRadius: 9, padding: '7px 12px',
+        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#0A84FF', boxShadow: '0 0 6px #0A84FF', display: 'inline-block' }} />
+        目标/聚合
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#FF9F4A', boxShadow: '0 0 6px #FF9F4A', display: 'inline-block' }} />
+        当前
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 16, height: 0, borderTop: '1.5px dashed #6cb1ff', display: 'inline-block' }} />
+        支线
+      </div>
+    </div>
+  )
+}
+
+function PanHint() {
+  return (
+    <div
+      style={{
+        position: 'absolute', right: 16, bottom: 14, zIndex: 6,
+        display: 'flex', alignItems: 'center', gap: 6,
+        fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--fg-dim)',
+        pointerEvents: 'none',
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+      </svg>
+      拖拽平移 · 滚轮缩放
+    </div>
   )
 }
 
@@ -348,49 +390,60 @@ export default function MindMapGraph({
       for (const change of changes) {
         if (change.type !== 'position') continue
         const node = next.find((entry) => entry.id === change.id)
-        if (node) {
-          draggedPositionsRef.current[change.id] = node.position
-        }
+        if (node) draggedPositionsRef.current[change.id] = node.position
       }
       return next
     })
   }, [])
 
   return (
-    <ReactFlow
-      nodes={displayNodes}
-      edges={rfEdges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onInit={(instance) => {
-        if (fitViewCallbackRef) {
-          fitViewCallbackRef.current = () => instance.fitView({ padding: 0.18, maxZoom: 0.95 })
-        }
-        if (didFitViewRef.current) return
-        didFitViewRef.current = true
-        window.requestAnimationFrame(() => {
-          const focused = focusNodeId ? projection.nodes.find((node) => node.id === focusNodeId) : null
-          if (focused) {
-            instance.setCenter(
-              focused.position.x + WIDTH[focused.kind] / 2,
-              focused.position.y + 70,
-              { zoom: 0.9, duration: 320 },
-            )
-            return
-          }
-          instance.fitView({ padding: 0.18, maxZoom: 0.95 })
-        })
+    <div
+      className="h-full w-full"
+      style={{
+        position: 'relative',
+        background: `
+          radial-gradient(620px 440px at 42% 42%, rgba(20,60,110,.18), transparent 70%),
+          radial-gradient(460px 340px at 78% 66%, rgba(255,159,74,.07), transparent 70%)
+        `,
       }}
-      proOptions={{ hideAttribution: true }}
-      nodesDraggable
-      nodesConnectable={false}
-      elementsSelectable
-      minZoom={0.18}
-      maxZoom={1.35}
-      onNodesChange={onNodesChange}
-      onNodeClick={(_, node) => onSelect(node.id)}
     >
-      <Background gap={26} size={1} color="rgba(255,255,255,0.05)" />
-    </ReactFlow>
+      <ReactFlow
+        nodes={displayNodes}
+        edges={rfEdges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onInit={(instance) => {
+          if (fitViewCallbackRef) {
+            fitViewCallbackRef.current = () => instance.fitView({ padding: 0.18, maxZoom: 0.95 })
+          }
+          if (didFitViewRef.current) return
+          didFitViewRef.current = true
+          window.requestAnimationFrame(() => {
+            const focused = focusNodeId ? projection.nodes.find((node) => node.id === focusNodeId) : null
+            if (focused) {
+              instance.setCenter(
+                focused.position.x + WIDTH[focused.kind] / 2,
+                focused.position.y + 70,
+                { zoom: 0.9, duration: 320 },
+              )
+              return
+            }
+            instance.fitView({ padding: 0.18, maxZoom: 0.95 })
+          })
+        }}
+        proOptions={{ hideAttribution: true }}
+        nodesDraggable
+        nodesConnectable={false}
+        elementsSelectable
+        minZoom={0.18}
+        maxZoom={1.35}
+        onNodesChange={onNodesChange}
+        onNodeClick={(_, node) => onSelect(node.id)}
+      >
+        <Background gap={26} size={1} color="rgba(255,255,255,0.05)" />
+      </ReactFlow>
+      <CanvasLegend />
+      <PanHint />
+    </div>
   )
 }

@@ -1,0 +1,907 @@
+ ▐▛███▜▌   Claude Code v2.1.160
+▝▜█████▛▘  Sonnet 4.6 · Claude Pro
+  ▘▘ ▝▝    ~/Desktop/finogeeks/attendtion-tracking
+
+   Opus 4.8 is now available! · /model to switch
+
+❯ 启动服务                                                                      
+
+⏺ Bash(npm run dev)
+  ⎿  Running in the background (↓ to manage)
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 服务已启动，访问 http://localhost:5175/
+
+✻ Worked for 18s
+
+※ recap: Building an Agent Trace Viewer that compresses Claude Code sessions into 5–12 readable decision nodes. Dev server is running at http://localhost:5175 — ready to continue development. (disable recaps in /config)
+
+❯ 现在一个节点，包含用户的提问的概要 + ai 的回答。但是 ai                       
+  回答是首条回答，而不是该轮所有回答的概要                                      
+
+⏺ 让我先看看相关代码。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 找到问题了。summarizeAssistantActivity 函数第 207 行用 .find()
+  只取第一条非空消息，应该合并所有消息。
+
+⏺ Update(src/pipeline/aggregator.ts)
+  ⎿  Added 6 lines, removed 3 lines
+      202  }
+      203  
+      204  function summarizeAssistantActivity(messages: RawEvent[], tool
+           s: RawEvent[]): string {
+      205 -  const text = messages                                       
+      205 +  const texts = messages                                      
+      206      .map((m) => (m.payload.text as string | undefined) ?? '')
+      207 -    .find((t) => t.trim().length > 0)                         
+      208 -  if (text) return compactText(text, 90)                      
+      207 +    .filter((t) => t.trim().length > 0)                       
+      208 +  if (texts.length > 0) {                                     
+      209 +    const combined = texts.join(' ')                          
+      210 +    return compactText(combined, 120)                         
+      211 +  }                                                           
+      212    if (tools.length) {
+      213      const names = tools
+      214        .slice(0, 3)
+
+⏺ 修复完成。改动点：
+  - 将 .find() 改为 .filter() 收集所有非空回复文本
+  - 用空格拼接后再截断，截断长度从 90 提升到 120（多条消息合并后信息量更大）
+
+  这样 AI 回答的摘要会覆盖该轮所有回复，而不只是第一条。
+
+✻ Churned for 32s
+
+※ recap: Building an attention-tracking trace viewer that compresses agent sessions into 5–12 decision nodes. Just fixed the AI response summary to concatenate all replies in a turn instead of showing only the first one. (disable recaps in /config)
+
+❯ 现在用户的输入总共分了几类                                                    
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ 共 5 类：
+
+  ┌─────────────┬───────────────────────────────┐
+  │    类型     │             说明              │
+  ├─────────────┼───────────────────────────────┤
+  │ instruction │ 指令（默认类型）              │
+  ├─────────────┼───────────────────────────────┤
+  │ question    │ 提问                          │
+  ├─────────────┼───────────────────────────────┤
+  │ proposal    │ 提议/方案建议                 │
+  ├─────────────┼───────────────────────────────┤
+  │ choice      │ 做选择（如"选 1"）            │
+  ├─────────────┼───────────────────────────────┤
+  │ evidence    │ 提供证据/上下文（如粘贴日志） │
+  └─────────────┴───────────────────────────────┘
+
+  优先级排序（mergeUserKind 中定义）：question > proposal > choice > instruction
+  > evidence，多条合并时取最高优先级的类型。
+
+✻ Churned for 11s
+
+※ recap: Building an Agent Trace Viewer that compresses AI sessions into 5-12 decision nodes. Just fixed AI reply summaries to cover all responses in a turn. Next: continue feature work or testing. (disable recaps in /config)
+
+❯ 现在是把一个节点定义为一 turn 对话吗？还是怎么定义的                          
+
+⏺ 从代码来看，节点的定义分两个阶段：
+
+  第一阶段：aggregator（按 turn 分组）
+
+  以"真实用户消息"为边界切分，每条用户消息 → 一个 CandidateNode。所以初始是 1
+  turn = 1 候选节点。
+
+  第二阶段：compactTurnsToPhases（合并压缩）
+
+  当候选节点数超过 maxPhases=12 时，按以下规则合并相邻节点：
+  - 低信号用户消息（长度≤18、纯选择/证据类、轮询/继续等关键词）→ 合并到上一节点
+  - 问题/提案类消息 → 强制开新节点
+  - 时间间隔 >20 分钟 → 强制开新节点
+  - 上一节点工具+消息数 >12 → 开新节点
+
+  结论：
+
+  节点不是严格 1 turn = 1 节点。一个节点可能包含多个
+  turn（多轮低信号对话被合并），目标是最终压缩到 5-12
+  个有意义的决策阶段，而不是对话回合数。
+
+✻ Sautéed for 10s
+
+❯ 其实这里有两个问题：                                                          
+  1. ai 的回答跟下一轮用户提问应该是有关联性的 +                                
+  用户提问跟主节点（第一个节点的关联性）组成了所有的关联性管理                  
+  2. 你聚合节点应该提供一个可以多层展开子节点的功能的（如果用户需要了解决策的细 
+  节）                                                                          
+
+⏺ 这是两个独立的架构问题，让我说说我理解的设计方向：
+
+  问题 1：关联性管理
+
+  现在节点之间是孤立的，缺少两条关联链：
+  - 横向链：AI 回答 → 下一轮用户提问（因果链，AI 说了什么导致用户问了什么）
+  - 纵向链：每个用户提问 → 原始目标（偏移距离，goal_distance 已有但不够显式）
+
+  需要在 TraceExchange / TraceNode 上加 context_from_prev_ai，让 LLM
+  在解析时也能看到"是因为 AI 上一步说了 X，用户才问了 Y"。
+
+  问题 2：多层展开
+
+  数据已经有层次了，只是没在 UI 暴露：
+
+  Phase Node（5-12 个，当前唯一层）
+    └── Turn Node（exchanges[]，单轮对话，已有数据）
+          └── Event（raw tool_use / message，event_ids 指向）
+
+  UI 上需要：点击 Phase Node → 在 React Flow 内展开子节点（Turn），Turn
+  再展开可以看原始工具调用。
+
+  ---
+  这两个改动有关联——展开子节点后，横向链（AI→用户提问）才会在 Turn 层可见。
+
+  你想先做哪个？还是一起设计？
+
+✻ Churned for 30s
+❯ 都做吧                                                                        
+
+⏺ 让我先全面了解现有代码结构，再统一设计。
+
+  Read 4 files (ctrl+o to expand)
+
+⏺ 让我再看看 App 层和 projector。
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+⏺ 最后看一下 hook。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 现在我有完整的代码图。两个问题的设计方案：
+
+  问题 1（关联性）：在 TraceExchange 加 prev_ai_summary 字段，aggregator
+  在构建每条 exchange 时把上一轮 AI 回答穿进去，LLM prompt 也加上这条因果链。
+
+  问题 2（多层展开）：数据已有三层（Phase Node → exchanges[] →
+  event_ids），缺的是 UI。每个 Phase Node 加展开按钮，展开后向 React Flow 注入
+  Turn 子节点（垂直排列在 Phase 节点正下方），Turn 节点点击回到 NodeCard
+  展示对应 exchange 详情。
+
+  现在开始写代码。
+
+⏺ Update(src/types/index.ts)
+  ⎿  Added 1 line
+      21    id: string
+      22    user_message: string
+      23    user_kind: UserMessageKind
+      24 +  prev_ai_summary?: string        // 上一轮 AI 回答（触发本次提
+         +问的上下文）                                                   
+      25    assistant_summary: string
+      26    assistant_actions: AssistantActionKind[]
+      27    event_ids: string[]
+
+⏺ 现在更新 aggregator，把上一轮 AI 摘要穿进 exchange。
+
+⏺ Update(src/pipeline/aggregator.ts)
+  ⎿  Added 4 lines, removed 1 line
+      82    let currentTools: RawEvent[] = []
+      83    let currentMessages: RawEvent[] = []
+      84    let groupIndex = 0
+      85 +  let lastAiSummary: string | null = null                      
+      86  
+      87    const flushGroup = () => {
+      88      if (!currentUserEvt) return
+     ...
+       93        ...currentTools.map((e) => e.ts),
+       94        ...currentMessages.map((e) => e.ts),
+       95      ]
+       96 +    const exchange = buildExchange(currentUserEvt, currentThin
+          +king, currentTools, currentMessages, lastAiSummary)           
+       97 +    lastAiSummary = exchange.assistant_summary                
+       98      turns.push({
+       99        id: nextId(),
+      100        user_message: userText,
+      101        user_messages: [userText],
+      102        user_kind: getUserKind(currentUserEvt),
+      100 -      exchanges: [buildExchange(currentUserEvt, currentThinkin
+          -g, currentTools, currentMessages)],                           
+      103 +      exchanges: [exchange],                                  
+      104        turn_id: currentUserEvt.turn_id ?? `user_${groupIndex}`,
+      105        thinking: currentThinking,
+      106        tools: currentTools,
+
+⏺ Update(src/pipeline/aggregator.ts)
+  ⎿  Added 3 lines, removed 1 line
+      182    userEvt: RawEvent,
+      183    thinking: RawEvent[],
+      184    tools: RawEvent[],
+      185 -  messages: RawEvent[]                                        
+      185 +  messages: RawEvent[],                                       
+      186 +  prevAiSummary: string | null = null                         
+      187  ): TraceExchange {
+      188    const userMessage = (userEvt.payload.text as string | undefi
+           ned) ?? ''
+      189    const eventIds = [
+     ...
+      196      id: `ex_${userEvt.id}`,
+      197      user_message: userMessage,
+      198      user_kind: getUserKind(userEvt),
+      199 +    prev_ai_summary: prevAiSummary ?? undefined,              
+      200      assistant_summary: summarizeAssistantActivity(messages, to
+           ols),
+      201      assistant_actions: getAssistantActions(messages),
+      202      event_ids: eventIds,
+
+⏺ 现在更新 interpreter.ts，修 summarizeModelActivity 并加因果链到 LLM prompt。
+
+⏺ Update(src/pipeline/interpreter.ts)
+  ⎿  Added 8 lines, removed 3 lines
+      56    const th = c.thinking[0]?.payload.text as string|undefined
+      57    if (th) parts.push(`思考：${th.slice(0,80).replace(/\n/g,' ')
+          }`)
+      58  
+      59 -  // Model text reply                                          
+      60 -  const reply = c.messages[0]?.payload.text as string|undefined
+      61 -  if (reply) parts.push(`回复：${reply.slice(0,80).replace(/\n/
+         -g,' ')}`)                                                      
+      59 +  // All model text replies combined                           
+      60 +  const replies = c.messages                                   
+      61 +    .map((m) => (m.payload.text as string|undefined) ?? '')    
+      62 +    .filter((t) => t.trim().length > 0)                        
+      63 +  if (replies.length > 0) {                                    
+      64 +    const combined = replies.join(' ').slice(0, 100).replace(/\
+         +n/g, ' ')                                                      
+      65 +    parts.push(`回复：${combined}`)                            
+      66 +  }                                                            
+      67  
+      68    return parts.join(' | ') || '（无工具调用）'
+      69  }
+
+⏺ Update(src/pipeline/interpreter.ts)
+  ⎿  Added 3 lines, removed 1 line
+      84  
+      85    const lines = candidates.map((c, i) => {
+      86      const activity = summarizeModelActivity(c)
+      87 -    return `[${i}] 用户：「${c.user_message.slice(0,80)}」\n   
+         - 模型：${activity}`                                            
+      87 +    const prevAi = c.exchanges[0]?.prev_ai_summary             
+      88 +    const prevLine = prevAi ? `\n    [上一步 AI 说]：「${prevAi
+         +.slice(0, 60)}」` : ''                                         
+      89 +    return `[${i}] 用户：「${c.user_message.slice(0,80)}」${pre
+         +vLine}\n    模型：${activity}`                                 
+      90    }).join('\n')
+      91  
+      92    const prompt = `总目标：「${goal}」
+
+⏺ 现在更新 projector.ts，加 Turn 子节点生成。
+
+⏺ Update(src/pipeline/projector.ts)
+  ⎿  Added 2 lines
+      15  const NODE_H = 110
+      16  const H_GAP = 150
+      17  const V_GAP = 80
+      18 +const TURN_W = 240                                             
+      19 +const TURN_H = 88                                              
+      20  
+      21  // ── Phase 1: compute positions via dagre — only re-run when s
+          tructure changes ──
+      22  
+
+⏺ Update(src/pipeline/projector.ts)
+  ⎿  Added 61 lines, removed 1 line
+       67    return positions
+       68  }
+       69  
+       70 +// ── Turn sub-nodes for expanded phase nodes ────────────────
+          +──────────────────                                            
+       71 +                                                              
+       72 +export function buildTurnSubGraph(                            
+       73 +  traceNodes: TraceNode[],                                    
+       74 +  expandedNodes: Set<string>,                                 
+       75 +  positions: NodePositions                                    
+       76 +): { nodes: FlowNode[]; edges: FlowEdge[] } {                 
+       77 +  const flowNodes: FlowNode[] = []                            
+       78 +  const flowEdges: FlowEdge[] = []                            
+       79 +                                                              
+       80 +  for (const n of traceNodes) {                               
+       81 +    if (!expandedNodes.has(n.id)) continue                    
+       82 +    const exchanges = n.exchanges ?? []                       
+       83 +    if (exchanges.length < 2) continue                        
+       84 +                                                              
+       85 +    const parentPos = positions.get(n.id) ?? { x: 0, y: 0 }   
+       86 +    const baseX = parentPos.x + (NODE_W - TURN_W) / 2         
+       87 +    const baseY = parentPos.y + NODE_H + 18                   
+       88 +                                                              
+       89 +    let prevTurnId: string | null = null                      
+       90 +    for (let i = 0; i < exchanges.length; i++) {              
+       91 +      const ex = exchanges[i]                                 
+       92 +      const turnId = `turn_${n.id}_${i}`                      
+       93 +      flowNodes.push({                                        
+       94 +        id: turnId,                                           
+       95 +        type: 'turnNode',                                     
+       96 +        position: { x: baseX, y: baseY + i * (TURN_H + 6) },  
+       97 +        data: { exchange: ex, parentNodeId: n.id, index: i } a
+          +s unknown as Record<string, unknown>,                         
+       98 +      })                                                      
+       99 +                                                              
+      100 +      if (i === 0) {                                          
+      101 +        flowEdges.push({                                      
+      102 +          id: `expand_entry_${n.id}`,                         
+      103 +          source: n.id,                                       
+      104 +          target: turnId,                                     
+      105 +          sourceHandle: 'expand-out',                         
+      106 +          targetHandle: 'turn-in',                            
+      107 +          type: 'expandEdge',                                 
+      108 +          style: { stroke: '#374151', strokeWidth: 1 },       
+      109 +        })                                                    
+      110 +      }                                                       
+      111 +      if (prevTurnId) {                                       
+      112 +        flowEdges.push({                                      
+      113 +          id: `expand_${n.id}_${i}`,                          
+      114 +          source: prevTurnId,                                 
+      115 +          target: turnId,                                     
+      116 +          sourceHandle: 'turn-out',                           
+      117 +          targetHandle: 'turn-in',                            
+      118 +          type: 'expandEdge',                                 
+      119 +          style: { stroke: '#374151', strokeWidth: 1 },       
+      120 +        })                                                    
+      121 +      }                                                       
+      122 +      prevTurnId = turnId                                     
+      123 +    }                                                         
+      124 +  }                                                           
+      125 +                                                              
+      126 +  return { nodes: flowNodes, edges: flowEdges }               
+      127 +}                                                             
+      128 +                                                              
+      129  // ── Phase 2: assemble graph from pre-computed positions — ch
+           eap, runs on data changes ──
+      130  
+      131  export function buildGraph(
+     ...
+      133    planItems: PlanItem[],
+      134    positions: NodePositions,
+      135    anchor: GoalAnchor,
+       77 -  collapsedBranches: Set<string>                              
+      136 +  collapsedBranches: Set<string>,                             
+      137 +  expandedNodes?: Set<string>                                 
+      138  ): GraphData {
+      139    void planItems
+      140    const mainNodes = traceNodes.filter((n) => n.branch_id === '
+           main')
+
+⏺ 现在在 buildGraph 末尾加入 Turn 子节点的合并。
+
+⏺ Update(src/pipeline/projector.ts)
+  ⎿  Added 6 lines
+      182      }
+      183    }
+      184  
+      185 +  if (expandedNodes && expandedNodes.size > 0) {              
+      186 +    const { nodes: turnNodes, edges: turnEdges } = buildTurnSu
+          +bGraph(traceNodes, expandedNodes, positions)                  
+      187 +    flowNodes.push(...turnNodes)                              
+      188 +    flowEdges.push(...turnEdges)                              
+      189 +  }                                                           
+      190 +                                                              
+      191    return { nodes: flowNodes, edges: flowEdges, anchor, focusPa
+           th }
+      192  }
+      193  
+
+⏺ 更新 project convenience function 和 buildGraph 的调用一致。
+
+⏺ Update(src/pipeline/projector.ts)
+  ⎿  Added 3 lines, removed 2 lines
+      197    traceNodes: TraceNode[],
+      198    planItems: PlanItem[],
+      199    anchor: GoalAnchor,
+      200 -  collapsedBranches: Set<string>                              
+      200 +  collapsedBranches: Set<string>,                             
+      201 +  expandedNodes?: Set<string>                                 
+      202  ): GraphData {
+      203    const positions = computePositions(traceNodes, planItems, co
+           llapsedBranches)
+      203 -  return buildGraph(traceNodes, planItems, positions, anchor, 
+          -collapsedBranches)                                            
+      204 +  return buildGraph(traceNodes, planItems, positions, anchor, 
+          +collapsedBranches, expandedNodes)                             
+      205  }
+
+⏺ 更新 useGraphData hook，接收 expandedNodes。
+
+⏺ Update(src/hooks/useTraceProcessor.ts)
+  ⎿  Added 5 lines, removed 3 lines
+      224  
+      225  export function useGraphData(
+      226    state: TraceState,
+      227 -  collapsedBranches: Set<string>                              
+      227 +  collapsedBranches: Set<string>,                             
+      228 +  expandedNodes?: Set<string>                                 
+      229  ): GraphData | null {
+      230    const { traceNodes, planItems, goalAnchor } = state
+      231  
+     ...
+      239  
+      240    return useMemo(() => {
+      241      if (!goalAnchor || traceNodes.length === 0) return null
+      241 -    return buildGraph(traceNodes, planItems, positions, goalAn
+          -chor, collapsedBranches)                                      
+      242 -  }, [traceNodes, planItems, positions, goalAnchor, collapsedB
+          -ranches])                                                     
+      242 +    return buildGraph(traceNodes, planItems, positions, goalAn
+          +chor, collapsedBranches, expandedNodes)                       
+      243 +  // eslint-disable-next-line react-hooks/exhaustive-deps     
+      244 +  }, [traceNodes, planItems, positions, goalAnchor, collapsedB
+          +ranches, expandedNodes])                                      
+      245  }
+      246  
+      247  export function useMaxGoalDistance(traceNodes: TraceNode[]): n
+           umber {
+
+⏺ 现在更新 App.tsx，加 expandedNodes 状态并传给组件。
+
+⏺ Update(src/App.tsx)  ⎿  Added 1 line, removed 1 line
+      1 -import { useState, useMemo } from 'react'                       
+      1 +import { useState, useMemo, useCallback } from 'react'          
+      2  import { ReactFlowProvider } from '@xyflow/react'
+      3  import GoalAnchorBar from './components/GoalAnchorBar'
+      4  import TraceDAG from './components/TraceDAG'
+
+⏺ Update(src/App.tsx)
+  ⎿  Added 10 lines
+      22    const [showProvider, setShowProvider] = useState(false)
+      23    const [selectedNodeId, setSelectedNodeId] = useState<string |
+           null>(null)
+      24    const [collapsedBranches] = useState<Set<string>>(new Set())
+      25 +  const [expandedNodes, setExpandedNodes] = useState<Set<string
+         +>>(new Set())                                                  
+      26    const [sidebarOpen, setSidebarOpen] = useState(true)
+      27    const [cachedJsonl, setCachedJsonl] = useState<string | null>
+          (null)
+      28  
+      29 +  const handleToggleExpand = useCallback((nodeId: string) => { 
+      30 +    setExpandedNodes((prev) => {                               
+      31 +      const next = new Set(prev)                               
+      32 +      if (next.has(nodeId)) next.delete(nodeId)                
+      33 +      else next.add(nodeId)                                    
+      34 +      return next                                              
+      35 +    })                                                         
+      36 +  }, [])                                                       
+      37 +                                                               
+      38    const { state, process, reset } = useTraceProcessor(providerC
+          onfig)
+      39  
+      40    const handleJsonl = (content: string) => {
+
+⏺ Update(src/App.tsx)
+  ⎿  Added 1 line, removed 1 line
+      42      process(content)
+      43    }
+      44  
+      45 -  const graphData = useGraphData(state, collapsedBranches)     
+      45 +  const graphData = useGraphData(state, collapsedBranches, expa
+         +ndedNodes)                                                     
+      46    const maxGoalDistance = useMaxGoalDistance(state.traceNodes)
+      47  
+      48    const selectedNode: TraceNode | null = useMemo(() => {
+
+⏺ Update(src/App.tsx)
+  ⎿  Added 2 lines
+      254                  graphData={graphData}
+      255                  selectedNodeId={selectedNodeId}
+      256                  onNodeClick={setSelectedNodeId}
+      257 +                expandedNodes={expandedNodes}                 
+      258 +                onToggleExpand={handleToggleExpand}           
+      259                />
+      260              </ReactFlowProvider>
+      261            )}
+
+⏺ 现在是最大的改动——更新 TraceDAG.tsx，加 TurnNode 组件和展开按钮。
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 3 lines, removed 3 lines
+      12    useReactFlow,
+      13    Panel,
+      14  } from '@xyflow/react'
+      15 -import { useEffect, useState } from 'react'                    
+      15 +import { useCallback, useEffect, useState } from 'react'       
+      16  import '@xyflow/react/dist/style.css'
+      17 -import { TraceNode, PlanItem } from '../types'                 
+      17 +import { TraceExchange, TraceNode, PlanItem } from '../types'  
+      18  import { GraphData } from '../pipeline/projector'
+      19 -import { Loader2, CheckCircle2, XCircle, Clock, Zap } from 'luc
+         -ide-react'                                                     
+      19 +import { Loader2, CheckCircle2, XCircle, Clock, Zap, ChevronDow
+         +n, ChevronUp } from 'lucide-react'                             
+      20  
+      21  // ── Helpers ─────────────────────────────────────────────────
+          ─────────────────
+      22  
+
+⏺ 现在更新 ExecutionNode 的 props 接口和组件，加展开按钮和 Bottom Handle。
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 12 lines, removed 2 lines
+      68    )
+      69  }
+      70  
+      71 +// ── Context: expand toggle callback ─────────────────────────
+         +────────────────                                               
+      72 +// Passed via node data to avoid prop drilling through React Fl
+         +ow                                                             
+      73 +                                                               
+      74 +type ExecutionNodeData = TraceNode & {                         
+      75 +  __onToggleExpand?: (id: string) => void                      
+      76 +  __isExpanded?: boolean                                       
+      77 +}                                                              
+      78 +                                                               
+      79  // ── Custom Nodes ────────────────────────────────────────────
+          ─────────────────
+      80  
+      81  function ExecutionNode({ data, selected }: NodeProps) {
+      74 -  const node = data as unknown as TraceNode                    
+      75 -  const [expanded, setExpanded] = useState(false)              
+      82 +  const node = data as unknown as ExecutionNodeData            
+      83 +  const [aiExpanded, setAiExpanded] = useState(false)          
+      84 +  const canExpand = (node.exchanges?.length ?? 0) > 1          
+      85 +  const isExpanded = node.__isExpanded ?? false                
+      86  
+      87    const borderColor = selected
+      88      ? '#3b82f6'
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 31 lines, removed 5 lines
+      149              type="button"
+      150              onClick={(e) => {
+      151                e.stopPropagation()
+      152 -              setExpanded((v) => !v)                          
+      152 +              setAiExpanded((v) => !v)                        
+      153              }}
+      154              className="w-full text-left rounded-md border bord
+           er-blue-900/50 bg-blue-950/25 px-2 py-1.5
+      155                hover:bg-blue-950/40 transition-colors"
+     ...
+      160                  {node.conclusion || node.exchanges?.[0]?.assis
+           tant_summary || '点击查看 AI 回复概要'}
+      161                </p>
+      162              </div>
+      163 -            {expanded && node.exchanges && node.exchanges.leng
+          -th > 0 && (                                                   
+      163 +            {aiExpanded && node.exchanges && node.exchanges.le
+          +ngth > 0 && (                                                 
+      164                <div className="mt-2 space-y-1 max-h-44 overflow
+           -y-auto border-t border-blue-900/40 pt-2">
+      165                  {node.exchanges.map((exchange, index) => (
+      166                    <div key={exchange.id} className="text-[10px
+           ] leading-snug text-gray-400">
+     ...
+      174          )}
+      175        </div>
+      176  
+      177 -      {/* 工具调用数 */}                                      
+      178 -      {!node.is_loading && node.step_count > 0 && (           
+      177 +      {/* 底部：工具调用数 + 展开按钮 */}                     
+      178 +      {!node.is_loading && (                                  
+      179          <div className="px-3 pb-2 flex items-center gap-2">
+      180 -          <span className="text-[10px] text-gray-700">{node.st
+          -ep_count} 个工具调用</span>                                   
+      180 +          {node.step_count > 0 && (                           
+      181 +            <span className="text-[10px] text-gray-700">{node.
+          +step_count} 个工具调用</span>                                 
+      182 +          )}                                                  
+      183            {node.user_message_count && node.user_message_count 
+           > 1 && (
+      184              <span className="text-[10px] text-gray-700">{node.
+           user_message_count} 条用户输入</span>
+      185            )}
+      186 +          {canExpand && (                                     
+      187 +            <button                                           
+      188 +              type="button"                                   
+      189 +              onClick={(e) => {                               
+      190 +                e.stopPropagation()                           
+      191 +                node.__onToggleExpand?.(node.id)              
+      192 +              }}                                              
+      193 +              className={`ml-auto flex items-center gap-1 text
+          +-[10px] px-1.5 py-0.5 rounded transition-colors               
+      194 +                ${isExpanded                                  
+      195 +                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-6
+          +00'                                                           
+      196 +                  : 'bg-gray-800 text-gray-500 hover:text-gray
+          +-300 hover:bg-gray-700'}`}                                    
+      197 +            >                                                 
+      198 +              {isExpanded ? <ChevronUp size={10} /> : <Chevron
+          +Down size={10} />}                                            
+      199 +              {isExpanded ? '收起' : `展开 ${node.exchanges!.l
+          +ength} 轮`}                                                   
+      200 +            </button>                                         
+      201 +          )}                                                  
+      202          </div>
+      203        )}
+      204  
+      205        <Handle type="source" position={Position.Right} classNam
+           e="!bg-gray-600 !w-2 !h-2" />
+      206 +      {canExpand && (                                         
+      207 +        <Handle                                               
+      208 +          type="source"                                       
+      209 +          position={Position.Bottom}                          
+      210 +          id="expand-out"                                     
+      211 +          className="!bg-gray-700 !w-1.5 !h-1.5 !opacity-30"  
+      212 +        />                                                    
+      213 +      )}                                                      
+      214      </div>
+      215    )
+      216  }
+
+⏺ 现在在 BranchNode 之前插入 TurnNode 组件，并添加 expandEdge。
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 58 lines
+      215    )
+      216  }
+      217  
+      218 +type TurnNodeData = {                                         
+      219 +  exchange: TraceExchange                                     
+      220 +  parentNodeId: string                                        
+      221 +  index: number                                               
+      222 +}                                                             
+      223 +                                                              
+      224 +function TurnNode({ data }: NodeProps) {                      
+      225 +  const { exchange, index } = data as unknown as TurnNodeData 
+      226 +                                                              
+      227 +  return (                                                    
+      228 +    <div className="w-60 rounded-md bg-gray-900/80 border bord
+          +er-gray-700/60 text-xs shadow-sm">                            
+      229 +      <Handle                                                 
+      230 +        type="target"                                         
+      231 +        position={Position.Top}                               
+      232 +        id="turn-in"                                          
+      233 +        className="!bg-gray-700 !w-1.5 !h-1.5 !opacity-30"    
+      234 +      />                                                      
+      235 +                                                              
+      236 +      {/* 触发上下文：上一轮 AI 说了什么 */}                  
+      237 +      {exchange.prev_ai_summary && (                          
+      238 +        <div className="px-2.5 pt-2 pb-1 border-b border-gray-
+          +800">                                                         
+      239 +          <p className="text-[10px] text-gray-600 leading-snug
+          + line-clamp-2">                                               
+      240 +            <span className="text-gray-700 mr-1">↳ AI前文：</s
+          +pan>                                                          
+      241 +            {exchange.prev_ai_summary}                        
+      242 +          </p>                                                
+      243 +        </div>                                                
+      244 +      )}                                                      
+      245 +                                                              
+      246 +      {/* 用户消息 */}                                        
+      247 +      <div className="px-2.5 pt-1.5 pb-1">                    
+      248 +        <div className="flex items-center gap-1.5 mb-0.5">    
+      249 +          <span className="text-[10px] text-gray-600 font-mono
+          +">#{index + 1}</span>                                         
+      250 +          <span className="text-[10px] px-1 py-0.5 rounded bg-
+          +gray-800 text-gray-400">                                      
+      251 +            {USER_KIND_LABELS[exchange.user_kind] ?? exchange.
+          +user_kind}                                                    
+      252 +          </span>                                             
+      253 +        </div>                                                
+      254 +        <p className="text-gray-200 leading-snug line-clamp-2"
+          +>{exchange.user_message}</p>                                  
+      255 +      </div>                                                  
+      256 +                                                              
+      257 +      {/* AI 回复 */}                                         
+      258 +      <div className="px-2.5 pb-2">                           
+      259 +        <div className="rounded border border-blue-900/40 bg-b
+          +lue-950/20 px-2 py-1">                                        
+      260 +          <p className="text-[10px] text-blue-300/70 leading-s
+          +nug line-clamp-2">                                            
+      261 +            {exchange.assistant_summary}                      
+      262 +          </p>                                                
+      263 +        </div>                                                
+      264 +      </div>                                                  
+      265 +                                                              
+      266 +      <Handle                                                 
+      267 +        type="source"                                         
+      268 +        position={Position.Bottom}                            
+      269 +        id="turn-out"                                         
+      270 +        className="!bg-gray-700 !w-1.5 !h-1.5 !opacity-30"    
+      271 +      />                                                      
+      272 +    </div>                                                    
+      273 +  )                                                           
+      274 +}                                                             
+      275 +                                                              
+      276  function BranchNode({ data, selected }: NodeProps) {
+      277    const node = data as unknown as TraceNode
+      278  
+
+⏺ 添加 expandEdge 类型并注册到 nodeTypes/edgeTypes。
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 16 lines
+      380    )
+      381  }
+      382  
+      383 +function ExpandEdge({ sourceX, sourceY, targetX, targetY, sour
+          +cePosition, targetPosition, style }: EdgeProps) {             
+      384 +  const [path] = getBezierPath({ sourceX, sourceY, sourcePosit
+          +ion, targetX, targetY, targetPosition })                      
+      385 +  return (                                                    
+      386 +    <path                                                     
+      387 +      d={path}                                                
+      388 +      fill="none"                                             
+      389 +      stroke={(style?.stroke as string) ?? '#374151'}         
+      390 +      strokeWidth={(style?.strokeWidth as number) ?? 1}       
+      391 +      strokeDasharray="3 3"                                   
+      392 +      opacity={0.7}                                           
+      393 +    />                                                        
+      394 +  )                                                           
+      395 +}                                                             
+      396 +                                                              
+      397  // ── Node / Edge type maps ──────────────────────────────────
+           ───────────────────
+      398  
+      399  const nodeTypes = {
+      400    executionNode: ExecutionNode,
+      401    branchNode:    BranchNode,
+      402    planNode:      PlanNodeComponent,
+      403 +  turnNode:      TurnNode,                                    
+      404  }
+      405  
+      406  const edgeTypes = {
+      407    mainLineEdge:  MainLineEdge,
+      408    branchEdge:    BranchEdge,
+      409    alignmentEdge: AlignmentEdge,
+      410 +  expandEdge:    ExpandEdge,                                  
+      411  }
+      412  
+      413  // ── Main Component ─────────────────────────────────────────
+           ───────────────────
+
+⏺ 现在更新 TraceDAG 的 props 接口，接收 expandedNodes 和
+  onToggleExpand，并把它们注入到节点 data 里。
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 2 lines
+      416    graphData: GraphData | null
+      417    selectedNodeId: string | null
+      418    onNodeClick: (nodeId: string) => void
+      419 +  expandedNodes?: Set<string>                                 
+      420 +  onToggleExpand?: (nodeId: string) => void                   
+      421  }
+      422  
+      423  function FitButton() {
+
+⏺ Update(src/components/TraceDAG.tsx)
+  ⎿  Added 34 lines, removed 6 lines
+      433    )
+      434  }
+      435  
+      436 -export default function TraceDAG({ graphData, selectedNodeId, 
+          -onNodeClick }: TraceDAGProps) {                               
+      436 +export default function TraceDAG({                            
+      437 +  graphData,                                                  
+      438 +  selectedNodeId,                                             
+      439 +  onNodeClick,                                                
+      440 +  expandedNodes,                                              
+      441 +  onToggleExpand,                                             
+      442 +}: TraceDAGProps) {                                           
+      443    const { fitView } = useReactFlow()
+      444  
+      445    useEffect(() => {
+     ...
+      450      return () => window.clearTimeout(timer)
+      451    }, [fitView, graphData?.nodes.length, graphData?.edges.lengt
+           h])
+      452  
+      453 +  const handleNodeClick = useCallback(                        
+      454 +    (_: React.MouseEvent, node: { id: string; type?: string; d
+          +ata: Record<string, unknown> }) => {                          
+      455 +      if (node.type === 'turnNode') {                         
+      456 +        const parentId = (node.data as { parentNodeId?: string
+          + }).parentNodeId                                              
+      457 +        if (parentId) onNodeClick(parentId)                   
+      458 +      } else {                                                
+      459 +        onNodeClick(node.id)                                  
+      460 +      }                                                       
+      461 +    },                                                        
+      462 +    [onNodeClick]                                             
+      463 +  )                                                           
+      464 +                                                              
+      465    if (!graphData) {
+      466      return (
+      467        <div className="flex-1 flex items-center justify-center 
+           text-gray-600 text-sm">
+     ...
+      470      )
+      471    }
+      472  
+      455 -  const nodesWithSelection = graphData.nodes.map((n) => ({    
+      456 -    ...n,                                                     
+      457 -    selected: n.id === selectedNodeId,                        
+      458 -  }))                                                         
+      473 +  const nodesWithSelection = graphData.nodes.map((n) => {     
+      474 +    if (n.type === 'executionNode') {                         
+      475 +      return {                                                
+      476 +        ...n,                                                 
+      477 +        selected: n.id === selectedNodeId,                    
+      478 +        data: {                                               
+      479 +          ...n.data,                                          
+      480 +          __onToggleExpand: onToggleExpand,                   
+      481 +          __isExpanded: expandedNodes?.has(n.id) ?? false,    
+      482 +        },                                                    
+      483 +      }                                                       
+      484 +    }                                                         
+      485 +    return { ...n, selected: n.id === selectedNodeId }        
+      486 +  })                                                          
+      487  
+      488    return (
+      489      <ReactFlow
+     ...
+      491        edges={graphData.edges}
+      492        nodeTypes={nodeTypes}
+      493        edgeTypes={edgeTypes}
+      466 -      onNodeClick={(_, node) => onNodeClick(node.id)}         
+      494 +      onNodeClick={handleNodeClick}                           
+      495        fitView
+      496        fitViewOptions={{ padding: 0.15 }}
+      497        minZoom={0.2}
+
+⏺ 最后更新 NodeCard，在 ExchangeDetail 里显示 prev_ai_summary（因果上下文）。
+
+⏺ Update(src/components/NodeCard.tsx)
+  ⎿  Added 9 lines
+      162              {open ? <ChevronDown size={12} /> : <ChevronRight 
+           size={12} />}
+      163            </span>
+      164          </div>
+      165 +        {/* 因果上下文：上一轮 AI 说了什么触发了本次提问 */}  
+      166 +        {exchange.prev_ai_summary && (                        
+      167 +          <div className="mb-1.5 rounded bg-gray-800/60 px-2 p
+          +y-1 border-l-2 border-gray-600">                              
+      168 +            <p className="text-[10px] text-gray-500 leading-sn
+          +ug">                                                          
+      169 +              <span className="text-gray-600 mr-1">↳ 上轮 AI：
+          +</span>                                                       
+      170 +              {exchange.prev_ai_summary}                      
+      171 +            </p>                                              
+      172 +          </div>                                              
+      173 +        )}                                                    
+      174          <p className="text-xs text-gray-100 leading-relaxed wh
+           itespace-pre-wrap">
+      175            {exchange.user_message}
+      176          </p>
+
+⏺ 现在检查有没有编译错误。
+
+⏺ Bash(npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ 零错误。看一下 dev server 日志确认 Vite HMR 正常。
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ 编译全部成功，HMR 无报错。完成的改动总结：
+
+  问题 1（关联性管理）
+  - TraceExchange 新增 prev_ai_summary 字段
+  - aggregator 在每次 flushGroup 后把当前 AI 摘要记为 lastAiSummary，传入下一条
+  exchange
+  - interpreter 的 LLM prompt 现在在每个节点前显示 [上一步 AI 
+  说]：「...」，让模型能理解因果链
+  - NodeCard 的 ExchangeDetail 在用户消息上方显示 ↳ 上轮 AI：... 触发上下文
+  - TraceDAG 的 TurnNode 也在用户消息上方显示 ↳ AI前文：...
+
+  问题 2（多层展开子节点）
+  - Phase Node 底部出现「展开 N 轮」按钮（仅当 exchanges ≥ 2 时）
+  - 点击后，Turn 子节点垂直排列在 Phase Node 正下方，用虚线连接
+  - Turn 节点显示：上轮 AI 前文 → 用户消息 → AI 回复摘要
+  - 点击 Turn 节点会选中其父 Phase Node 并打开 NodeCard
+  - expandedNodes 状态在 App 管理，支持多个 Phase 同时展开
+
+✻ Worked for 8m 42s
+
+❯ 启动一下服务                                                                  
+
+  Read 1 file (ctrl+o to expand)
+⏺ 服务还在运行，直接访问 http://localhost:5175/ 即可。
+
+✻ Worked for 11s
+
+⏺ Background command "Start Vite dev server" was stopped

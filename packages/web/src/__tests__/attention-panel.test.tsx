@@ -9,10 +9,11 @@ import { useMessageStore } from '../stores/message-store'
 afterEach(cleanup)
 
 vi.mock('../components/attention/MindMapGraph', () => ({
-  default: ({ projection, onSelect, onFocus }: {
-    projection?: { nodes: Array<{ id: string; title: string; collapsed: boolean; focusMessageId?: string | null }> }
+  default: ({ projection, onSelect, onFocus, onUpdateGoal }: {
+    projection?: { nodes: Array<{ id: string; title: string; kind: string; collapsed: boolean; focusMessageId?: string | null }> }
     onSelect?: (id: string) => void
     onFocus?: (messageId: string) => void
+    onUpdateGoal?: () => void
   }) => (
     <div data-testid="mind-map-graph">
       {(projection?.nodes ?? []).map((node) => (
@@ -25,6 +26,15 @@ vi.mock('../components/attention/MindMapGraph', () => ({
           onClick={() => onSelect?.(node.id)}
         >
           {node.id}:{node.title}
+          {node.kind === 'goal' && onUpdateGoal && (
+            <button
+              type="button"
+              aria-label="更新目标"
+              onClick={(e) => { e.stopPropagation(); onUpdateGoal() }}
+            >
+              更新目标
+            </button>
+          )}
           {node.focusMessageId && (
             <button
               type="button"
@@ -210,10 +220,9 @@ describe('Attention X 动态树详情', () => {
     await waitFor(() => expect(screen.getByTestId('mind-map-graph')).toBeTruthy())
   })
 
-  it('展示目标历史，创建目标、切换目标，并在两个自定义目标后禁用创建', () => {
+  it('点击 goal 节点更新目标按钮打开弹窗并保存', async () => {
     const createGoal = vi.fn()
     const selectGoal = vi.fn()
-    const changeDraft = vi.fn()
     render(
       <AttentionXPanel
         topicId="topic_1"
@@ -224,28 +233,30 @@ describe('Attention X 动态树详情', () => {
         goals={[
           { id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true },
           { id: 'g2', topic_id: 'topic_1', goal_text: '第二个目标内容', title: '第二目标', is_default: false, active: false, source_message_count: 20, source_last_event_ts: 20, created_at: 2, updated_at: 2, has_snapshot: true },
-          { id: 'g3', topic_id: 'topic_1', goal_text: '第三个目标内容', title: '第三目标', is_default: false, active: false, source_message_count: 20, source_last_event_ts: 20, created_at: 3, updated_at: 3, has_snapshot: true },
         ]}
-        activeGoal={{ id: 'g1', topic_id: 'topic_1', goal_text: '第一句话目标', title: '默认目标', is_default: true, active: true, source_message_count: 10, source_last_event_ts: 10, created_at: 1, updated_at: 1, has_snapshot: true }}
         activeGoalId="g1"
-        goalDraft="更清晰的新目标"
-        onGoalDraftChange={changeDraft}
         onCreateGoal={createGoal}
         onSelectGoal={selectGoal}
       />,
     )
 
-    expect(screen.getByText('默认目标')).toBeTruthy()
-    fireEvent.click(screen.getByText('第二目标'))
-    expect(selectGoal).toHaveBeenCalledWith('g2')
-    expect(screen.getByText('第三目标')).toBeTruthy()
-    expect(screen.getByText('默认目标外最多创建 2 个目标。')).toBeTruthy()
-    expect((screen.getByText('创建目标') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.change(screen.getByPlaceholderText('描述一个更清晰的话题目标，Enter 创建新目标'), { target: { value: '新目标' } })
-    expect(changeDraft).toHaveBeenCalledWith('新目标')
-    expect(screen.queryByText('历史名')).toBeNull()
-    expect(screen.queryByText('改名')).toBeNull()
-    expect(screen.getByText('目标内容：第一句话目标')).toBeTruthy()
+    await waitFor(() => expect(screen.getByTestId('mind-map-graph')).toBeTruthy())
+
+    // Click the "更新目标" button on the goal node
+    const updateBtn = screen.getByText('更新目标')
+    fireEvent.click(updateBtn)
+
+    // After click, "更新目标" text from button + modal heading → verify modal opened
+    const headings = screen.getAllByText('更新目标')
+    expect(headings.length).toBeGreaterThanOrEqual(2)
+
+    // Change the draft text so it's different from active goal
+    const textarea = screen.getByRole('textbox')
+    fireEvent.change(textarea, { target: { value: '新的目标内容' } })
+
+    // Save should now call createGoal with the new text
+    fireEvent.click(screen.getByText('保存目标'))
+    expect(createGoal).toHaveBeenCalledWith('新的目标内容')
   })
 
   it('右侧详情按节点边界时间线展示消息、thinking、tool、plan 并支持筛选', () => {

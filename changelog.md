@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-07 [v1.10.16] — fix: Attention 面板样式细调 + 移除旧 chrome 头部
+
+- 移除旧的 chrome 头部（目标输入框、目标 pills、创建目标按钮），目标管理统一走节点内"更新目标" modal。
+- Canvas 区域补齐设计稿元素：Legend（底部左，蓝/橙/虚线图例）、Pan hint（底部右，"拖拽平移 · 滚轮缩放"）、径向渐变背景。
+- 详情面板样式对齐 S16 设计稿：scroll padding `14px 16px 18px` + items gap `10px`；section 标题 10px uppercase letter-spacing；消息卡片 border-radius 12px + padding 11px 12px + body 13px；工具行 border-radius 10px + padding 9px 11px。
+- 目标更新 modal scrim 从全 panel 修正为 topbar 以下（`top: 52px`）。
+- 支线节点标题字号 13px（设计稿一致）；当前节点正确展示 `.nsub` 副标题。
+
 ## 2026-06-07 [v1.10.15] — feat: Attention 全尺寸面板 UI 重做（S16 设计稿）
 
 - Attention 抽屉顶部栏：SVG 图标 + "Attention" 标题 + 重置视图按钮，去掉旧的二级 chrome header。

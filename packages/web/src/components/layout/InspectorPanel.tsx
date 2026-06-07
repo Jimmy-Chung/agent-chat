@@ -328,10 +328,7 @@ function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { t
           rawEvents={rawEvents}
           llmUnavailable={llmUnavailable}
           goals={attention.goals}
-          activeGoal={attention.activeGoal}
           activeGoalId={attention.activeGoalId}
-          goalDraft={attention.goalDraft}
-          onGoalDraftChange={attention.setGoalDraft}
           onCreateGoal={() => void attention.createGoal()}
           onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
           loadingSnapshot={attention.isLoadingSnapshot}

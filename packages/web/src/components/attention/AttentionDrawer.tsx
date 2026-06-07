@@ -118,14 +118,10 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             rawEvents={rawEvents}
             llmUnavailable={llmUnavailable}
             goals={attention.goals}
-            activeGoal={attention.activeGoal}
             activeGoalId={attention.activeGoalId}
-            goalDraft={attention.goalDraft}
-            onGoalDraftChange={attention.setGoalDraft}
             onCreateGoal={(text) => void attention.createGoal(text)}
             onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
             loadingSnapshot={attention.isLoadingSnapshot}
-            chrome={false}
             fitViewCallbackRef={fitViewCallbackRef}
           />
         </div>
