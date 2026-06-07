@@ -6,6 +6,7 @@ import type { ProviderConfig, ModelMapping } from '@/stores/ws-store'
 import { useToastStore } from '@/stores/toast-store'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { buildModelMappingPayload } from '@/lib/model-mapping'
+import { activateProviderInGroup, getProviderGroup } from '@/lib/provider-selection'
 
 type ViewMode = 'list' | 'add' | 'edit'
 
@@ -98,7 +99,8 @@ export function ProviderConfigModal({
     const map: Record<string, ProviderConfig[]> = {}
     for (const g of GROUPS) map[g] = []
     for (const c of providerConfigs) {
-      const g = c.group ?? 'pi-agent'
+      const g = getProviderGroup(c)
+      if (!g) continue
       if (map[g]) map[g].push(c)
       else map[g] = [c]
     }
@@ -128,7 +130,7 @@ export function ProviderConfigModal({
     setView('edit')
     setEditingId(cfg.id)
     setFormName(cfg.name)
-    setFormGroup(cfg.group ?? 'pi-agent')
+    setFormGroup(getProviderGroup(cfg) ?? 'claude-code')
     setFormApiKey('')
     setFormBaseUrl(cfg.baseUrl ?? '')
     setFormModels(cfg.models ?? [])
@@ -219,7 +221,7 @@ export function ProviderConfigModal({
     // otherwise reset an omitted group to the default (claude-code).
     const target = prev.find((c) => c.id === id)
     useWsStore.getState().setProviderConfigs(
-      prev.map((c) => ({ ...c, isActive: c.id === id }))
+      activateProviderInGroup(prev, id)
     )
     try {
       await sendProviderRpc('updateProviderConfig', {
@@ -234,12 +236,12 @@ export function ProviderConfigModal({
         description: '新创建的会话将默认使用该 Provider。已打开的会话不受影响。',
         durationMs: 5000,
       })
-    } catch {
+    } catch (err) {
       useWsStore.getState().setProviderConfigs(prev)
       useToastStore.getState().pushToast({
         tone: 'error',
         title: '切换失败',
-        description: '请稍后重试',
+        description: err instanceof Error ? err.message : '请稍后重试',
         durationMs: 3000,
       })
     } finally {

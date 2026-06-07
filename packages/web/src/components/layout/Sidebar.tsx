@@ -21,7 +21,7 @@ import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
 import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, getWorkspaceRelativePath, joinWorkspacePath, normalizeCwd, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
-import { getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
+import { getActiveProviderForGroup, getActiveProviderIdForExtension, getActiveProviderIdForGroup, getProviderGroup, type ProviderGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
 import type { SopTemplate } from '@/stores/sop-template-store'
@@ -238,8 +238,8 @@ function PluginMgmtButton({
   onSwitch,
   onManage,
 }: {
-  activeProviderTab: string
-  setActiveProviderTab: (tab: 'claude-code' | 'codex' | 'pi-agent') => void
+  activeProviderTab: ProviderGroup
+  setActiveProviderTab: (tab: ProviderGroup) => void
   providerConfigs: ProviderConfig[]
   switchingId: string | null
   onSwitch: (id: string) => void
@@ -247,7 +247,7 @@ function PluginMgmtButton({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const activeProvider = providerConfigs.find((c) => c.isActive)
+  const activeProvider = getActiveProviderForGroup(providerConfigs, activeProviderTab)
 
   useEffect(() => {
     if (!open) return
@@ -307,7 +307,7 @@ function PluginMgmtButton({
             }}
           >
             {PROVIDER_TAB_DEFS.map(({ key, label, icon, activeColor, countBg }) => {
-              const count = providerConfigs.filter((c) => (c.group ?? 'claude-code') === key).length
+              const count = providerConfigs.filter((c) => getProviderGroup(c) === key).length
               const isActive = activeProviderTab === key
               return (
                 <button
@@ -339,7 +339,7 @@ function PluginMgmtButton({
           {/* Provider list in popover */}
           <div className="mx-2 my-1.5 flex flex-col gap-px max-h-[160px] overflow-y-auto">
             {providerConfigs
-              .filter((c) => (c.group ?? 'claude-code') === activeProviderTab)
+              .filter((c) => getProviderGroup(c) === activeProviderTab)
               .map((p) => {
                 const isSelected = p.isActive
                 const isSwitching = switchingId === p.id
@@ -444,7 +444,7 @@ export function Sidebar() {
   const unreadByTopic = useMessageStore((s) => s.unreadByTopic)
   const providerConfigs = useWsStore((s) => s.providerConfigs)
   const providerConfigsLoading = useWsStore((s) => s.providerConfigsLoading)
-  const [activeProviderTab, setActiveProviderTab] = useState<'claude-code' | 'codex' | 'pi-agent'>('claude-code')
+  const [activeProviderTab, setActiveProviderTab] = useState<ProviderGroup>('claude-code')
   const workspacePath = useWsStore((s) => s.workspacePath)
   const workspacePathStatus = useWsStore((s) => s.workspacePathStatus)
   const setWorkspacePath = useWsStore((s) => s.setWorkspacePath)
@@ -458,12 +458,6 @@ export function Sidebar() {
       .then((w) => setWorkspacePath(w.workspacePath ?? null))
       .catch(() => setWorkspacePath(null))
   }, [wsStatus, setWorkspacePath, setWorkspacePathStatus])
-
-  // Auto-select the tab that contains the currently active provider
-  useEffect(() => {
-    const active = providerConfigs.find((c) => c.isActive)
-    if (active?.group) setActiveProviderTab(active.group as 'claude-code' | 'codex' | 'pi-agent')
-  }, [providerConfigs])
 
   useEffect(() => {
     if (wsStatus !== 'connected') return
