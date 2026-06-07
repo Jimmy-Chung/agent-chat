@@ -182,7 +182,7 @@ export function buildMindMapProjection(
       .filter(Boolean),
   })
 
-  const emitUserNode = (traceNode: TraceNode, opts: { nested?: boolean } = {}): string => {
+  const emitUserNode = (traceNode: TraceNode, opts: { nested?: boolean; nestedIndex?: number } = {}): string => {
     const id = opts.nested ? `nested_${traceNode.id}` : `user_${traceNode.id}`
     if (emittedBySource.has(id)) return id
     const topicId = topicByTurn.get(traceNode.id)
@@ -195,9 +195,11 @@ export function buildMindMapProjection(
       : relation === 'branch'
         ? BRANCH_Y + Math.max(0, (topic?.depth ?? 1) - 1) * 140
         : MAIN_Y
-    const x = opts.nested
-      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 280
-      : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X
+    const x = opts.nested && opts.nestedIndex
+      ? START_X + opts.nestedIndex * STEP_X
+      : opts.nested
+        ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 280
+        : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X
     outputNodes.push({
       id,
       kind: isMultiTrace ? 'aggregate' : 'user',
@@ -258,10 +260,21 @@ export function buildMindMapProjection(
     return id
   }
 
-  const emitAggregateNode = (topicId: string): string => {
+  const emitAggregateNode = (topicId: string, opts: { nested?: boolean; nestedIndex?: number } = {}): string => {
     const topic = tree.nodes[topicId]
     const id = `agg_${topicId}`
     if (emittedByTopic.has(id)) return id
+    const topicDepth = topic.depth
+    const y = opts.nested
+      ? SUBGRAPH_Y + (topic.relation === 'branch' ? BRANCH_Y : 0) + Math.max(0, topicDepth - 1) * 140
+      : topic.relation === 'branch'
+        ? BRANCH_Y + Math.max(0, topicDepth - 1) * 140
+        : MAIN_Y
+    const x = opts.nested && opts.nestedIndex
+      ? START_X + opts.nestedIndex * STEP_X
+      : opts.nested
+        ? START_X + (orderByTraceId.get(topic.sourceNodeIds[0]) ?? topic.order) * 280
+        : START_X + Math.max(0, topic.order - 1) * STEP_X
     outputNodes.push({
       id,
       kind: 'aggregate',
@@ -273,29 +286,28 @@ export function buildMindMapProjection(
       active: topic.active,
       current: false,
       collapsed: !expandedIds.has(id),
-      depth: topic.depth,
+      depth: topicDepth,
       sourceNodeIds: topic.sourceNodeIds,
       focusMessageId: focusMessageForSources(traceNodes, topic.sourceNodeIds),
       aggregation: topic.aggregation,
       hasChildren: topic.childIds.length > 0,
       status: topic.status,
-      position: {
-        x: START_X + Math.max(0, topic.order - 1) * STEP_X,
-        y: topic.relation === 'branch' ? BRANCH_Y + Math.max(0, topic.depth - 1) * 90 : MAIN_Y,
-      },
+      position: { x, y },
     })
     emittedByTopic.add(id)
 
     if (expandedIds.has(id)) {
       let previousNested: string | null = null
+      let nestedIndex = 0
       for (const child of topicChildren(topicId).filter((node) => node.kind === 'turn' || node.kind === 'topic')) {
+        nestedIndex++
         let nestedId: string | null = null
         if (child.kind === 'turn') {
           const source = traceNodes.find((node) => node.id === child.sourceNodeIds[0])
           if (!source) continue
-          nestedId = emitUserNode(source, { nested: true })
+          nestedId = emitUserNode(source, { nested: true, nestedIndex })
         } else {
-          nestedId = emitAggregateNode(child.id)
+          nestedId = emitAggregateNode(child.id, { nested: true, nestedIndex })
         }
         if (!nestedId) continue
         outputEdges.push({

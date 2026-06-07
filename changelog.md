@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-07 [v1.10.19] — fix: emitAggregateNode 支持嵌套模式，修复展开子 topic 重叠
+
+- `emitAggregateNode` 在展开父节点内被调用时走嵌套偏移（Y: SUBGRAPH_Y + 深度*140, X: order*280），不再用全局 MAIN_Y 跟主节点重叠。
+
 ## 2026-06-07 [v1.10.18] — fix: Attention 动态树节点重叠
 
 - `BRANCH_Y` 230→360：分支节点往下移，避开展开子节点底部（原 ~290px vs 230px 重叠 60px）。
