@@ -248,7 +248,7 @@ describe('Attention X 动态树详情', () => {
     expect(screen.getByText('目标内容：第一句话目标')).toBeTruthy()
   })
 
-  it('右侧详情按时间交错展示消息，并把 thinking/tool/todo/plan 合并到执行明细', () => {
+  it('右侧详情按节点边界时间线展示消息、thinking、tool、plan 并支持筛选', () => {
     const attentionNode = node({
       id: 'cand_1',
       user_message: '帮我做 todo web 应用',
@@ -303,17 +303,26 @@ describe('Attention X 动态树详情', () => {
       />,
     )
 
-    expect(screen.getByText('消息明细')).toBeTruthy()
+    expect(screen.getByText('节点时间线')).toBeTruthy()
+    expect(screen.getByText('all')).toBeTruthy()
+    expect(screen.getByText('message')).toBeTruthy()
+    expect(screen.getByText('tools')).toBeTruthy()
+    expect(screen.getByText('plan')).toBeTruthy()
     expect(screen.getByText('帮我做 todo web 应用')).toBeTruthy()
     expect(screen.getByText('真实 AI 回复：我会先确认技术栈。')).toBeTruthy()
     expect(screen.getByText(/需要用户选择：请选择技术栈/)).toBeTruthy()
     expect(screen.getByText(/候选项：Vue；React/)).toBeTruthy()
     expect(screen.getByText('选 vue')).toBeTruthy()
     expect(screen.getByText('真实 AI 回复：已按 Vue 实现第一版。')).toBeTruthy()
-    expect(screen.getByText('执行明细 · 1 个工具')).toBeTruthy()
     expect(screen.getByText('思考')).toBeTruthy()
     expect(screen.getByText('edit_file')).toBeTruthy()
     expect(screen.getByText('Plan · completed')).toBeTruthy()
+    fireEvent.click(screen.getByText('tools'))
+    expect(screen.getByText('edit_file')).toBeTruthy()
+    expect(screen.queryByText('帮我做 todo web 应用')).toBeNull()
+    fireEvent.click(screen.getByText('message'))
+    expect(screen.getByText('帮我做 todo web 应用')).toBeTruthy()
+    expect(screen.queryByText('edit_file')).toBeNull()
     expect(screen.queryByText('用户信息')).toBeNull()
     expect(screen.queryByText('AI 信息概要')).toBeNull()
     expect(screen.queryByText('Text 明细')).toBeNull()

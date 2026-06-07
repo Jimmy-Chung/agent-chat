@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-07 [v1.10.14] — feat: Attention 节点时间线与运行事件持久化
+
+- 新增 `topic_runtime_events` 持久化 adapter 推送的 `todo.update` / `plan.update`，刷新后可恢复最新 todo/plan 状态。
+- Attention server rebuild 读取持久化 runtime events，把 todo/plan 纳入节点 rawEvents 与 planItems。
+- Attention 右侧详情改为节点边界内的时间线，支持 `all` / `message` / `tools` / `plan` 筛选并按时间顺序展示。
+- Attention LLM degraded 日志增加 prompt/response 长度、耗时、finish_reason、parseError 等 diagnostics，便于区分 timeout、截断和结构错误。
+- 版本显示更新为 `v1.10.14`。
+
 ## 2026-06-07 [v1.10.13] — fix: Attention 面板明细、目标与快照交互
 
 - Attention 消息明细优先展示真实 raw message，并把 adapter choice/approval 的问题与候选项纳入节点明细。

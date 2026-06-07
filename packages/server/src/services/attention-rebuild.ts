@@ -19,6 +19,7 @@ import {
 } from '../db/repos/attention_goal_snapshot.repo'
 import { listInteractionsByTopic } from '../db/repos/interaction.repo'
 import { listMessagesAndPartsByTopic } from '../db/repos/message.repo'
+import { listTopicRuntimeEvents, runtimeEventToRawEvent } from '../db/repos/topic_runtime_event.repo'
 import { logGatewayEvent } from '../server-logs'
 
 export interface AttentionRebuildResult {
@@ -89,7 +90,8 @@ export async function rebuildAttentionGoalSnapshot(input: {
 
   const { messages, partsByMessage } = await listMessagesAndPartsByTopic(goal.topic_id)
   const interactions = (await listInteractionsByTopic(goal.topic_id)).map(interactionToAttention)
-  const rawEvents = storeToRawEvents({ messages, partsByMessage, interactions })
+  const runtimeEvents = (await listTopicRuntimeEvents(goal.topic_id)).map(runtimeEventToRawEvent)
+  const rawEvents = storeToRawEvents({ messages, partsByMessage, interactions, runtimeEvents })
   const sourceMessageCount = messages.length
   const sourceLastEventTs = rawEvents.length > 0 ? rawEvents[rawEvents.length - 1].ts : 0
   const defaultGoalAnchor = extractGoalAnchor({ messages, partsByMessage })
@@ -117,6 +119,7 @@ export async function rebuildAttentionGoalSnapshot(input: {
         hasModel: !!input.llm.model,
         sourceMessageCount,
         sourceLastEventTs,
+        diagnostics: interpreted.diagnostics,
       },
     })
     const snapshot = await markAttentionGoalSnapshotDegraded({ id: goal.id, reason })

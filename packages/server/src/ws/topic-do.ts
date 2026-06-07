@@ -27,6 +27,7 @@ import * as sopRepo from '../db/repos/sop_template.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import * as runtimeEventRepo from '../db/repos/topic_runtime_event.repo'
 import { buildSessionParams, createPendingUserMessage, deliverUserMessage, restoreExistingTopicSession, startAutoDelivery } from './message-delivery'
 import { ARTIFACT_UPLOAD_MAX_BYTES } from '../r2/artifact-access'
 import {
@@ -646,11 +647,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             const parts = await messageRepo.getMessageParts(msg.id)
             if (parts.length > 0) partsByMessage[msg.id] = parts
           }
+          const latestTodo = await runtimeEventRepo.getLatestTopicRuntimeEvent(d.topicId, 'todo')
+          const latestPlan = await runtimeEventRepo.getLatestTopicRuntimeEvent(d.topicId, 'plan')
+          const todoPayload = parseRuntimePayload(latestTodo?.payload_json ?? null)
+          const todos = (todoPayload.input as { todos?: unknown } | undefined)?.todos
+          const planPayload = parseRuntimePayload(latestPlan?.payload_json ?? null)
           this.sendTo(ws, 'messages.history', {
             topicId: d.topicId,
             messages: msgs,
             partsByMessage,
             pendingInteractions: await listPendingInteractionHistory(d.topicId),
+            todos: Array.isArray(todos) ? todos : undefined,
+            plan: typeof planPayload.text === 'string' ? planPayload.text : undefined,
           })
         } catch (err) {
           logger.error({ err, topicId: d.topicId }, 'Failed to load messages')
@@ -1456,6 +1464,18 @@ function parseTodoItems(value: string | null): TodoItem[] | undefined {
     return Array.isArray(parsed) ? parsed : undefined
   } catch {
     return undefined
+  }
+}
+
+function parseRuntimePayload(value: string | null): Record<string, unknown> {
+  if (!value) return {}
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
   }
 }
 

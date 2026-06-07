@@ -9,6 +9,7 @@ import {
 import type { AppConfig } from '../config'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
+import * as runtimeEventRepo from '../db/repos/topic_runtime_event.repo'
 
 const PATH = '/api/agent-chat/v1/attention/interpret'
 const GOOD_LLM: AttentionLlmConfig = {
@@ -26,8 +27,8 @@ function cfg(over: Partial<AppConfig> = {}): AppConfig {
   } as unknown as AppConfig
 }
 
-function openAiResponse(content: string): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+function openAiResponse(content: string, finishReason = 'stop'): Response {
+  return new Response(JSON.stringify({ choices: [{ finish_reason: finishReason, message: { content } }] }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
@@ -77,6 +78,14 @@ describe('TC-AIT-220-02 正常解析', () => {
     expect(r.closeCurrentTopic).toEqual([false, true])
     expect(r.nodeReason).toEqual(['仍在定位', '切换到数据层'])
     expect(r.normalizedGoal).toBe('修复 SSE 端口泄漏')
+    expect(r.diagnostics).toMatchObject({
+      promptChars: 4,
+      timeoutMs: 1000,
+      maxTokens: 2400,
+      httpStatus: 200,
+      finishReason: 'stop',
+    })
+    expect(r.diagnostics?.responseChars).toBeGreaterThan(0)
     // 调到了正确的 OpenAI 兼容 endpoint，带 key
     expect(calledUrl).toBe('https://llm.example.com/v1/chat/completions')
     expect(authHeader).toBe('Bearer sk-test')
@@ -133,6 +142,12 @@ describe('TC-AIT-220-03 上游失败降级', () => {
     expect(r.ok).toBe(false)
     expect(r.degraded).toBe(true)
     expect(r.reason).toBe('upstream_429')
+    expect(r.diagnostics).toMatchObject({
+      promptChars: 1,
+      timeoutMs: 1000,
+      maxTokens: 2400,
+      httpStatus: 429,
+    })
   })
 
   it('超时 → degraded:timeout', async () => {
@@ -144,13 +159,36 @@ describe('TC-AIT-220-03 上游失败降级', () => {
     const r = await interpretTrace('p', GOOD_LLM, { fetchImpl, timeoutMs: 1000 })
     expect(r.ok).toBe(false)
     expect(r.reason).toBe('timeout')
+    expect(r.diagnostics).toMatchObject({
+      promptChars: 1,
+      timeoutMs: 1000,
+      maxTokens: 2400,
+      errorName: 'TimeoutError',
+    })
   })
 
   it('解析失败 → degraded:parse_error', async () => {
-    const fetchImpl = (async () => openAiResponse('这不是 JSON')) as unknown as typeof fetch
+    const fetchImpl = (async () => openAiResponse('这不是 JSON', 'length')) as unknown as typeof fetch
+    const r = await interpretTrace('p', GOOD_LLM, { fetchImpl, timeoutMs: 1000, maxTokens: 12 })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toBe('parse_error')
+    expect(r.diagnostics).toMatchObject({
+      promptChars: 1,
+      timeoutMs: 1000,
+      maxTokens: 12,
+      httpStatus: 200,
+      finishReason: 'length',
+      responseChars: 8,
+      parseError: 'invalid_json',
+    })
+  })
+
+  it('解析失败时区分缺少 nodes 数组', async () => {
+    const fetchImpl = (async () => openAiResponse('{"foo":1}')) as unknown as typeof fetch
     const r = await interpretTrace('p', GOOD_LLM, { fetchImpl, timeoutMs: 1000 })
     expect(r.ok).toBe(false)
     expect(r.reason).toBe('parse_error')
+    expect(r.diagnostics?.parseError).toBe('missing_nodes_array')
   })
 })
 
@@ -394,6 +432,56 @@ describe('Attention server rebuild pipeline', () => {
         expect(rebuildBody.snapshot.degraded_reason).toBe('timeout')
         expect(rebuildBody.snapshot.trace_nodes_json).toBe('[]')
         expect(rebuildBody.snapshot.source_message_count).toBe(0)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      teardownTestDb()
+    }
+  })
+
+  it('runtime todo/plan 事件落库后进入 attention rebuild rawEvents', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'runtime events', kind: 'normal', agentType: 'general' })
+      const user = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user.id, kind: 'text', contentJson: JSON.stringify({ content: '做一个 trello 应用' }) })
+      await runtimeEventRepo.createTopicRuntimeEvent({
+        topicId: topic.id,
+        kind: 'todo',
+        ts: user.started_at + 1,
+        payload: { input: { todos: [{ id: '1', content: '建 Next 框架', status: 'pending' }] } },
+      })
+      await runtimeEventRepo.createTopicRuntimeEvent({
+        topicId: topic.id,
+        kind: 'plan',
+        ts: user.started_at + 2,
+        payload: { text: '1. 初始化项目', items: [{ id: 'plan_1', text: '初始化项目', status: 'pending', depth: 0 }] },
+      })
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '做一个 trello 应用', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async () => openAiResponse('{"nodes":[{"userSummary":"创建 trello 应用","assistantSummary":"已形成初始执行计划","aggregateTitle":"trello 初始化","sameTopic":true,"closeCurrentTopic":false,"reason":"todo/plan 纳入上下文","goalAlignment":9}]}')) as unknown as typeof fetch
+      try {
+        const rebuildRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const rebuildBody = (await rebuildRes.json()) as { ok: boolean; snapshot: { raw_events_json: string; plan_items_json: string } }
+        expect(rebuildBody.ok).toBe(true)
+        const rawEvents = JSON.parse(rebuildBody.snapshot.raw_events_json) as Array<{ kind: string; payload: Record<string, unknown> }>
+        expect(rawEvents.some((event) => event.kind === 'todo')).toBe(true)
+        expect(rawEvents.some((event) => event.kind === 'plan')).toBe(true)
+        expect(rebuildBody.snapshot.plan_items_json).toContain('建 Next 框架')
+        expect(rebuildBody.snapshot.plan_items_json).toContain('初始化项目')
       } finally {
         globalThis.fetch = originalFetch
       }

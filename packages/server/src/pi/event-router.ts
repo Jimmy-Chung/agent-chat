@@ -1,4 +1,4 @@
-import type { PIEvent } from '@agent-chat/protocol'
+import { planTextToItems, type PIEvent } from '@agent-chat/protocol'
 import type { PiClient } from './client'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
@@ -8,6 +8,7 @@ import { artifactToPayload } from '../ws/artifact-control'
 import * as usageRepo from '../db/repos/usage.repo'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as pushRepo from '../db/repos/push-subscription.repo'
+import * as runtimeEventRepo from '../db/repos/topic_runtime_event.repo'
 import { buildVapidAuthHeader } from '../lib/vapid'
 import { encryptPushPayload } from '../lib/web-push'
 import type { AppConfig } from '../config'
@@ -847,12 +848,27 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
 
     case 'todo.update': {
       if (!topicId) return
+      const runtimePayload = payload as typeof payload & { messageId?: unknown }
+      await runtimeEventRepo.createTopicRuntimeEvent({
+        topicId,
+        kind: 'todo',
+        messageId: typeof runtimePayload.messageId === 'string' ? runtimePayload.messageId : null,
+        payload: { input: { todos: Array.isArray(payload.items) ? payload.items : [] } },
+      })
       hub.broadcast('todo.update', { topicId, items: payload.items })
       break
     }
 
     case 'plan.update': {
       if (!topicId) return
+      const runtimePayload = payload as typeof payload & { messageId?: unknown }
+      const plan = typeof payload.plan === 'string' ? payload.plan : ''
+      await runtimeEventRepo.createTopicRuntimeEvent({
+        topicId,
+        kind: 'plan',
+        messageId: typeof runtimePayload.messageId === 'string' ? runtimePayload.messageId : null,
+        payload: { text: plan, items: planTextToItems(plan) },
+      })
       hub.broadcast('plan.update', { topicId, plan: payload.plan })
       break
     }

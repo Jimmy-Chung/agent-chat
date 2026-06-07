@@ -24,10 +24,23 @@ export interface AttentionLlmConfig {
   model: string
 }
 
+export interface AttentionInterpretDiagnostics {
+  promptChars: number
+  timeoutMs: number
+  maxTokens: number
+  durationMs?: number
+  httpStatus?: number
+  responseChars?: number
+  finishReason?: string
+  parseError?: string
+  errorName?: string
+}
+
 export interface InterpretResult {
   ok: boolean
   degraded?: boolean
   reason?: string
+  diagnostics?: AttentionInterpretDiagnostics
   conclusion?: string[]
   goalAlignment?: number[]
   userSummary?: string[]
@@ -83,6 +96,32 @@ function safeJsonParse(value: string): unknown | null {
   } catch {
     return null
   }
+}
+
+function diagnoseParseFailure(content: string): string {
+  const candidate = extractJsonCandidate(content)
+  if (!candidate.trim()) return 'empty_content'
+  let data: unknown
+  try {
+    data = JSON.parse(candidate)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : ''
+    if (/unterminated|unexpected end/i.test(message)) return 'truncated_json'
+    return 'invalid_json'
+  }
+  const unwrapped = unwrapInterpretPayload(data)
+  const nodes = Array.isArray(unwrapped)
+    ? unwrapped
+    : unwrapped && typeof unwrapped === 'object' && Array.isArray((unwrapped as { nodes?: unknown }).nodes)
+      ? (unwrapped as { nodes: unknown[] }).nodes
+      : unwrapped && typeof unwrapped === 'object' && Array.isArray((unwrapped as { items?: unknown }).items)
+        ? (unwrapped as { items: unknown[] }).items
+        : unwrapped && typeof unwrapped === 'object' && Array.isArray((unwrapped as { results?: unknown }).results)
+          ? (unwrapped as { results: unknown[] }).results
+          : null
+  if (!nodes) return 'missing_nodes_array'
+  if (nodes.some((node) => !node || typeof node !== 'object')) return 'invalid_node_object'
+  return 'unknown_parse_error'
 }
 
 function unwrapInterpretPayload(data: unknown): unknown {
@@ -192,11 +231,19 @@ export async function interpretTrace(
   llm: AttentionLlmConfig,
   opts: { fetchImpl?: typeof fetch; timeoutMs?: number; maxTokens?: number } = {},
 ): Promise<InterpretResult> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const maxTokens = opts.maxTokens ?? MAX_OUTPUT_TOKENS
+  const baseDiagnostics: AttentionInterpretDiagnostics = {
+    promptChars: prompt.length,
+    timeoutMs,
+    maxTokens,
+  }
   if (!llm.apiKey || !llm.baseUrl || !llm.model) {
-    return { ok: false, degraded: true, reason: 'not_configured' }
+    return { ok: false, degraded: true, reason: 'not_configured', diagnostics: baseDiagnostics }
   }
   const doFetch = opts.fetchImpl ?? fetch
   const url = `${llm.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const startedAt = Date.now()
   try {
     const res = await doFetch(url, {
       method: 'POST',
@@ -206,7 +253,7 @@ export async function interpretTrace(
       },
       body: JSON.stringify({
         model: llm.model,
-        max_tokens: opts.maxTokens ?? MAX_OUTPUT_TOKENS,
+        max_tokens: maxTokens,
         temperature: 0,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -214,17 +261,37 @@ export async function interpretTrace(
         ],
         response_format: { type: 'json_object' },
       }),
-      signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
-    if (!res.ok) return { ok: false, degraded: true, reason: `upstream_${res.status}` }
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const content = data.choices?.[0]?.message?.content ?? ''
+    const diagnostics: AttentionInterpretDiagnostics = {
+      ...baseDiagnostics,
+      durationMs: Date.now() - startedAt,
+      httpStatus: res.status,
+    }
+    if (!res.ok) return { ok: false, degraded: true, reason: `upstream_${res.status}`, diagnostics }
+    const data = (await res.json()) as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> }
+    const choice = data.choices?.[0]
+    const content = choice?.message?.content ?? ''
+    diagnostics.responseChars = content.length
+    if (choice?.finish_reason) diagnostics.finishReason = choice.finish_reason
     const parsed = parseInterpretation(content)
-    if (!parsed) return { ok: false, degraded: true, reason: 'parse_error' }
-    return { ok: true, ...parsed }
+    if (!parsed) {
+      diagnostics.parseError = diagnoseParseFailure(content)
+      return { ok: false, degraded: true, reason: 'parse_error', diagnostics }
+    }
+    return { ok: true, ...parsed, diagnostics }
   } catch (err) {
     const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'fetch_error'
-    return { ok: false, degraded: true, reason }
+    return {
+      ok: false,
+      degraded: true,
+      reason,
+      diagnostics: {
+        ...baseDiagnostics,
+        durationMs: Date.now() - startedAt,
+        errorName: err instanceof Error ? err.name : typeof err,
+      },
+    }
   }
 }
 
@@ -266,6 +333,7 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
           hasApiKey: !!llm.apiKey,
           hasBaseUrl: !!llm.baseUrl,
           hasModel: !!llm.model,
+          diagnostics: result.diagnostics,
         },
       }))
     }

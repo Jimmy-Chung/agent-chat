@@ -709,6 +709,8 @@ case 'usage.snapshot': {
           messages: unknown[]
           partsByMessage: Record<string, unknown[]>
           pendingInteractions?: unknown[]
+          todos?: unknown[]
+          plan?: unknown
         }
         const msgs = d.messages.map((m) => {
           const r = m as Record<string, unknown>
@@ -756,6 +758,12 @@ case 'usage.snapshot': {
             }
           }),
         )
+        if (Array.isArray(d.todos)) {
+          messageStore.setTodos(d.topicId, d.todos as Array<{ id: string; content: string; status: string; activeForm?: string }>)
+        }
+        if (typeof d.plan === 'string') {
+          messageStore.setPlan(d.topicId, d.plan)
+        }
         messageStore.reconcileAgentStatusFromMessages(d.topicId)
         break
       }

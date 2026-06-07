@@ -301,6 +301,7 @@ export {
   storeToRawEvents,
   extractGoalAnchor,
   classifyUserKind,
+  planTextToItems,
 } from './attention/store-adapter'
 
 export type {

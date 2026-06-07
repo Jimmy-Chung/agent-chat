@@ -24,17 +24,33 @@ function EmptyHint({ text }: { text: string }) {
 }
 
 function eventTitle(event: RawEvent): string {
-  if (event.kind === 'tool_use' || event.kind === 'todo') return String(event.payload.name ?? '工具调用')
+  if (event.kind === 'tool_use') return String(event.payload.name ?? '工具调用')
+  if (event.kind === 'todo') return 'Todo'
   if (event.kind === 'thinking') return '思考'
   if (event.kind === 'plan') return '计划'
   return event.role === 'user' ? '用户消息' : '助手消息'
 }
 
 function eventPreview(event: RawEvent): string {
-  const text = event.kind === 'tool_use' || event.kind === 'todo'
+  const text = event.kind === 'tool_use'
     ? String(event.payload.output ?? JSON.stringify(event.payload.input ?? {}))
+    : event.kind === 'todo'
+      ? todoPreview(event.payload)
     : String(event.payload.text ?? '')
   return text.replace(/\s+/g, ' ').trim()
+}
+
+function todoPreview(payload: Record<string, unknown>): string {
+  const todos = (payload.input as { todos?: unknown } | undefined)?.todos
+  if (!Array.isArray(todos)) return JSON.stringify(payload.input ?? {})
+  return todos
+    .map((item, index) => {
+      const record = item as Record<string, unknown>
+      const content = String(record.content ?? record.text ?? item)
+      const status = typeof record.status === 'string' ? ` [${record.status}]` : ''
+      return `${index + 1}. ${content}${status}`
+    })
+    .join('\n')
 }
 
 function rawMessageText(event: RawEvent): string {
@@ -62,6 +78,12 @@ type ExecutionDetailItem = {
   payload: unknown
   ts: number
 }
+
+type TimelineFilter = 'all' | 'message' | 'tools' | 'plan'
+
+type TimelineItem =
+  | ({ type: 'message'; filter: 'message' } & MessageDetailItem)
+  | ({ type: 'execution'; filter: 'thinking' | 'tools' | 'plan'; item: ExecutionDetailItem; ts: number; id: string })
 
 type DetailBadgeTone = 'user' | 'assistant' | 'thinking' | 'tool' | 'todo' | 'plan'
 
@@ -161,6 +183,48 @@ function ExecutionDetailRow({ item }: { item: ExecutionDetailItem }) {
   )
 }
 
+function TimelineRow({ item }: { item: TimelineItem }) {
+  if (item.type === 'message') return <MessageDetailRow item={item} />
+  return <ExecutionDetailRow item={item.item} />
+}
+
+function TimelineFilterControl({
+  value,
+  onChange,
+}: {
+  value: TimelineFilter
+  onChange: (value: TimelineFilter) => void
+}) {
+  const options: Array<{ value: TimelineFilter; label: string }> = [
+    { value: 'all', label: 'all' },
+    { value: 'message', label: 'message' },
+    { value: 'tools', label: 'tools' },
+    { value: 'plan', label: 'plan' },
+  ]
+  return (
+    <div className="mb-3 flex items-center gap-1.5">
+      {options.map((option) => {
+        const active = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            className="rounded px-2 py-1 text-[10.5px] transition-opacity hover:opacity-85"
+            style={{
+              background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${active ? 'rgba(10,132,255,0.42)' : 'var(--hairline)'}`,
+              color: active ? '#7DB7FF' : 'var(--fg-muted)',
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function DetailSection({
   title,
   children,
@@ -200,6 +264,7 @@ function MindMapDetail({
   planItems: PlanItem[]
   onFocus: (messageId: string) => void
 }) {
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all')
   if (!selected) {
     return <EmptyHint text="选择一个节点查看治理过程" />
   }
@@ -282,6 +347,19 @@ function MindMapDetail({
       ts: Number.MAX_SAFE_INTEGER - relevantPlanItems.length + index,
     })),
   ].sort((a, b) => a.ts - b.ts)
+  const timelineItems: TimelineItem[] = [
+    ...messageItems.map((item): TimelineItem => ({ ...item, type: 'message', filter: 'message' })),
+    ...executionItems.map((item): TimelineItem => ({
+      id: item.id,
+      type: 'execution',
+      filter: item.kind === 'tool_use' ? 'tools' : item.kind === 'plan' || item.kind === 'todo' ? 'plan' : 'thinking',
+      item,
+      ts: item.ts,
+    })),
+  ].sort((a, b) => a.ts - b.ts)
+  const filteredTimelineItems = timelineFilter === 'all'
+    ? timelineItems
+    : timelineItems.filter((item) => item.filter === timelineFilter)
 
   return (
     <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
@@ -335,16 +413,15 @@ function MindMapDetail({
           </section>
         )}
 
-        <DetailSection title="消息明细" empty={messageItems.length === 0}>
-          <div className="flex flex-col gap-2">
-            {messageItems.map((item) => <MessageDetailRow key={item.id} item={item} />)}
-          </div>
-        </DetailSection>
-
-        <DetailSection title={`执行明细 · ${toolEvents.length} 个工具`} empty={executionItems.length === 0}>
-          <div className="flex flex-col gap-2">
-            {executionItems.map((item) => <ExecutionDetailRow key={item.id} item={item} />)}
-          </div>
+        <DetailSection title="节点时间线">
+          <TimelineFilterControl value={timelineFilter} onChange={setTimelineFilter} />
+          {filteredTimelineItems.length === 0 ? (
+            <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {filteredTimelineItems.map((item) => <TimelineRow key={item.id} item={item} />)}
+            </div>
+          )}
         </DetailSection>
       </div>
     </aside>

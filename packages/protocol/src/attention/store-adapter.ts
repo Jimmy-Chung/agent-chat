@@ -22,6 +22,8 @@ export interface StoreToRawEventsInput {
   todos?: TodoSnapshotItem[]
   /** topic 当前 plan 文本快照（planByTopic[topicId]）。 */
   plan?: string
+  /** 服务端已持久化的运行时事件，例如 adapter todo/plan update。 */
+  runtimeEvents?: RawEvent[]
 }
 
 export interface AttentionInteraction {
@@ -88,7 +90,7 @@ export function classifyUserKind(text: string): UserMessageKind {
 }
 
 /** 把 plan 文本快照拆成条目（按行，去掉常见 bullet / 序号前缀）。 */
-function planTextToItems(plan: string): Array<{ id: string; text: string; status: string; depth: number }> {
+export function planTextToItems(plan: string): Array<{ id: string; text: string; status: string; depth: number }> {
   return plan
     .split('\n')
     .map((line) => {
@@ -295,6 +297,9 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
       message_id: messages[messages.length - 1]?.id,
       payload: { text: input.plan, items: planTextToItems(input.plan) },
     })
+  }
+  if (input.runtimeEvents?.length) {
+    events.push(...input.runtimeEvents)
   }
 
   return events.sort((a, b) => {

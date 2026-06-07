@@ -184,6 +184,24 @@ export const interactions = sqliteTable('interactions', {
   resolvedAt: integer('resolved_at'),
 })
 
+// ─── topic_runtime_events ───────────────────────────────────────────
+
+export const topicRuntimeEvents = sqliteTable('topic_runtime_events', {
+  id: text('id').primaryKey(),
+  topicId: text('topic_id')
+    .notNull()
+    .references(() => topics.id, { onDelete: 'cascade' }),
+  kind: text('kind', {
+    enum: ['todo', 'plan'],
+  }).notNull(),
+  ts: integer('ts').notNull(),
+  messageId: text('message_id'),
+  payloadJson: text('payload_json').notNull(),
+}, (table) => [
+  index('idx_topic_runtime_events_topic_ts').on(table.topicId, table.ts),
+  index('idx_topic_runtime_events_topic_kind_ts').on(table.topicId, table.kind, table.ts),
+])
+
 // ─── attention_goal_snapshots ───────────────────────────────────────
 
 export const attentionGoalSnapshots = sqliteTable('attention_goal_snapshots', {
@@ -288,6 +306,7 @@ export const topicsRelations = relations(topics, ({ many }) => ({
   artifacts: many(artifacts),
   cronJobs: many(cronJobs),
   interactions: many(interactions),
+  runtimeEvents: many(topicRuntimeEvents),
 }))
 
 export const messagesRelations = relations(messages, ({ one, many }) => ({
