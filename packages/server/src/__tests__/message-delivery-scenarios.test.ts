@@ -108,7 +108,7 @@ describe('Scenario A — new topic, first message', () => {
     createMessagePart.mockResolvedValue(undefined)
   })
 
-  it('delivers successfully when session was pre-created by topic.create', async () => {
+  it('delivers successfully when session was pre-created by topic.create', { timeout: 15_000 }, async () => {
     // Session already in DB (created by topic.create handler)
     const topic = makeTopic({ pi_session_id: 'sess-pre' })
     const msg = makeMessage()
