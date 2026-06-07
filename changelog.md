@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-07 [v1.10.18] — fix: Attention 动态树节点重叠
+
+- `BRANCH_Y` 230→360：分支节点往下移，避开展开子节点底部（原 ~290px vs 230px 重叠 60px）。
+- 分支深度间距 90→140：每层分支之间留足空间。
+- 嵌套/Exchange 子项 X 间距 250→280：节点宽度 240px 不再挤压。
+
 ## 2026-06-07 [v1.10.17] — fix: Attention LLM 输出截断 + 前端透传错误原因
 
 - `MAX_OUTPUT_TOKENS` 2400→4096，`DEFAULT_TIMEOUT_MS` 45s→60s。10 节点以上场景 DeepSeek 输出打满 2400 tokens 触发 `length` 截断 → JSON 不完整 → `parse_error`，40s+ 耗时也踩 45s 超时线，均已实测验证。

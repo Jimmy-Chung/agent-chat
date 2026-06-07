@@ -41,7 +41,7 @@ const ROOT_Y = 0
 const START_X = 300
 const STEP_X = 270
 const MAIN_Y = 0
-const BRANCH_Y = 230
+const BRANCH_Y = 360
 const SUBGRAPH_Y = 210
 
 function cleanTitleText(text: string | null | undefined): string {
@@ -193,10 +193,10 @@ export function buildMindMapProjection(
     const y = opts.nested
       ? SUBGRAPH_Y + (topic?.relation === 'branch' ? BRANCH_Y : 0)
       : relation === 'branch'
-        ? BRANCH_Y + Math.max(0, (topic?.depth ?? 1) - 1) * 90
+        ? BRANCH_Y + Math.max(0, (topic?.depth ?? 1) - 1) * 140
         : MAIN_Y
     const x = opts.nested
-      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 250
+      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 280
       : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X
     outputNodes.push({
       id,
@@ -242,7 +242,7 @@ export function buildMindMapProjection(
           hasChildren: false,
           status: traceNode.status,
           position: {
-            x: x + index * 250,
+            x: x + index * 280,
             y: y + SUBGRAPH_Y,
           },
         })
