@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-07 [v1.10.22] — fix: Sidebar 版本展示同步到最新补丁
+
+- Sidebar 硬编码版本从 `v1.10.19` 更新到 `v1.10.22`，避免发版后左下角仍显示旧版本。
+
+## 2026-06-07 [v1.10.21] — fix: Provider 切换按 group 生效，避免 Codex UI 状态错乱
+
+- Sidebar / Provider 管理弹窗按 `claude-code` / `codex` / `pi-agent` 分组计算 active provider，不再用第一个全局 `isActive` 覆盖当前 tab。
+- 切换 provider 的乐观更新只影响同组，保留其它组的 active 状态。
+
 ## 2026-06-07 [v1.10.20] — fix: Attention 快照按 topic 隔离，避免同目录重建读到旧图
 
 - `useAttentionTrace` 在 topic 切换时清空本地 goals / activeGoal / snapshot / rebuild cache，并丢弃异步回来的旧 topic 数据。
