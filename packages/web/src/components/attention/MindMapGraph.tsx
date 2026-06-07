@@ -34,6 +34,8 @@ const WIDTH: Record<MindMapNode['kind'], number> = {
   user: 220,
   aggregate: 240,
 }
+const NODE_HEIGHT = 132
+const NODE_GAP = 16
 
 function nodeKindLabel(node: MindMapNode): string {
   if (node.current) return '当前节点'
@@ -322,6 +324,48 @@ const nodeTypes: NodeTypes = { mind: MindMapFlowNode }
 const edgeTypes: EdgeTypes = { mind: MindMapEdgeComponent }
 type MindFlowNode = Node<Record<string, unknown>, 'mind'>
 
+function flowMindNode(node: MindFlowNode): MindMapNode {
+  return (node.data as MindMapFlowNodeData).node
+}
+
+function nodesOverlap(a: MindFlowNode, b: MindFlowNode): boolean {
+  const aNode = flowMindNode(a)
+  const bNode = flowMindNode(b)
+  const aLeft = a.position.x - NODE_GAP
+  const aRight = a.position.x + WIDTH[aNode.kind] + NODE_GAP
+  const aTop = a.position.y - NODE_GAP
+  const aBottom = a.position.y + NODE_HEIGHT + NODE_GAP
+  const bLeft = b.position.x
+  const bRight = b.position.x + WIDTH[bNode.kind]
+  const bTop = b.position.y
+  const bBottom = b.position.y + NODE_HEIGHT
+  return aLeft < bRight && aRight > bLeft && aTop < bBottom && aBottom > bTop
+}
+
+function avoidDraggedNodeOverlaps(nodes: MindFlowNode[], movedIds: Set<string>): MindFlowNode[] {
+  let next = nodes
+  for (const movedId of movedIds) {
+    const index = next.findIndex((node) => node.id === movedId)
+    if (index < 0) continue
+    let candidate = next[index]
+    let guard = 0
+    while (guard < next.length + 6 && next.some((node) => node.id !== candidate.id && nodesOverlap(candidate, node))) {
+      candidate = {
+        ...candidate,
+        position: {
+          x: candidate.position.x,
+          y: candidate.position.y + NODE_HEIGHT + NODE_GAP,
+        },
+      }
+      guard += 1
+    }
+    if (candidate !== next[index]) {
+      next = next.map((node, i) => (i === index ? candidate : node))
+    }
+  }
+  return next
+}
+
 export default function MindMapGraph({
   nodes,
   goalAnchor,
@@ -351,28 +395,41 @@ export default function MindMapGraph({
 }) {
   const didFitViewRef = useRef(false)
   const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
+  const dragProjectionSignatureRef = useRef('')
   const projection = useMemo(
     () => providedProjection ?? buildMindMapProjection(nodes, goalAnchor, planItems, expandedIds),
     [providedProjection, nodes, goalAnchor, planItems, expandedIds],
+  )
+  const projectionSignature = useMemo(
+    () => projection.nodes.map((node) => `${node.id}:${node.position.x},${node.position.y}`).join('|'),
+    [projection.nodes],
   )
   const projectedNodes = useMemo(
     (): MindFlowNode[] => projection.nodes.map((node) => ({
       id: node.id,
       type: 'mind',
-      position: draggedPositionsRef.current[node.id] ?? node.position,
+      position: dragProjectionSignatureRef.current === projectionSignature
+        ? draggedPositionsRef.current[node.id] ?? node.position
+        : node.position,
       data: { node, onFocus, onUpdateGoal, remainingGoalEdits },
       selected: node.id === selectedId,
     })),
-    [onFocus, onUpdateGoal, remainingGoalEdits, projection.nodes, selectedId],
+    [onFocus, onUpdateGoal, remainingGoalEdits, projection.nodes, projectionSignature, selectedId],
   )
   const [displayNodes, setDisplayNodes] = useState<MindFlowNode[]>(projectedNodes)
   useEffect(() => {
+    if (dragProjectionSignatureRef.current !== projectionSignature) {
+      draggedPositionsRef.current = {}
+      dragProjectionSignatureRef.current = projectionSignature
+      setDisplayNodes(projectedNodes)
+      return
+    }
     const visibleIds = new Set(projectedNodes.map((node) => node.id))
     draggedPositionsRef.current = Object.fromEntries(
       Object.entries(draggedPositionsRef.current).filter(([id]) => visibleIds.has(id)),
     )
     setDisplayNodes(projectedNodes)
-  }, [projectedNodes])
+  }, [projectedNodes, projectionSignature])
   const rfEdges = useMemo(
     () => projection.edges.map((edge) => ({
       id: edge.id,
@@ -386,11 +443,20 @@ export default function MindMapGraph({
   )
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setDisplayNodes((current) => {
-      const next = applyNodeChanges(changes, current) as MindFlowNode[]
+      const changedPositionIds = new Set<string>()
+      const droppedPositionIds = new Set<string>()
       for (const change of changes) {
         if (change.type !== 'position') continue
-        const node = next.find((entry) => entry.id === change.id)
-        if (node) draggedPositionsRef.current[change.id] = node.position
+        changedPositionIds.add(change.id)
+        if ((change as { dragging?: boolean }).dragging !== true) droppedPositionIds.add(change.id)
+      }
+      const applied = applyNodeChanges(changes, current) as MindFlowNode[]
+      const next = droppedPositionIds.size > 0
+        ? avoidDraggedNodeOverlaps(applied, droppedPositionIds)
+        : applied
+      for (const id of changedPositionIds) {
+        const node = next.find((entry) => entry.id === id)
+        if (node) draggedPositionsRef.current[id] = node.position
       }
       return next
     })

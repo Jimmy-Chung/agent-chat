@@ -29,6 +29,27 @@ function node(id: string, over: Partial<TraceNode> = {}): TraceNode {
   }
 }
 
+function expectUniquePositions(projection: ReturnType<typeof buildMindMapProjection>) {
+  const seen = new Map<string, string>()
+  for (const entry of projection.nodes) {
+    const key = `${entry.position.x},${entry.position.y}`
+    expect(seen.get(key), `${entry.id} overlaps ${seen.get(key)} at ${key}`).toBeUndefined()
+    seen.set(key, entry.id)
+  }
+}
+
+function expectNormalEdgeLengths(projection: ReturnType<typeof buildMindMapProjection>) {
+  const byId = new Map(projection.nodes.map((entry) => [entry.id, entry]))
+  for (const edge of projection.edges) {
+    const source = byId.get(edge.source)
+    const target = byId.get(edge.target)
+    expect(source, `missing source ${edge.source}`).toBeTruthy()
+    expect(target, `missing target ${edge.target}`).toBeTruthy()
+    if (!source || !target) continue
+    expect(Math.abs(target.position.x - source.position.x), `${edge.source} -> ${edge.target} is too long`).toBeLessThanOrEqual(300)
+  }
+}
+
 describe('attention-x conversation tree governance', () => {
   it('groups long chat turns into collapsed topic nodes while keeping the active topic expanded', () => {
     const tree = governConversationTree([
@@ -93,9 +114,10 @@ describe('attention-x conversation tree governance', () => {
 
     const branch = projection.nodes.find((entry) => entry.id === 'agg_topic_branch_n2')
     const n4 = projection.nodes.find((entry) => entry.id === 'user_n4')
-    expect(branch?.position.x).toBeLessThan(n4?.position.x ?? 0)
+    expect(branch?.position.x).toBeLessThanOrEqual(n4?.position.x ?? 0)
     expect(branch?.position.y).toBeGreaterThan(projection.nodes.find((entry) => entry.id === 'user_n1')?.position.y ?? 0)
     expect(branch?.title).toContain('突然讨论 B')
+    expectNormalEdgeLengths(projection)
   })
 
   it('expands an aggregate node into a local user-message subgraph', () => {
@@ -294,6 +316,7 @@ describe('attention-x conversation tree governance', () => {
     const aggregate = collapsed.nodes.find((entry) => entry.kind === 'aggregate' && entry.aggregation?.reason === 'capacity_compact')
     expect(aggregate?.hasChildren).toBe(true)
     expect(aggregate?.collapsed).toBe(true)
+    expectUniquePositions(collapsed)
 
     const expanded = buildMindMapProjection(nodes, GOAL, [], new Set([aggregate?.id ?? '']), {
       topicTurnLimit: 30,
@@ -301,6 +324,30 @@ describe('attention-x conversation tree governance', () => {
       maxDirectChildren: 10,
     })
     expect(expanded.nodes.some((entry) => entry.id.startsWith('nested_n'))).toBe(true)
+    expectUniquePositions(expanded)
+    expectNormalEdgeLengths(expanded)
+  })
+
+  it('keeps long mainline aggregate projections compact without overlapping nodes', () => {
+    const projection = buildMindMapProjection(
+      Array.from({ length: 10 }, (_, index) =>
+        node(`n${index + 1}`, {
+          user_message: index === 0 ? '描述问题并启动排查' : `继续排查 Attention 节点 ${index + 1}`,
+          goal_distance: 0.12,
+          step_count: index % 2 === 0 ? 6 : 4,
+        }),
+      ),
+      {
+        raw_query: '排查注意力节点LLM调用失败导致前端回退显示',
+        normalized_goal: '排查注意力节点LLM调用失败导致前端回退显示',
+        ts: 0,
+      },
+      [],
+    )
+
+    expect(projection.nodes.some((entry) => entry.kind === 'aggregate')).toBe(true)
+    expectUniquePositions(projection)
+    expectNormalEdgeLengths(projection)
   })
 
   it('uses summary titles for long user and aggregate nodes instead of truncating raw text', () => {

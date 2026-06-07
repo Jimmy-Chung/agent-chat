@@ -43,6 +43,7 @@ const STEP_X = 270
 const MAIN_Y = 0
 const BRANCH_Y = 360
 const SUBGRAPH_Y = 210
+const COLLISION_Y_GAP = 160
 
 function cleanTitleText(text: string | null | undefined): string {
   return (text ?? '')
@@ -113,6 +114,51 @@ function sourceSummary(traceNodes: TraceNode[], sourceNodeIds: string[]): string
   const turnCount = sources.reduce((sum, node) => sum + Math.max(1, traceMessageCount(node)), 0)
   const toolCount = sources.reduce((sum, node) => sum + node.step_count, 0)
   return `${turnCount} 轮用户输入${toolCount ? ` · ${toolCount} 工具` : ''}`
+}
+
+function resolvePositionCollisions(nodes: MindMapNode[]): MindMapNode[] {
+  const occupied = new Set<string>()
+  return nodes.map((node) => {
+    let position = node.position
+    while (occupied.has(`${position.x},${position.y}`)) {
+      position = { x: position.x, y: position.y + COLLISION_Y_GAP }
+    }
+    occupied.add(`${position.x},${position.y}`)
+    return position === node.position ? node : { ...node, position }
+  })
+}
+
+function compactColumnsByVisibleEdges(nodes: MindMapNode[], edges: MindMapEdge[]): MindMapNode[] {
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  const columns = new Map<string, number>([[nodes[0]?.id ?? '', 0]])
+
+  for (let pass = 0; pass < edges.length + nodes.length; pass++) {
+    let changed = false
+    for (const edge of edges) {
+      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue
+      const sourceColumn = columns.get(edge.source)
+      if (sourceColumn === undefined) continue
+      const nextColumn = sourceColumn + 1
+      const current = columns.get(edge.target)
+      if (current === undefined || nextColumn > current) {
+        columns.set(edge.target, nextColumn)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+
+  let fallbackColumn = Math.max(0, ...columns.values())
+  return nodes.map((node) => {
+    let column = columns.get(node.id)
+    if (column === undefined) {
+      fallbackColumn += 1
+      column = fallbackColumn
+      columns.set(node.id, column)
+    }
+    const x = column === 0 ? ROOT_X : START_X + (column - 1) * STEP_X
+    return node.position.x === x ? node : { ...node, position: { ...node.position, x } }
+  })
 }
 
 export function buildMindMapProjection(
@@ -352,5 +398,5 @@ export function buildMindMapProjection(
     }
   }
 
-  return { nodes: outputNodes, edges: outputEdges }
+  return { nodes: resolvePositionCollisions(compactColumnsByVisibleEdges(outputNodes, outputEdges)), edges: outputEdges }
 }
