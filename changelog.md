@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-07 [v1.10.20] — fix: Attention 快照按 topic 隔离，避免同目录重建读到旧图
+
+- `useAttentionTrace` 在 topic 切换时清空本地 goals / activeGoal / snapshot / rebuild cache，并丢弃异步回来的旧 topic 数据。
+- 读取 snapshot / rebuild 结果时校验 `snapshot.topic_id === 当前 topicId`，防止旧 goalId 的快照显示到新话题。
+- 新增回归测试覆盖删除旧话题后重建同目录话题时，不展示旧 Attention 图。
+
 ## 2026-06-07 [v1.10.19] — fix: emitAggregateNode 支持嵌套模式，修复展开子 topic 重叠
 
 - `emitAggregateNode` 在展开父节点内被调用时走嵌套偏移（Y: SUBGRAPH_Y + 深度*140, X: order*280），不再用全局 MAIN_Y 跟主节点重叠。

@@ -102,4 +102,81 @@ describe('Attention server-owned hook', () => {
     expect(calls.filter((call) => call.url.endsWith('/attention/goals/g1/rebuild'))).toHaveLength(1)
     expect(calls.find((call) => call.url.endsWith('/attention/goals/g1/rebuild'))?.body).toBe('{}')
   })
+
+  it('切换 topic 时不会显示上一个 topic 的 attention snapshot', async () => {
+    const goal = (id: string, topicId: string, text: string) => ({
+      id,
+      topic_id: topicId,
+      goal_text: text,
+      title: '默认目标',
+      is_default: true,
+      active: true,
+      source_message_count: 1,
+      source_last_event_ts: 2,
+      created_at: 1,
+      updated_at: 1,
+      has_snapshot: true,
+    })
+    const snapshot = (id: string, topicId: string, text: string, conclusion: string) => ({
+      ...goal(id, topicId, text),
+      goal_json: JSON.stringify({ raw_query: text, normalized_goal: text, ts: 1 }),
+      raw_events_json: JSON.stringify([{ id: `${topicId}_event`, ts: 1, kind: 'message', role: 'user', payload: { text } }]),
+      candidates_json: '[]',
+      interpret_json: '{}',
+      trace_nodes_json: JSON.stringify([{
+        id: `${topicId}_cand`,
+        parent_id: null,
+        branch_id: 'main',
+        user_message: text,
+        intent: text,
+        rationale: null,
+        conclusion,
+        planned_ref: null,
+        alignment: 'unplanned',
+        goal_distance: 0.1,
+        status: 'done',
+        event_ids: [`${topicId}_event`],
+        source_message_ids: [`${topicId}_message`],
+        step_count: 0,
+        ts_start: 1,
+        ts_end: 2,
+      }]),
+      plan_items_json: '[]',
+      degraded_reason: null,
+    })
+
+    const oldSnapshot = snapshot('old_goal', 'old_topic', '旧目录目标', '旧图节点')
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL) => {
+      const path = String(url)
+      if (path.endsWith('/attention/goals/old_topic')) {
+        return Response.json({ goals: [goal('old_goal', 'old_topic', '旧目录目标')] })
+      }
+      if (path.endsWith('/attention/goals/old_goal/snapshot')) {
+        return Response.json({ snapshot: oldSnapshot })
+      }
+      if (path.endsWith('/attention/goals/new_topic')) {
+        return Response.json({ goals: [goal('new_goal', 'new_topic', '新目录目标')] })
+      }
+      if (path.endsWith('/attention/goals/new_goal/snapshot')) {
+        return Response.json({ snapshot: oldSnapshot })
+      }
+      if (path.endsWith('/attention/goals/new_goal/rebuild')) {
+        return Response.json({ ok: true, snapshot: oldSnapshot })
+      }
+      return Response.json({}, { status: 404 })
+    }))
+
+    const { result, rerender } = renderHook(
+      ({ topicId }) => useAttentionTrace(topicId),
+      { initialProps: { topicId: 'old_topic' } },
+    )
+    await waitFor(() => expect(result.current.nodes[0]?.conclusion).toBe('旧图节点'))
+
+    rerender({ topicId: 'new_topic' })
+    expect(result.current.nodes).toHaveLength(0)
+
+    await waitFor(() => expect(result.current.activeGoalId).toBe('new_goal'))
+    expect(result.current.nodes).toHaveLength(0)
+    expect(result.current.goalAnchor?.normalized_goal).toBe('新目录目标')
+  })
 })

@@ -200,6 +200,7 @@ async function renameAttentionGoal(input: {
 
 async function loadGoalSnapshot(input: {
   goalId: string
+  topicId: string
   serverBase: string
   token?: string
 }): Promise<{ snapshot: LoadedSnapshot | null; degradedReason: string | null }> {
@@ -207,12 +208,14 @@ async function loadGoalSnapshot(input: {
     `${input.serverBase}/api/agent-chat/v1/attention/goals/${input.goalId}/snapshot`,
     { headers: authHeaders(input.token) },
   )
-  const degradedReason = body?.snapshot?.degraded_reason ?? null
-  return { snapshot: body?.snapshot ? toLoadedSnapshot(body.snapshot) : null, degradedReason }
+  const snapshot = body?.snapshot?.topic_id === input.topicId ? body.snapshot : null
+  const degradedReason = snapshot?.degraded_reason ?? null
+  return { snapshot: snapshot ? toLoadedSnapshot(snapshot) : null, degradedReason }
 }
 
 async function rebuildGoalSnapshot(input: {
   goalId: string
+  topicId: string
   serverBase: string
   token?: string
 }): Promise<{ snapshot: LoadedSnapshot | null; degradedReason: string | null }> {
@@ -230,8 +233,9 @@ async function rebuildGoalSnapshot(input: {
       signal: AbortSignal.timeout(55_000),
     },
   )
-  const degradedReason = body?.degraded ? body.reason ?? body.snapshot?.degraded_reason ?? 'unknown' : body?.snapshot?.degraded_reason ?? null
-  return { snapshot: body?.snapshot ? toLoadedSnapshot(body.snapshot) : null, degradedReason }
+  const snapshot = body?.snapshot?.topic_id === input.topicId ? body.snapshot : null
+  const degradedReason = body?.degraded ? body.reason ?? snapshot?.degraded_reason ?? 'unknown' : snapshot?.degraded_reason ?? null
+  return { snapshot: snapshot ? toLoadedSnapshot(snapshot) : null, degradedReason }
 }
 
 export function useAttentionTrace(topicId: string): AttentionTrace {
@@ -255,11 +259,26 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
   const lastRebuildKeyRef = useRef<string | null>(null)
+  const topicIdRef = useRef(topicId)
+  topicIdRef.current = topicId
+
+  useEffect(() => {
+    setGoals([])
+    setActiveGoalId(null)
+    setGoalDraft('')
+    setSnapshot(null)
+    setLlmUnavailableReason(null)
+    setIsAnalyzing(false)
+    setIsLoadingSnapshot(false)
+    lastRebuildKeyRef.current = null
+  }, [topicId])
 
   const reloadGoals = useCallback(async () => {
     const serverBase = getServerBase()
     const token = getToken()
-    const loaded = await listAttentionGoals({ topicId, serverBase, token })
+    const loaded = (await listAttentionGoals({ topicId, serverBase, token }))
+      .filter((goal) => goal.topic_id === topicId)
+    if (topicIdRef.current !== topicId) return
     setGoals(loaded)
     const active = loaded.find((goal) => goal.active) ?? loaded[0] ?? null
     setActiveGoalId((prev) => (prev && loaded.some((goal) => goal.id === prev) ? prev : active?.id ?? null))
@@ -271,15 +290,16 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     if (!opts.force && lastRebuildKeyRef.current === key) return
     lastRebuildKeyRef.current = key
     setIsAnalyzing(true)
-    const result = await rebuildGoalSnapshot({ goalId, serverBase: getServerBase(), token: getToken() }).catch(() => ({
+    const result = await rebuildGoalSnapshot({ goalId, topicId, serverBase: getServerBase(), token: getToken() }).catch(() => ({
       snapshot: null,
       degradedReason: 'fetch_error',
     }))
+    if (topicIdRef.current !== topicId) return
     setIsAnalyzing(false)
     if (result.snapshot) setSnapshot(result.snapshot)
     setLlmUnavailableReason(result.degradedReason ?? null)
     void reloadGoals()
-  }, [reloadGoals, sourceSignal])
+  }, [reloadGoals, sourceSignal, topicId])
 
   useEffect(() => {
     let cancelled = false
@@ -287,11 +307,14 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     const token = getToken()
     listAttentionGoals({ topicId, serverBase, token }).then(async (loaded) => {
       if (cancelled) return
-      let nextGoals = loaded
+      let nextGoals = loaded.filter((goal) => goal.topic_id === topicId)
       if (!nextGoals.some((goal) => goal.is_default)) {
         const defaultGoal = await ensureDefaultGoal({ topicId, serverBase, token })
         if (cancelled) return
-        if (defaultGoal) nextGoals = await listAttentionGoals({ topicId, serverBase, token })
+        if (defaultGoal) {
+          nextGoals = (await listAttentionGoals({ topicId, serverBase, token }))
+            .filter((goal) => goal.topic_id === topicId)
+        }
       }
       setGoals(nextGoals)
       const active = nextGoals.find((goal) => goal.active) ?? nextGoals[0] ?? null
@@ -303,9 +326,13 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     }
   }, [topicId])
 
+  const topicGoals = useMemo(
+    () => goals.filter((goal) => goal.topic_id === topicId),
+    [goals, topicId],
+  )
   const activeGoal = useMemo(
-    () => goals.find((goal) => goal.id === activeGoalId) ?? null,
-    [activeGoalId, goals],
+    () => topicGoals.find((goal) => goal.id === activeGoalId) ?? null,
+    [activeGoalId, topicGoals],
   )
 
   useEffect(() => {
@@ -319,7 +346,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     }
     let cancelled = false
     setIsLoadingSnapshot(true)
-    loadGoalSnapshot({ goalId: activeGoalId, serverBase: getServerBase(), token: getToken() }).then((loaded) => {
+    loadGoalSnapshot({ goalId: activeGoalId, topicId, serverBase: getServerBase(), token: getToken() }).then((loaded) => {
       if (cancelled) return
       setSnapshot((current) => {
         if (!loaded.snapshot && current?.meta.id === activeGoalId) return current
@@ -335,7 +362,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     return () => {
       cancelled = true
     }
-  }, [activeGoalId, rebuild])
+  }, [activeGoalId, rebuild, topicId])
 
   useEffect(() => {
     if (!activeGoalId || hasLiveMessages || agentStatus !== 'idle') return
@@ -378,15 +405,17 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     setGoals((prev) => prev.map((goal) => (goal.id === goalId ? { ...goal, title: renamed.title, updated_at: renamed.updated_at } : goal)))
   }, [])
 
+  const visibleSnapshot = snapshot?.meta.topic_id === topicId ? snapshot : null
+
   return {
-    nodes: snapshot?.nodes ?? [],
-    goalAnchor: snapshot?.goalAnchor ?? (activeGoal ? { raw_query: activeGoal.goal_text, normalized_goal: activeGoal.goal_text, ts: activeGoal.created_at } : null),
-    planItems: snapshot?.planItems ?? [],
-    rawEvents: snapshot?.rawEvents ?? [],
+    nodes: visibleSnapshot?.nodes ?? [],
+    goalAnchor: visibleSnapshot?.goalAnchor ?? (activeGoal ? { raw_query: activeGoal.goal_text, normalized_goal: activeGoal.goal_text, ts: activeGoal.created_at } : null),
+    planItems: visibleSnapshot?.planItems ?? [],
+    rawEvents: visibleSnapshot?.rawEvents ?? [],
     isAnalyzing: isAnalyzing || (hasLiveMessages && agentStatus !== 'idle'),
     isLoadingSnapshot,
     llmUnavailableReason,
-    goals,
+    goals: topicGoals,
     activeGoal,
     activeGoalId,
     goalDraft,
