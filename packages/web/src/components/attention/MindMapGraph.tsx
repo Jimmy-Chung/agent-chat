@@ -146,8 +146,8 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
         cursor: 'default',
       }}
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="target-left" type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="target-top" type="target" position={Position.Top} style={{ opacity: 0 }} />
 
       {/* Header: dot · kind · tag · actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
@@ -252,8 +252,8 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
         </button>
       )}
 
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle id="source-right" type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="source-bottom" type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   )
 }
@@ -326,6 +326,12 @@ type MindFlowNode = Node<Record<string, unknown>, 'mind'>
 
 function flowMindNode(node: MindFlowNode): MindMapNode {
   return (node.data as MindMapFlowNodeData).node
+}
+
+function flowEdgeHandles(source: MindMapNode | undefined, target: MindMapNode | undefined) {
+  if (!source || !target) return { sourceHandle: 'source-right', targetHandle: 'target-left' }
+  if (target.position.x <= source.position.x) return { sourceHandle: 'source-bottom', targetHandle: 'target-top' }
+  return { sourceHandle: 'source-right', targetHandle: 'target-left' }
 }
 
 function nodesOverlap(a: MindFlowNode, b: MindFlowNode): boolean {
@@ -431,15 +437,19 @@ export default function MindMapGraph({
     setDisplayNodes(projectedNodes)
   }, [projectedNodes, projectionSignature])
   const rfEdges = useMemo(
-    () => projection.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      type: 'mind' as const,
-      data: { kind: edge.kind },
-      animated: false,
-    })),
-    [projection.edges],
+    () => {
+      const nodesById = new Map(projection.nodes.map((node) => [node.id, node]))
+      return projection.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        ...flowEdgeHandles(nodesById.get(edge.source), nodesById.get(edge.target)),
+        type: 'mind' as const,
+        data: { kind: edge.kind },
+        animated: false,
+      }))
+    },
+    [projection.edges, projection.nodes],
   )
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setDisplayNodes((current) => {

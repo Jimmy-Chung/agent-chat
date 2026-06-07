@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-08 [v1.10.24] — fix: Attention mirror 左侧绕线
+
+- Attention mind map 的 React Flow 边改为按节点坐标选择连接 handle。
+- 横向边固定走 `right -> left`，同列或回接边固定走 `bottom -> top`，避免左侧出现长贝塞尔绕线。
+
 ## 2026-06-08 [v1.10.23] — fix: Attention mirror 图节点避让与聚合边长
 
 - Attention mind map 改为按可见边压缩列，聚合节点后的下一节点不再按原始 trace order 拉成长线。
