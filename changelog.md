@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-07 [v1.10.15] — feat: Attention 全尺寸面板 UI 重做（S16 设计稿）
+
+- Attention 抽屉顶部栏：SVG 图标 + "Attention" 标题 + 重置视图按钮，去掉旧的二级 chrome header。
+- Canvas 节点样式全面对齐设计稿：目标节点蓝色边框+光晕、当前节点橙色脉冲动画（`attn-node-cur`）、支线节点蓝色虚线边框、聚合节点浅蓝边框；连接边主链蓝色实线、支线蓝色虚线。
+- 新增"更新目标" modal：点击目标节点内联按钮弹出，含文本区 + 历史 radio 列表 + 剩余次数计数器。
+- 详情面板宽度 340→384px；Filter tabs 重设计（All/Message/Todo/Plan/Tools 含数量角标），Todo 从 plan 独立拆出。
+- 节点头 chips 重设计：role chip（monospace）+ 当前节点 chip（橙色脉冲点）+ Focus 准星图标。
+- 修复展开节点互相叠压 bug：nested/exchange 节点 x-step 从 120/180px 增至 250px。
+- 版本显示更新为 `v1.10.15`。
+
 ## 2026-06-07 [v1.10.14] — feat: Attention 节点时间线与运行事件持久化
 
 - 新增 `topic_runtime_events` 持久化 adapter 推送的 `todo.update` / `plan.update`，刷新后可恢复最新 todo/plan 状态。

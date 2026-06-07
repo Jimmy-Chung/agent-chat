@@ -3,8 +3,7 @@
 import { useMemo, useState, useCallback, type KeyboardEvent, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import type { AttentionGoalMeta, GoalAnchor, PlanItem, RawEvent, TraceNode } from '@/lib/attention'
-import { attentionGoalTitle } from '@/lib/attention'
-import { resolveFocusMessageId } from '@/lib/attention'
+import { attentionGoalTitle, resolveFocusMessageId } from '@/lib/attention'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { projectPlanGraph } from '@/lib/attention/plan-projector'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
@@ -79,11 +78,11 @@ type ExecutionDetailItem = {
   ts: number
 }
 
-type TimelineFilter = 'all' | 'message' | 'tools' | 'plan'
+type TimelineFilter = 'all' | 'message' | 'todo' | 'tools' | 'plan'
 
 type TimelineItem =
   | ({ type: 'message'; filter: 'message' } & MessageDetailItem)
-  | ({ type: 'execution'; filter: 'thinking' | 'tools' | 'plan'; item: ExecutionDetailItem; ts: number; id: string })
+  | ({ type: 'execution'; filter: 'thinking' | 'tools' | 'plan' | 'todo'; item: ExecutionDetailItem; ts: number; id: string })
 
 type DetailBadgeTone = 'user' | 'assistant' | 'thinking' | 'tool' | 'todo' | 'plan'
 
@@ -169,7 +168,7 @@ function ExecutionDetailRow({ item }: { item: ExecutionDetailItem }) {
       >
         <DetailBadge label={executionBadgeLabel(item.kind)} tone={executionTone(item.kind)} />
         <span className="shrink-0 font-medium">{item.title}</span>
-        <span className="truncate" style={{ color: 'var(--fg-muted)' }}>{item.preview.slice(0, 120)}</span>
+        <span className="truncate" style={{ color: 'var(--fg-dim)' }}>{item.preview.slice(0, 120)}</span>
       </button>
       {open && (
         <div className="px-2.5 pb-2">
@@ -188,43 +187,6 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   return <ExecutionDetailRow item={item.item} />
 }
 
-function TimelineFilterControl({
-  value,
-  onChange,
-}: {
-  value: TimelineFilter
-  onChange: (value: TimelineFilter) => void
-}) {
-  const options: Array<{ value: TimelineFilter; label: string }> = [
-    { value: 'all', label: 'all' },
-    { value: 'message', label: 'message' },
-    { value: 'tools', label: 'tools' },
-    { value: 'plan', label: 'plan' },
-  ]
-  return (
-    <div className="mb-3 flex items-center gap-1.5">
-      {options.map((option) => {
-        const active = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className="rounded px-2 py-1 text-[10.5px] transition-opacity hover:opacity-85"
-            style={{
-              background: active ? 'rgba(10,132,255,0.16)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${active ? 'rgba(10,132,255,0.42)' : 'var(--hairline)'}`,
-              color: active ? '#7DB7FF' : 'var(--fg-muted)',
-            }}
-          >
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 function DetailSection({
   title,
   children,
@@ -238,7 +200,7 @@ function DetailSection({
     <section className="mb-4">
       <div className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--fg-strong)' }}>{title}</div>
       {empty ? (
-        <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无</div>
+        <div className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>暂无</div>
       ) : children}
     </section>
   )
@@ -250,6 +212,197 @@ function defaultMindNode(nodes: MindMapNode[]): MindMapNode | null {
     nodes[0] ??
     null
 }
+
+// ─── Goal Update Modal ────────────────────────────────────────────────────────
+
+function GoalUpdateModal({
+  goals,
+  activeGoalId,
+  customGoalCount,
+  onClose,
+  onSave,
+  onSelectGoal,
+}: {
+  goals: AttentionGoalMeta[]
+  activeGoalId: string | null
+  customGoalCount: number
+  onClose: () => void
+  onSave: (text: string) => void
+  onSelectGoal: (goalId: string) => void
+}) {
+  const activeGoal = goals.find((g) => g.id === activeGoalId)
+  const [draft, setDraft] = useState(activeGoal?.goal_text ?? '')
+  const [selectedId, setSelectedId] = useState<string | null>(activeGoalId)
+  const remaining = Math.max(0, 2 - customGoalCount)
+
+  const handleSelectHistoryItem = (goal: AttentionGoalMeta) => {
+    setSelectedId(goal.id)
+    setDraft(goal.goal_text)
+  }
+
+  const handleSave = () => {
+    const trimmed = draft.trim()
+    if (!trimmed) { onClose(); return }
+    const matchingGoal = goals.find((g) => g.goal_text === trimmed)
+    if (matchingGoal && matchingGoal.id !== activeGoalId) {
+      onSelectGoal(matchingGoal.id)
+    } else if (!matchingGoal || trimmed !== activeGoal?.goal_text) {
+      onSave(trimmed)
+    }
+    onClose()
+  }
+
+  const saveDisabled = !draft.trim() || (remaining === 0 && !goals.some((g) => g.goal_text === draft.trim()))
+
+  return (
+    <div
+      className="absolute inset-0 z-40 grid place-items-center"
+      style={{ background: 'rgba(5,6,8,0.5)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 460,
+          borderRadius: 18,
+          background: 'var(--glass-modal, rgba(20,22,27,0.82))',
+          backdropFilter: 'blur(60px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(60px) saturate(200%)',
+          border: '1px solid var(--hairline-2)',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08),0 30px 80px rgba(0,0,0,.6)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div style={{ padding: '16px 18px 13px', borderBottom: '1px solid var(--hairline)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-.012em', color: 'var(--fg-strong)' }}>更新目标</h2>
+            <p style={{ marginTop: 4, fontSize: 12, color: 'var(--fg-dim)', lineHeight: 1.45, letterSpacing: '-.005em', margin: '4px 0 0' }}>
+              默认目标取自话题首句。修改后可在历史目标间切换。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-regular)', display: 'grid', placeItems: 'center', flexShrink: 0 }}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Text area */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fg-regular)', letterSpacing: '.02em', textTransform: 'uppercase', display: 'flex', alignItems: 'center' }}>
+              目标内容
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 10, color: '#FFC48A', background: 'rgba(255,159,74,.12)', border: '1px solid rgba(255,159,74,.28)', borderRadius: 6, padding: '1px 6px', textTransform: 'none', letterSpacing: 0 }}>
+                剩余 {remaining} 次
+              </span>
+            </div>
+            <textarea
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); setSelectedId(null) }}
+              rows={3}
+              style={{
+                width: '100%',
+                background: 'rgba(0,0,0,.34)',
+                border: '1px solid rgba(10,132,255,.5)',
+                boxShadow: '0 0 0 3px rgba(10,132,255,.14)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontSize: 13.5,
+                color: 'var(--fg-strong)',
+                lineHeight: 1.5,
+                letterSpacing: '-.005em',
+                minHeight: 62,
+                resize: 'vertical',
+                outline: 'none',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+
+          {/* History list */}
+          {goals.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--fg-regular)', letterSpacing: '.02em', textTransform: 'uppercase' }}>历史目标</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {goals.map((goal) => {
+                  const isSel = selectedId === goal.id
+                  return (
+                    <div
+                      key={goal.id}
+                      onClick={() => handleSelectHistoryItem(goal)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '16px 1fr',
+                        gap: 9,
+                        padding: '9px 11px',
+                        borderRadius: 10,
+                        border: `1px solid ${isSel ? 'rgba(10,132,255,.42)' : 'var(--hairline)'}`,
+                        background: isSel ? 'rgba(10,132,255,.10)' : 'rgba(255,255,255,0.03)',
+                        cursor: 'pointer',
+                        alignItems: 'start',
+                      }}
+                    >
+                      {/* Radio dot */}
+                      <div style={{ width: 15, height: 15, borderRadius: '50%', border: `1.5px solid ${isSel ? 'var(--user-blue)' : 'var(--hairline-2)'}`, marginTop: 1, display: 'grid', placeItems: 'center', background: isSel ? 'rgba(10,132,255,.2)' : 'transparent' }}>
+                        {isSel && <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--user-blue)', boxShadow: '0 0 6px var(--user-blue)' }} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12.5, color: 'var(--fg-strong)', lineHeight: 1.4, letterSpacing: '-.005em' }}>{goal.goal_text}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--fg-dim)', marginTop: 3, fontFamily: 'var(--font-mono)' }}>
+                          {goal.is_default ? '默认目标 · 首句' : '自定义目标'}
+                          {goal.id === activeGoalId ? ' · 当前' : ''}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 18px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(0,0,0,.2)' }}>
+          <span style={{ fontSize: 11, color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>
+            目标最多可修改 2 次 · 剩余 <b style={{ color: '#FFC48A', fontWeight: 600 }}>{remaining} 次</b>
+          </span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ height: 32, padding: '0 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 600, letterSpacing: '-.005em', display: 'inline-flex', alignItems: 'center', cursor: 'pointer', background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-regular)' }}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saveDisabled}
+              style={{
+                height: 32, padding: '0 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 600, letterSpacing: '-.005em', display: 'inline-flex', alignItems: 'center', cursor: saveDisabled ? 'not-allowed' : 'pointer',
+                background: saveDisabled ? 'rgba(10,132,255,.3)' : 'linear-gradient(180deg,#2090FF,#0A84FF 55%,#0064D8)',
+                color: '#fff',
+                boxShadow: saveDisabled ? 'none' : 'inset 0 1px 0 rgba(255,255,255,.22),0 4px 14px rgba(10,132,255,.42)',
+                border: 'none',
+                opacity: saveDisabled ? 0.55 : 1,
+              }}
+            >
+              保存目标
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Detail Panel ─────────────────────────────────────────────────────────────
 
 function MindMapDetail({
   selected,
@@ -266,7 +419,11 @@ function MindMapDetail({
 }) {
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>('all')
   if (!selected) {
-    return <EmptyHint text="选择一个节点查看治理过程" />
+    return (
+      <aside className="flex shrink-0 flex-col" style={{ width: 384, borderLeft: '1px solid var(--hairline)', background: 'rgba(18,20,25,.62)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)' }}>
+        <EmptyHint text="选择一个节点查看治理过程" />
+      </aside>
+    )
   }
   const traceById = new Map(traceNodes.map((node) => [node.id, node]))
   const sourceTraceNodes = selected.sourceNodeIds.map((id) => traceById.get(id)).filter(Boolean) as TraceNode[]
@@ -285,12 +442,7 @@ function MindMapDetail({
     .map((event): MessageDetailItem | null => {
       const text = rawMessageText(event).trim()
       if (!text) return null
-      return {
-        id: event.id,
-        role: event.role as 'user' | 'assistant',
-        ts: event.ts,
-        text,
-      }
+      return { id: event.id, role: event.role as 'user' | 'assistant', ts: event.ts, text }
     })
     .filter(Boolean) as MessageDetailItem[]
   const exchangeMessageItems = sourceTraceNodes.flatMap((node): MessageDetailItem[] => {
@@ -298,32 +450,14 @@ function MindMapDetail({
     if (exchanges.length) {
       return exchanges.flatMap((exchange, index): MessageDetailItem[] => {
         const items: MessageDetailItem[] = []
-        if (exchange.user_message) {
-          items.push({
-            id: `${node.id}-${exchange.id}-user-${index}`,
-            role: 'user',
-            ts: exchange.ts_start,
-            text: exchange.user_message,
-          })
-        }
-        if (exchange.assistant_summary) {
-          items.push({
-            id: `${node.id}-${exchange.id}-assistant-${index}`,
-            role: 'assistant',
-            ts: exchange.ts_end,
-            text: exchange.assistant_summary,
-          })
-        }
+        if (exchange.user_message) items.push({ id: `${node.id}-${exchange.id}-user-${index}`, role: 'user', ts: exchange.ts_start, text: exchange.user_message })
+        if (exchange.assistant_summary) items.push({ id: `${node.id}-${exchange.id}-assistant-${index}`, role: 'assistant', ts: exchange.ts_end, text: exchange.assistant_summary })
         return items
       })
     }
     const items: MessageDetailItem[] = []
-    if (node.user_message) {
-      items.push({ id: `${node.id}-user`, role: 'user', ts: node.ts_start, text: node.user_message })
-    }
-    if (node.conclusion) {
-      items.push({ id: `${node.id}-assistant`, role: 'assistant', ts: node.ts_end ?? node.ts_start, text: node.conclusion })
-    }
+    if (node.user_message) items.push({ id: `${node.id}-user`, role: 'user', ts: node.ts_start, text: node.user_message })
+    if (node.conclusion) items.push({ id: `${node.id}-assistant`, role: 'assistant', ts: node.ts_end ?? node.ts_start, text: node.conclusion })
     return items
   })
   const messageItems = (rawMessageItems.length ? rawMessageItems : exchangeMessageItems).sort((a, b) => a.ts - b.ts)
@@ -352,7 +486,7 @@ function MindMapDetail({
     ...executionItems.map((item): TimelineItem => ({
       id: item.id,
       type: 'execution',
-      filter: item.kind === 'tool_use' ? 'tools' : item.kind === 'plan' || item.kind === 'todo' ? 'plan' : 'thinking',
+      filter: item.kind === 'tool_use' ? 'tools' : item.kind === 'todo' ? 'todo' : item.kind === 'plan' ? 'plan' : 'thinking',
       item,
       ts: item.ts,
     })),
@@ -361,40 +495,135 @@ function MindMapDetail({
     ? timelineItems
     : timelineItems.filter((item) => item.filter === timelineFilter)
 
+  const tabCounts: Record<TimelineFilter, number> = {
+    all: timelineItems.length,
+    message: timelineItems.filter((i) => i.filter === 'message').length,
+    todo: timelineItems.filter((i) => i.filter === 'todo').length,
+    tools: timelineItems.filter((i) => i.filter === 'tools').length,
+    plan: timelineItems.filter((i) => i.filter === 'plan').length,
+  }
+
+  const tabs: Array<{ value: TimelineFilter; label: string }> = [
+    { value: 'all', label: 'All' },
+    { value: 'message', label: 'Message' },
+    { value: 'todo', label: 'Todo' },
+    { value: 'plan', label: 'Plan' },
+    { value: 'tools', label: 'Tools' },
+  ]
+
+  const kindLabel: Record<MindMapNode['kind'], string> = { goal: 'goal', user: 'user', aggregate: 'aggregate' }
+
   return (
-    <aside className="flex h-full w-[340px] shrink-0 flex-col" style={{ borderLeft: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}>
-      <div className="shrink-0 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>
-                {selected.kind}
+    <aside
+      className="flex shrink-0 flex-col"
+      style={{ width: 384, borderLeft: '1px solid var(--hairline)', background: 'rgba(18,20,25,.62)', backdropFilter: 'blur(40px) saturate(180%)', WebkitBackdropFilter: 'blur(40px) saturate(180%)', minHeight: 0 }}
+    >
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 3, padding: '10px 12px', borderBottom: '1px solid var(--hairline)', flexShrink: 0 }}>
+        {tabs.map((tab) => {
+          const active = tab.value === timelineFilter
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setTimelineFilter(tab.value)}
+              style={{
+                height: 28,
+                padding: '0 11px',
+                borderRadius: 8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontWeight: active ? 600 : 500,
+                color: active ? 'var(--fg-strong)' : 'var(--fg-dim)',
+                background: active ? 'var(--glass-2)' : 'transparent',
+                boxShadow: active ? 'inset 0 0 0 1px var(--hairline)' : 'none',
+                letterSpacing: '-.005em',
+                cursor: 'pointer',
+                border: 'none',
+                fontFamily: 'inherit',
+              }}
+            >
+              {tab.label}
+              <span style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9.5,
+                color: active ? '#6cb1ff' : 'var(--fg-dim)',
+                background: active ? 'rgba(10,132,255,.22)' : 'rgba(255,255,255,.08)',
+                borderRadius: 7,
+                padding: '0 4px',
+                lineHeight: '14px',
+              }}>
+                {tabCounts[tab.value]}
               </span>
-              {selected.current && <span className="text-[10px]" style={{ color: '#6FE39A' }}>当前节点</span>}
-              {selected.collapsed && <span className="text-[10px]" style={{ color: '#F7C26B' }}>聚合节点</span>}
-            </div>
-            <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
-              {selected.title}
-            </div>
-            <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
-              {selected.subtitle}
-            </div>
-          </div>
-          {focusMessageId && (
-            <Tooltip content="回到消息面板中的对应消息" side="top">
-              <button
-                type="button"
-                onClick={() => onFocus(focusMessageId)}
-                className="mt-0.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-opacity hover:opacity-85"
-                style={{ background: 'var(--glass-2)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
-              >
-                Focus
-              </button>
-            </Tooltip>
-          )}
-        </div>
+            </button>
+          )
+        })}
       </div>
 
+      {/* Node header */}
+      <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid var(--hairline)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Role chip */}
+            <span style={{
+              height: 20, padding: '0 8px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              display: 'inline-flex', alignItems: 'center',
+              background: 'var(--glass-1)', border: '1px solid var(--hairline)',
+              color: 'var(--fg-regular)', fontFamily: 'var(--font-mono)', letterSpacing: 0,
+            }}>
+              {kindLabel[selected.kind]}
+            </span>
+            {/* Current chip */}
+            {selected.current && (
+              <span style={{ height: 20, padding: '0 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, color: '#FFC48A' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF9F4A', boxShadow: '0 0 6px #FF9F4A', animation: 'attn-dot-blink 1.2s ease-in-out infinite', flexShrink: 0 }} />
+                当前节点
+              </span>
+            )}
+            {selected.collapsed && (
+              <span style={{ height: 20, padding: '0 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, color: '#F7C26B' }}>
+                聚合节点
+              </span>
+            )}
+          </div>
+          {/* Focus button */}
+          {focusMessageId && (
+            <button
+              type="button"
+              onClick={() => onFocus(focusMessageId)}
+              style={{
+                marginLeft: 'auto',
+                height: 30, padding: '0 13px', borderRadius: 9,
+                background: 'var(--glass-1)', border: '1px solid var(--hairline-2)',
+                color: 'var(--fg-strong)', fontSize: 12.5, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="7"/>
+                <line x1="12" y1="2" x2="12" y2="5"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+                <line x1="2" y1="12" x2="5" y2="12"/>
+                <line x1="19" y1="12" x2="22" y2="12"/>
+              </svg>
+              Focus
+            </button>
+          )}
+        </div>
+        <div style={{ marginTop: 11, fontSize: 17, fontWeight: 600, letterSpacing: '-.014em', color: 'var(--fg-strong)' }}>
+          {selected.title}
+        </div>
+        {selected.subtitle && (
+          <div style={{ marginTop: 4, fontSize: 11, color: 'var(--fg-dim)', letterSpacing: '-.005em' }}>
+            {selected.subtitle}
+          </div>
+        )}
+      </div>
+
+      {/* Scroll content */}
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {selected.aggregation && (
           <section className="mb-4 rounded-lg p-3" style={{ border: '1px solid rgba(247,194,107,0.32)', background: 'rgba(247,194,107,0.08)' }}>
@@ -414,9 +643,8 @@ function MindMapDetail({
         )}
 
         <DetailSection title="节点时间线">
-          <TimelineFilterControl value={timelineFilter} onChange={setTimelineFilter} />
           {filteredTimelineItems.length === 0 ? (
-            <div className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>暂无</div>
+            <div className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>暂无</div>
           ) : (
             <div className="flex flex-col gap-2">
               {filteredTimelineItems.map((item) => <TimelineRow key={item.id} item={item} />)}
@@ -427,6 +655,8 @@ function MindMapDetail({
     </aside>
   )
 }
+
+// ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function AttentionXPanel({
   topicId,
@@ -445,6 +675,7 @@ export function AttentionXPanel({
   loadingSnapshot = false,
   focusCurrent = false,
   chrome = true,
+  fitViewCallbackRef,
 }: {
   topicId: string
   nodes: TraceNode[]
@@ -457,29 +688,31 @@ export function AttentionXPanel({
   activeGoalId?: string | null
   goalDraft?: string
   onGoalDraftChange?: (value: string) => void
-  onCreateGoal?: () => void
+  onCreateGoal?: (goalText?: string) => void
   onSelectGoal?: (goalId: string) => void
   onRenameGoal?: (goalId: string, title: string) => void
   loadingSnapshot?: boolean
   focusCurrent?: boolean
   chrome?: boolean
+  fitViewCallbackRef?: React.MutableRefObject<(() => void) | null>
 }) {
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [expandedMindIds, setExpandedMindIds] = useState<Set<string>>(() => new Set())
+  const [showGoalModal, setShowGoalModal] = useState(false)
   const focusMessage = useMessageStore((s) => s.focusMessage)
   const mindProjection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems, expandedMindIds), [nodes, goalAnchor, planItems, expandedMindIds])
   const selectedMindNode =
     mindProjection.nodes.find((node) => node.id === selectedMindId) ??
     defaultMindNode(mindProjection.nodes)
   const customGoalCount = goals.filter((goal) => !goal.is_default).length
-  const createDisabled = customGoalCount >= 2
+  const remainingGoalEdits = Math.max(0, 2 - customGoalCount)
 
   const handleTargetKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return
     event.preventDefault()
-    if (createDisabled) return
+    if (customGoalCount >= 2) return
     onCreateGoal?.()
-  }, [createDisabled, onCreateGoal])
+  }, [customGoalCount, onCreateGoal])
 
   const selectMindNode = (id: string) => {
     setSelectedMindId(id)
@@ -493,8 +726,18 @@ export function AttentionXPanel({
     })
   }
 
+  const handleSaveGoal = (text: string) => {
+    onGoalDraftChange?.(text)
+    onCreateGoal?.(text)
+  }
+
+  const handleSelectGoal = (goalId: string) => {
+    onSelectGoal?.(goalId)
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
+      {/* Legacy chrome — shown only when chrome=true (standalone mode) */}
       {chrome && (
         <div className="flex shrink-0 flex-col gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--hairline)' }}>
           <div className="flex flex-wrap items-center gap-2">
@@ -502,43 +745,32 @@ export function AttentionXPanel({
             {loadingSnapshot && (
               <div className="text-[11px]" style={{ color: '#F7C26B' }}>加载快照…</div>
             )}
-            <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+            <div className="ml-auto text-[11px]" style={{ color: 'var(--fg-dim)' }}>
               {nodes.length} nodes · {planItems.length} plan/todo
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-muted)' }}>当前目标</div>
+            <div className="text-[11px] font-medium" style={{ color: 'var(--fg-dim)' }}>当前目标</div>
             <input
               value={goalDraft}
               onChange={(event) => onGoalDraftChange?.(event.target.value)}
               onKeyDown={handleTargetKeyDown}
               placeholder="描述一个更清晰的话题目标，Enter 创建新目标"
               className="min-w-0 flex-1 rounded-md px-3 py-2 text-[12px] outline-none"
-              style={{
-                background: 'rgba(0,0,0,0.18)',
-                border: '1px solid var(--hairline)',
-                color: 'var(--fg-strong)',
-              }}
+              style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid var(--hairline)', color: 'var(--fg-strong)' }}
             />
             <button
               type="button"
-              disabled={createDisabled}
-              onClick={onCreateGoal}
+              disabled={customGoalCount >= 2}
+              onClick={() => onCreateGoal?.()}
               className="rounded-md px-2.5 py-1.5 text-[11px] transition-opacity hover:opacity-85"
-              style={{
-                background: createDisabled ? 'rgba(255,255,255,0.03)' : 'var(--glass-2)',
-                color: createDisabled ? 'var(--fg-muted)' : 'var(--fg-strong)',
-                border: '1px solid var(--hairline)',
-                cursor: createDisabled ? 'not-allowed' : 'pointer',
-              }}
+              style={{ background: customGoalCount >= 2 ? 'rgba(255,255,255,0.03)' : 'var(--glass-2)', color: customGoalCount >= 2 ? 'var(--fg-dim)' : 'var(--fg-strong)', border: '1px solid var(--hairline)', cursor: customGoalCount >= 2 ? 'not-allowed' : 'pointer' }}
             >
               创建目标
             </button>
           </div>
-          {createDisabled && (
-            <div className="text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
-              默认目标外最多创建 2 个目标。
-            </div>
+          {customGoalCount >= 2 && (
+            <div className="text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>默认目标外最多创建 2 个目标。</div>
           )}
           {goals.length > 0 && (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -561,67 +793,73 @@ export function AttentionXPanel({
             </div>
           )}
           {activeGoal && (
-            <div className="truncate text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
+            <div className="truncate text-[10.5px]" style={{ color: 'var(--fg-dim)' }}>
               目标内容：{activeGoal.goal_text}
             </div>
           )}
-          </div>
+        </div>
       )}
+
+      {/* Main content */}
       <div className="min-h-0 flex-1">
         {loadingSnapshot && nodes.length === 0 ? (
           <EmptyHint text="加载注意力节点快照…" />
         ) : llmUnavailable && nodes.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6">
-            <div
-              className="max-w-[420px] rounded-xl px-5 py-4 text-center"
-              style={{
-                background: 'rgba(0,0,0,.22)',
-                border: '1px solid var(--hairline)',
-                color: 'var(--fg-regular)',
-              }}
-            >
-              <div className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>
-                注意力面板未激活
-              </div>
-              <div className="mt-2 text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
-                请进行正确的 LLM 配置以激活注意力面板。
-              </div>
+            <div className="max-w-[420px] rounded-xl px-5 py-4 text-center" style={{ background: 'rgba(0,0,0,.22)', border: '1px solid var(--hairline)', color: 'var(--fg-regular)' }}>
+              <div className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>注意力面板未激活</div>
+              <div className="mt-2 text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>请进行正确的 LLM 配置以激活注意力面板。</div>
             </div>
           </div>
         ) : nodes.length === 0 ? (
           <EmptyHint text="暂无有效注意力节点" />
         ) : (
-        <div className="flex h-full min-h-0 flex-col">
-        {llmUnavailable && (
-          <div className="px-4 py-2 text-[11px]" style={{ color: '#F7C26B', borderBottom: '1px solid var(--hairline)' }}>
-            LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。
+          <div className="flex h-full min-h-0 flex-col">
+            {llmUnavailable && (
+              <div className="px-4 py-2 text-[11px]" style={{ color: '#F7C26B', borderBottom: '1px solid var(--hairline)' }}>
+                LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。
+              </div>
+            )}
+            <div className="flex min-h-0 flex-1">
+              <div className="min-w-0 flex-1">
+                <MindMapGraph
+                  nodes={nodes}
+                  goalAnchor={goalAnchor}
+                  planItems={planItems}
+                  selectedId={selectedMindNode?.id ?? null}
+                  onSelect={selectMindNode}
+                  onFocus={(messageId) => focusMessage(topicId, messageId)}
+                  onUpdateGoal={() => setShowGoalModal(true)}
+                  remainingGoalEdits={remainingGoalEdits}
+                  expandedIds={expandedMindIds}
+                  focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
+                  projection={mindProjection}
+                  fitViewCallbackRef={fitViewCallbackRef}
+                />
+              </div>
+              <MindMapDetail
+                selected={selectedMindNode}
+                traceNodes={nodes}
+                rawEvents={rawEvents}
+                planItems={planItems}
+                onFocus={(messageId) => focusMessage(topicId, messageId)}
+              />
+            </div>
           </div>
-        )}
-        <div className="flex min-h-0 flex-1">
-          <div className="min-w-0 flex-1">
-            <MindMapGraph
-              nodes={nodes}
-              goalAnchor={goalAnchor}
-              planItems={planItems}
-              selectedId={selectedMindNode?.id ?? null}
-              onSelect={selectMindNode}
-              onFocus={(messageId) => focusMessage(topicId, messageId)}
-              expandedIds={expandedMindIds}
-              focusNodeId={focusCurrent ? selectedMindNode?.id ?? null : null}
-              projection={mindProjection}
-            />
-          </div>
-          <MindMapDetail
-            selected={selectedMindNode}
-            traceNodes={nodes}
-            rawEvents={rawEvents}
-            planItems={planItems}
-            onFocus={(messageId) => focusMessage(topicId, messageId)}
-          />
-        </div>
-        </div>
         )}
       </div>
+
+      {/* Goal update modal */}
+      {showGoalModal && (
+        <GoalUpdateModal
+          goals={goals}
+          activeGoalId={activeGoalId}
+          customGoalCount={customGoalCount}
+          onClose={() => setShowGoalModal(false)}
+          onSave={handleSaveGoal}
+          onSelectGoal={handleSelectGoal}
+        />
+      )}
     </div>
   )
 }

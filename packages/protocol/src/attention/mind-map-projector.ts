@@ -196,7 +196,7 @@ export function buildMindMapProjection(
         ? BRANCH_Y + Math.max(0, (topic?.depth ?? 1) - 1) * 90
         : MAIN_Y
     const x = opts.nested
-      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 120
+      ? START_X + (orderByTraceId.get(traceNode.id) ?? 1) * 250
       : START_X + ((orderByTraceId.get(traceNode.id) ?? 1) - 1) * STEP_X
     outputNodes.push({
       id,
@@ -242,7 +242,7 @@ export function buildMindMapProjection(
           hasChildren: false,
           status: traceNode.status,
           position: {
-            x: x + index * 180,
+            x: x + index * 250,
             y: y + SUBGRAPH_Y,
           },
         })
