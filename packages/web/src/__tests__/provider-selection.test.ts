@@ -14,6 +14,13 @@ describe('getActiveProviderIdForExtension', () => {
     expect(getActiveProviderIdForExtension(providers, 'codex')).toBe('codex-active')
   })
 
+  it('treats apipass providers as Codex providers for topic creation', () => {
+    expect(getActiveProviderIdForExtension([
+      { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
+      { id: 'apipass-active', name: 'API Pass', provider: 'openai', group: 'apipass', isActive: true },
+    ], 'codex')).toBe('apipass-active')
+  })
+
   it('does not fall back to another active provider group', () => {
     expect(getActiveProviderIdForExtension([
       { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
@@ -32,11 +39,11 @@ describe('getActiveProviderIdForExtension', () => {
     const next = activateProviderInGroup([
       { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
       { id: 'codex-active', name: 'Codex', provider: 'openai', group: 'codex', isActive: true },
-      { id: 'codex-inactive', name: 'Codex inactive', provider: 'openai', group: 'codex', isActive: false },
-    ], 'codex-inactive')
+      { id: 'apipass-inactive', name: 'API Pass inactive', provider: 'openai', group: 'apipass', isActive: false },
+    ], 'apipass-inactive')
 
     expect(next.find((provider) => provider.id === 'claude-active')?.isActive).toBe(true)
     expect(next.find((provider) => provider.id === 'codex-active')?.isActive).toBe(false)
-    expect(next.find((provider) => provider.id === 'codex-inactive')?.isActive).toBe(true)
+    expect(next.find((provider) => provider.id === 'apipass-inactive')?.isActive).toBe(true)
   })
 })

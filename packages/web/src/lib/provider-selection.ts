@@ -4,11 +4,16 @@ export type ProgrammingExtension = 'claude-code' | 'codex'
 export type ProviderGroup = ProgrammingExtension | 'pi-agent'
 
 const PROVIDER_GROUPS = new Set<ProviderGroup>(['claude-code', 'codex', 'pi-agent'])
+const PROVIDER_GROUP_ALIASES: Record<string, ProviderGroup> = {
+  'claude-code': 'claude-code',
+  codex: 'codex',
+  apipass: 'codex',
+  'pi-agent': 'pi-agent',
+}
 
 export function getProviderGroup(provider: ProviderConfig): ProviderGroup | undefined {
-  return PROVIDER_GROUPS.has(provider.group as ProviderGroup)
-    ? provider.group as ProviderGroup
-    : undefined
+  const normalized = provider.group ? PROVIDER_GROUP_ALIASES[provider.group] : undefined
+  return normalized && PROVIDER_GROUPS.has(normalized) ? normalized : undefined
 }
 
 export function getActiveProviderForGroup(

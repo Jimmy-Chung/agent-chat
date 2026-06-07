@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-08 [v1.10.25] — fix: Codex provider 识别 apipass 分组
+
+- 前端 provider 选择逻辑将 `apipass` 归一为 Codex 逻辑组。
+- 创建 Codex 话题时可正确带上 apipass providerId，避免回落到默认 Codex OAuth 路径。
+
 ## 2026-06-08 [v1.10.24] — fix: Attention mirror 左侧绕线
 
 - Attention mind map 的 React Flow 边改为按节点坐标选择连接 handle。
