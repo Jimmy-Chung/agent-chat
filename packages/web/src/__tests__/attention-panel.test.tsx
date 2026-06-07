@@ -178,12 +178,12 @@ describe('Attention X 动态树详情', () => {
         goalAnchor={GOAL}
         planItems={[]}
         rawEvents={[]}
-        llmUnavailable
+        llmUnavailableReason="not_configured"
       />,
     )
 
     expect(screen.getByText('注意力面板未激活')).toBeTruthy()
-    expect(screen.getByText('请进行正确的 LLM 配置以激活注意力面板。')).toBeTruthy()
+    expect(screen.getByText(/LLM API Key/)).toBeTruthy()
     expect(screen.queryByTestId('mind-map-graph')).toBeNull()
     expect(screen.queryByText('本地兜底不应展示')).toBeNull()
   })
@@ -212,11 +212,11 @@ describe('Attention X 动态树详情', () => {
         goalAnchor={GOAL}
         planItems={[]}
         rawEvents={[]}
-        llmUnavailable
+        llmUnavailableReason="not_configured"
       />,
     )
 
-    expect(screen.getByText('LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。')).toBeTruthy()
+    expect(screen.getByText(/LLM .*当前展示的是已保存快照/)).toBeTruthy()
     await waitFor(() => expect(screen.getByTestId('mind-map-graph')).toBeTruthy())
   })
 

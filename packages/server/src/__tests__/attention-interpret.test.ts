@@ -81,7 +81,7 @@ describe('TC-AIT-220-02 正常解析', () => {
     expect(r.diagnostics).toMatchObject({
       promptChars: 4,
       timeoutMs: 1000,
-      maxTokens: 2400,
+      maxTokens: 4096,
       httpStatus: 200,
       finishReason: 'stop',
     })
@@ -145,7 +145,7 @@ describe('TC-AIT-220-03 上游失败降级', () => {
     expect(r.diagnostics).toMatchObject({
       promptChars: 1,
       timeoutMs: 1000,
-      maxTokens: 2400,
+      maxTokens: 4096,
       httpStatus: 429,
     })
   })
@@ -162,7 +162,7 @@ describe('TC-AIT-220-03 上游失败降级', () => {
     expect(r.diagnostics).toMatchObject({
       promptChars: 1,
       timeoutMs: 1000,
-      maxTokens: 2400,
+      maxTokens: 4096,
       errorName: 'TimeoutError',
     })
   })

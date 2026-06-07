@@ -180,7 +180,7 @@ function AttentionInspectorAttention({
 }
 
 function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTrace; onExpand: () => void }) {
-  const { nodes, goalAnchor, planItems, llmUnavailable, isLoadingSnapshot } = attention
+  const { nodes, goalAnchor, planItems, llmUnavailableReason, isLoadingSnapshot } = attention
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
   const currentNode =
     projection.nodes.find((node) => node.current) ??
@@ -210,9 +210,9 @@ function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTr
           <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
             加载注意力节点快照…
           </div>
-        ) : llmUnavailable ? (
+        ) : llmUnavailableReason ? (
           <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
-            请进行正确的 LLM 配置以激活注意力面板。
+            LLM 不可用（{llmUnavailableReason}），请检查配置。
           </div>
         ) : currentNode ? (
           <AttentionMiniNode key={currentNode.id} node={currentNode} lineMode={lineMode} />
@@ -274,7 +274,7 @@ function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'f
 }
 
 function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailable } = attention
+  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailableReason } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -326,7 +326,7 @@ function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { t
           goalAnchor={goalAnchor}
           planItems={planItems}
           rawEvents={rawEvents}
-          llmUnavailable={llmUnavailable}
+          llmUnavailableReason={llmUnavailableReason}
           goals={attention.goals}
           activeGoalId={attention.activeGoalId}
           onCreateGoal={() => void attention.createGoal()}

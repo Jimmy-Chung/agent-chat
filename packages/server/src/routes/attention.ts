@@ -52,8 +52,8 @@ export interface InterpretResult {
   normalizedGoal?: string
 }
 
-const DEFAULT_TIMEOUT_MS = 45_000
-const MAX_OUTPUT_TOKENS = 2400
+const DEFAULT_TIMEOUT_MS = 60_000
+const MAX_OUTPUT_TOKENS = 4096
 
 const SYSTEM_PROMPT =
   '你是会话决策分析器。给定一段 Agent 会话的候选节点摘要，为每个节点输出：' +

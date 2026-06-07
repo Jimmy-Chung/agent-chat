@@ -655,6 +655,30 @@ function MindMapDetail({
   )
 }
 
+// ─── LLM 错误原因映射 ──────────────────────────────────────────────────────────
+
+function reasonMessage(reason: string | null): string {
+  if (!reason) return 'LLM 配置异常'
+  const map: Record<string, string> = {
+    not_configured: 'LLM API Key / Base URL / Model 未配置，请在 Worker 环境变量中设置 ATTENTION_LLM_*',
+    upstream_429: 'LLM API 限流（429），请稍后重试或检查配额',
+    upstream_401: 'LLM API Key 无效（401），请检查 ATTENTION_LLM_API_KEY',
+    upstream_403: 'LLM API 权限不足（403），请检查 API Key 权限',
+    upstream_500: 'LLM API 服务端异常（500），请稍后重试',
+    upstream_502: 'LLM API 网关异常（502），请稍后重试',
+    upstream_503: 'LLM API 服务不可用（503），请稍后重试',
+    timeout: 'LLM 响应超时（45s），请尝试减少节点数或增加超时',
+    fetch_error: '网络请求失败，无法连接 LLM API',
+    parse_error: 'LLM 输出解析失败，可能是 JSON 格式异常',
+    truncated_json: 'LLM 输出被截断（max_tokens 不足），请增加输出 token 限制',
+    empty_source: '无有效消息数据，请先发送消息',
+    empty_trace: '无法生成追踪节点，数据不足以分析',
+  }
+  if (reason in map) return map[reason]
+  if (reason.startsWith('upstream_')) return `LLM API 返回错误（${reason.slice(9)}）`
+  return `LLM 异常（${reason}）`
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function AttentionXPanel({
@@ -663,7 +687,7 @@ export function AttentionXPanel({
   goalAnchor,
   planItems,
   rawEvents,
-  llmUnavailable = false,
+  llmUnavailableReason = null,
   goals = [],
   activeGoalId = null,
   onCreateGoal,
@@ -677,7 +701,7 @@ export function AttentionXPanel({
   goalAnchor: GoalAnchor | null
   planItems: PlanItem[]
   rawEvents: RawEvent[]
-  llmUnavailable?: boolean
+  llmUnavailableReason?: string | null
   goals?: AttentionGoalMeta[]
   activeGoalId?: string | null
   onCreateGoal?: (goalText?: string) => void
@@ -723,20 +747,20 @@ export function AttentionXPanel({
       <div className="min-h-0 flex-1">
         {loadingSnapshot && nodes.length === 0 ? (
           <EmptyHint text="加载注意力节点快照…" />
-        ) : llmUnavailable && nodes.length === 0 ? (
+        ) : llmUnavailableReason && nodes.length === 0 ? (
           <div className="flex h-full items-center justify-center px-6">
             <div className="max-w-[420px] rounded-xl px-5 py-4 text-center" style={{ background: 'rgba(0,0,0,.22)', border: '1px solid var(--hairline)', color: 'var(--fg-regular)' }}>
               <div className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>注意力面板未激活</div>
-              <div className="mt-2 text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>请进行正确的 LLM 配置以激活注意力面板。</div>
+              <div className="mt-2 text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>{reasonMessage(llmUnavailableReason)}</div>
             </div>
           </div>
         ) : nodes.length === 0 ? (
           <EmptyHint text="暂无有效注意力节点" />
         ) : (
           <div className="flex h-full min-h-0 flex-col">
-            {llmUnavailable && (
+            {llmUnavailableReason && (
               <div className="px-4 py-2 text-[11px]" style={{ color: '#F7C26B', borderBottom: '1px solid var(--hairline)' }}>
-                LLM 配置不可用，当前展示的是已保存快照；重新绘制需要正确配置 LLM。
+                LLM 不可用（{reasonMessage(llmUnavailableReason)}），当前展示的是已保存快照。
               </div>
             )}
             <div className="flex min-h-0 flex-1">

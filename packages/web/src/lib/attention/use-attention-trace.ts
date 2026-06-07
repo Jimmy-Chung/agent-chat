@@ -29,7 +29,7 @@ export interface AttentionTrace {
   rawEvents: RawEvent[]
   isAnalyzing: boolean
   isLoadingSnapshot: boolean
-  llmUnavailable: boolean
+  llmUnavailableReason: string | null
   goals: AttentionGoalMeta[]
   activeGoal: AttentionGoalMeta | null
   activeGoalId: string | null
@@ -251,7 +251,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
   const [activeGoalId, setActiveGoalId] = useState<string | null>(null)
   const [goalDraft, setGoalDraft] = useState('')
   const [snapshot, setSnapshot] = useState<LoadedSnapshot | null>(null)
-  const [llmUnavailable, setLlmUnavailable] = useState(false)
+  const [llmUnavailableReason, setLlmUnavailableReason] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(false)
   const lastRebuildKeyRef = useRef<string | null>(null)
@@ -277,7 +277,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     }))
     setIsAnalyzing(false)
     if (result.snapshot) setSnapshot(result.snapshot)
-    setLlmUnavailable(!!result.degradedReason)
+    setLlmUnavailableReason(result.degradedReason ?? null)
     void reloadGoals()
   }, [reloadGoals, sourceSignal])
 
@@ -325,7 +325,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
         if (!loaded.snapshot && current?.meta.id === activeGoalId) return current
         return loaded.snapshot
       })
-      setLlmUnavailable(!!loaded.degradedReason && !loaded.snapshot)
+      setLlmUnavailableReason(loaded.degradedReason && !loaded.snapshot ? loaded.degradedReason : null)
       if (!loaded.snapshot && !loaded.degradedReason) void rebuild(activeGoalId, { force: true })
     }).catch(() => {
       if (!cancelled) setSnapshot(null)
@@ -385,7 +385,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     rawEvents: snapshot?.rawEvents ?? [],
     isAnalyzing: isAnalyzing || (hasLiveMessages && agentStatus !== 'idle'),
     isLoadingSnapshot,
-    llmUnavailable,
+    llmUnavailableReason,
     goals,
     activeGoal,
     activeGoalId,

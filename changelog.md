@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-07 [v1.10.17] — fix: Attention LLM 输出截断 + 前端透传错误原因
+
+- `MAX_OUTPUT_TOKENS` 2400→4096，`DEFAULT_TIMEOUT_MS` 45s→60s。10 节点以上场景 DeepSeek 输出打满 2400 tokens 触发 `length` 截断 → JSON 不完整 → `parse_error`，40s+ 耗时也踩 45s 超时线，均已实测验证。
+- 前端 `llmUnavailable: boolean` → `llmUnavailableReason: string | null`，面板/Inspector/Drawer 均展示具体失败原因（`parse_error`/`timeout`/`upstream_429` 等），不再只有模糊的"LLM 不可用"。
+
 ## 2026-06-07 [v1.10.16] — fix: Attention 面板样式细调 + 移除旧 chrome 头部
 
 - 移除旧的 chrome 头部（目标输入框、目标 pills、创建目标按钮），目标管理统一走节点内"更新目标" modal。

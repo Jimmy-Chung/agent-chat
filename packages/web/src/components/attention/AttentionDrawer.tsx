@@ -7,7 +7,7 @@ import { AttentionXPanel } from './AttentionXPanel'
 
 export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose: () => void }) {
   const attention = useAttentionTrace(topicId)
-  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing, llmUnavailable } = attention
+  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing, llmUnavailableReason } = attention
   const fitViewCallbackRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -116,7 +116,7 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             goalAnchor={goalAnchor}
             planItems={planItems}
             rawEvents={rawEvents}
-            llmUnavailable={llmUnavailable}
+            llmUnavailableReason={llmUnavailableReason}
             goals={attention.goals}
             activeGoalId={attention.activeGoalId}
             onCreateGoal={(text) => void attention.createGoal(text)}
