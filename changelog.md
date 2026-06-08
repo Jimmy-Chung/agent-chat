@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-08 [v1.10.29] — fix: generated artifact 预览失败原因透传
+
+- generated artifact 按需上传失败时，server 透传真实错误 code/message，并带上 artifactId，避免前端误报为“暂不支持该产物”。
+- 前端产物预览/下载按钮按 `file_not_found`、`file_unreadable`、`size_exceeded`、`artifact_forbidden` 等错误显示具体原因。
+- generated artifact metadata 兼容 `path`、`filePath`、`file_path` 三种路径字段。
+- 版本显示更新为 `v1.10.29`。
+
 ## 2026-06-08 [v1.10.28] — fix: Agent processing 状态条不再挤压消息列表
 
 - 话题标题下方的 AgentStatusBar 改为浮层 overlay，processing/aborting 状态切换时不再占用 flex 布局高度，避免消息气泡被上下挤压。

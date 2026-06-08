@@ -36,6 +36,7 @@ import {
   errorToRpc,
   failArtifactUpload,
   initArtifactDownload,
+  rpcError,
   type ArtifactDownloadInitParams,
   type ArtifactUploadCompleteParams,
   type ArtifactUploadFailedParams,
@@ -1403,10 +1404,13 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             artifactId: data.artifactId,
           })
           this.sendTo(ws, 'artifact.download.ready', result)
-        } catch {
+        } catch (err) {
+          const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : 'ARTIFACT_DOWNLOAD_UNAVAILABLE'
+          const message = err instanceof Error ? err.message : 'Artifact download is not available'
           this.sendTo(ws, 'error', {
-            code: 'ARTIFACT_DOWNLOAD_UNAVAILABLE',
-            message: 'Artifact download is not available',
+            code,
+            message,
+            details: { artifactId: data.artifactId },
           })
         }
         break
@@ -1460,7 +1464,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       filePath,
     })
     if (result.uploadStatus !== 'uploaded') {
-      throw new Error('Generated artifact upload failed')
+      const failedArtifact = await artifactRepo.getArtifact(result.artifactId)
+      throw rpcError(
+        failedArtifact?.failure_code ?? 'artifact_upload_failed',
+        failedArtifact?.failure_message ?? 'Generated artifact upload failed',
+      )
     }
   }
 }
@@ -1477,8 +1485,9 @@ function parseTextContent(contentJson: string): string {
 function artifactPathFromMetadata(metadataJson: string | null | undefined): string | null {
   if (!metadataJson) return null
   try {
-    const parsed = JSON.parse(metadataJson) as { path?: unknown }
-    return typeof parsed.path === 'string' && parsed.path.trim() ? parsed.path : null
+    const parsed = JSON.parse(metadataJson) as { path?: unknown; filePath?: unknown; file_path?: unknown }
+    const path = parsed.path ?? parsed.filePath ?? parsed.file_path
+    return typeof path === 'string' && path.trim() ? path : null
   } catch {
     return null
   }

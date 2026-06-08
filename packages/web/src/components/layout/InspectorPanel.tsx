@@ -625,11 +625,12 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       }
     }
     const onError = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { code?: string }
-      if (detail.code !== 'ARTIFACT_DOWNLOAD_UNAVAILABLE') return
+      const detail = (event as CustomEvent).detail as { code?: string; message?: string; details?: { artifactId?: unknown } }
+      if (!isArtifactAccessError(detail.code)) return
+      if (typeof detail.details?.artifactId === 'string' && detail.details.artifactId !== artifact.id) return
       cleanup()
       if (newWindow && !newWindow.closed) newWindow.close()
-      alert('该产物暂不支持预览（文件尚未上传到云端）')
+      alert(describeArtifactAccessError(detail, mode))
     }
     window.addEventListener('agent-chat:artifact-download-ready', onReady)
     window.addEventListener('agent-chat:error', onError)
@@ -646,6 +647,44 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       {needsUpload ? (mode === 'preview' ? '上传并预览' : '上传并下载') : (mode === 'preview' ? '预览' : '下载')}
     </button>
   )
+}
+
+function isArtifactAccessError(code: string | undefined): boolean {
+  return [
+    'ARTIFACT_DOWNLOAD_UNAVAILABLE',
+    'artifact_unavailable',
+    'artifact_upload_failed',
+    'download_unavailable',
+    'upload_unavailable',
+    'file_not_found',
+    'file_unreadable',
+    'size_exceeded',
+    'artifact_forbidden',
+    'topic_mismatch',
+    'session_not_found',
+  ].includes(code ?? '')
+}
+
+function describeArtifactAccessError(detail: { code?: string; message?: string }, mode: 'preview' | 'download'): string {
+  const action = mode === 'preview' ? '预览' : '下载'
+  switch (detail.code) {
+    case 'file_not_found':
+      return `无法${action}：adapter 侧文件不存在，可能已被移动或删除。`
+    case 'file_unreadable':
+      return `无法${action}：adapter 侧文件不可读。`
+    case 'size_exceeded':
+      return `无法${action}：文件超过上传大小限制。`
+    case 'artifact_forbidden':
+      return `无法${action}：产物路径不在当前会话工作目录内。`
+    case 'upload_unavailable':
+    case 'download_unavailable':
+      return `无法${action}：产物上传/下载服务当前不可用。`
+    case 'topic_mismatch':
+    case 'session_not_found':
+      return `无法${action}：产物关联的话题会话已失效。`
+    default:
+      return detail.message ? `无法${action}：${detail.message}` : `无法${action}：产物尚未上传或不可访问。`
+  }
 }
 
 function artifactSourceStyle(source: import('@agent-chat/protocol').Artifact['source']): React.CSSProperties {
