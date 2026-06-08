@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-08 [v1.10.30] — fix: Codex Provider 缺模型时阻止创建话题
+
+- 创建 Codex 话题时，如果当前 Codex Provider 没有可用模型，前端直接提示用户先编辑 Provider 补充模型，避免新会话静默回落到默认 Codex 配置后失败。
+- 版本显示更新为 `v1.10.30`。
+
 ## 2026-06-08 [v1.10.29] — fix: generated artifact 预览失败原因透传
 
 - generated artifact 按需上传失败时，server 透传真实错误 code/message，并带上 artifactId，避免前端误报为“暂不支持该产物”。

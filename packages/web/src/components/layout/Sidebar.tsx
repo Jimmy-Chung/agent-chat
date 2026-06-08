@@ -592,6 +592,14 @@ export function Sidebar() {
       ? providerConfigs.find((provider) => provider.id === activeProviderId)
       : undefined
     const initialModel = activeProvider?.models?.[0]
+    if (newTopicAgent === 'programming' && extension === 'codex' && activeProviderId && !initialModel) {
+      pushToast({
+        tone: 'warning',
+        title: 'Provider 缺少模型',
+        description: '当前 Codex Provider 没有可用模型。请在 Provider 设置里编辑该 Provider，补充模型后再创建话题。',
+      })
+      return
+    }
 
     getWsClient().send({
       type: 'topic.create',
@@ -831,14 +839,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.10.29</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.10.30</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.29</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.30</span>
               </Tooltip>
             </div>
           </div>
