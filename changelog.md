@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-08 [v1.10.31] — fix: 注意力面板「更新目标」丢失用户输入
+
+- 修复 InspectorPanel 注意力面板里「更新目标」保存后未生效的问题：`onCreateGoal` 漏传弹窗输入的文本，导致 `createGoal` 回退到 `goalDraft`（当前激活目标的文本），落库的是默认目标副本，表现为「目标没新增、节点图不重绘」（与 LLM、目标数量上限均无关）。
+- 现在 InspectorPanel 与 AttentionDrawer 一致透传用户输入文本。
+- 新增 `attention-inspector-overlay.test.tsx` 回归测试，锁定「弹窗输入文本必须透传到 createGoal」。
+- 版本显示更新为 `v1.10.31`。
+
 ## 2026-06-08 [v1.10.30] — fix: Codex Provider 缺模型时阻止创建话题
 
 - 创建 Codex 话题时，如果当前 Codex Provider 没有可用模型，前端直接提示用户先编辑 Provider 补充模型，避免新会话静默回落到默认 Codex 配置后失败。
