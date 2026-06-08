@@ -273,7 +273,7 @@ function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'f
   )
 }
 
-function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
+export function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
   const { nodes, goalAnchor, planItems, rawEvents, llmUnavailableReason } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
 
@@ -329,7 +329,7 @@ function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { t
           llmUnavailableReason={llmUnavailableReason}
           goals={attention.goals}
           activeGoalId={attention.activeGoalId}
-          onCreateGoal={() => void attention.createGoal()}
+          onCreateGoal={(text) => void attention.createGoal(text)}
           onSelectGoal={(goalId) => void attention.selectGoal(goalId)}
           loadingSnapshot={attention.isLoadingSnapshot}
           focusCurrent
