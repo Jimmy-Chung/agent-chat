@@ -391,6 +391,9 @@ class WsClient {
           download_url: (a.download_url as string) ?? undefined,
           preview_url: (a.preview_url as string) ?? undefined,
           source: a.source as 'generated' | 'uploaded',
+          upload_status: (a.upload_status as 'uploaded' | 'upload_failed' | undefined) ?? undefined,
+          failure_code: (a.failure_code as string) ?? null,
+          failure_message: (a.failure_message as string) ?? null,
           created_at: a.created_at as number,
           metadata_json: (a.metadata_json as string) ?? null,
         })

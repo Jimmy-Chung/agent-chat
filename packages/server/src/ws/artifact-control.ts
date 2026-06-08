@@ -178,18 +178,34 @@ export async function completeArtifactUpload(
   }
   ctx.pendingUploads.delete(params.uploadId)
 
-  const artifact = await artifactRepo.createArtifact({
-    id: pending.artifactId,
-    topicId: pending.topicId,
-    originTopicId: pending.topicId,
-    name: pending.name,
-    mime: pending.mime,
-    sizeBytes: pending.sizeBytes,
-    r2Key: pending.r2Key,
-    source: pending.source,
-    uploadStatus: 'uploaded',
-    metadataJson: mergeMetadataJson(pending.metadataJson, params.metadata),
-  })
+  const existing = await artifactRepo.getArtifact(pending.artifactId)
+  const metadataJson = mergeMetadataJson(pending.metadataJson, params.metadata)
+  const artifact = existing
+    ? await artifactRepo.updateArtifact(pending.artifactId, {
+      topicId: existing.topic_id ?? pending.topicId,
+      originTopicId: existing.origin_topic_id ?? pending.topicId,
+      name: pending.name,
+      mime: pending.mime,
+      sizeBytes: pending.sizeBytes,
+      r2Key: pending.r2Key,
+      source: pending.source,
+      uploadStatus: 'uploaded',
+      failureCode: null,
+      failureMessage: null,
+      metadataJson,
+    }) ?? existing
+    : await artifactRepo.createArtifact({
+      id: pending.artifactId,
+      topicId: pending.topicId,
+      originTopicId: pending.topicId,
+      name: pending.name,
+      mime: pending.mime,
+      sizeBytes: pending.sizeBytes,
+      r2Key: pending.r2Key,
+      source: pending.source,
+      uploadStatus: 'uploaded',
+      metadataJson,
+    })
 
   return {
     artifact,
@@ -218,24 +234,40 @@ export async function failArtifactUpload(
   const failureCode = params.code ?? 'upload_failed'
   const failureMessage = params.message ?? 'Artifact upload failed'
 
-  const artifact = await artifactRepo.createArtifact({
-    id: artifactId,
-    topicId,
-    originTopicId: topicId,
-    name,
-    mime,
-    sizeBytes,
-    r2Key,
-    source: 'generated',
-    uploadStatus: 'upload_failed',
+  const existing = await artifactRepo.getArtifact(artifactId)
+  const metadataJson = mergeMetadataJson(pending?.metadataJson ?? stringifyMetadata({ generatedVia: 'adapter' }), {
+    ...(isRecord(params.metadata) ? params.metadata : {}),
     failureCode,
     failureMessage,
-    metadataJson: mergeMetadataJson(pending?.metadataJson ?? stringifyMetadata({ generatedVia: 'adapter' }), {
-      ...(isRecord(params.metadata) ? params.metadata : {}),
+  })
+  const artifact = existing
+    ? await artifactRepo.updateArtifact(artifactId, {
+      topicId: existing.topic_id ?? topicId,
+      originTopicId: existing.origin_topic_id ?? topicId,
+      name,
+      mime,
+      sizeBytes,
+      r2Key,
+      source: 'generated',
+      uploadStatus: 'upload_failed',
       failureCode,
       failureMessage,
-    }),
-  })
+      metadataJson,
+    }) ?? existing
+    : await artifactRepo.createArtifact({
+      id: artifactId,
+      topicId,
+      originTopicId: topicId,
+      name,
+      mime,
+      sizeBytes,
+      r2Key,
+      source: 'generated',
+      uploadStatus: 'upload_failed',
+      failureCode,
+      failureMessage,
+      metadataJson,
+    })
 
   return {
     artifact,

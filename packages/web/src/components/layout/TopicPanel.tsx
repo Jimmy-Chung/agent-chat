@@ -732,7 +732,8 @@ function ArtifactPoolView() {
 }
 
 function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
-  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded' || !artifact.r2_key
+  const needsUpload = artifact.source === 'generated' && !artifact.r2_key
+  const disabled = (artifact.upload_status ?? 'uploaded') === 'upload_failed' || (!artifact.r2_key && !needsUpload)
   const requestAccess = () => {
     if (disabled) return
     const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
@@ -740,13 +741,31 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       window.open(url, '_blank', 'noopener,noreferrer')
       return
     }
+    const newWindow = window.open('about:blank', '_blank')
+    const cleanup = () => {
+      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
+      window.removeEventListener('agent-chat:error', onError)
+    }
     const onReady = (event: Event) => {
       const detail = (event as CustomEvent).detail as { artifactId: string; downloadUrl: string; previewUrl?: string }
       if (detail.artifactId !== artifact.id) return
-      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
-      window.open(mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl, '_blank', 'noopener,noreferrer')
+      cleanup()
+      const targetUrl = mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl
+      if (newWindow && !newWindow.closed) {
+        newWindow.location.href = targetUrl
+      } else {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer')
+      }
+    }
+    const onError = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { code?: string }
+      if (detail.code !== 'ARTIFACT_DOWNLOAD_UNAVAILABLE') return
+      cleanup()
+      if (newWindow && !newWindow.closed) newWindow.close()
+      alert('该产物暂不支持预览（文件尚未上传到云端）')
     }
     window.addEventListener('agent-chat:artifact-download-ready', onReady)
+    window.addEventListener('agent-chat:error', onError)
     getWsClient().send({ type: 'artifact.download.init', data: { artifactId: artifact.id } })
   }
 
@@ -757,7 +776,7 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       className="rounded px-1.5 py-0.5 text-[11px]"
       style={{ background: 'var(--glass-1)', color: disabled ? 'var(--fg-dim)' : 'var(--fg-regular)', border: '1px solid var(--hairline)', opacity: disabled ? 0.55 : 1 }}
     >
-      {mode === 'preview' ? '预览' : '下载'}
+      {needsUpload ? (mode === 'preview' ? '上传并预览' : '上传并下载') : (mode === 'preview' ? '预览' : '下载')}
     </button>
   )
 }

@@ -1395,6 +1395,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         await this.restoreConfig()
         const baseUrl = await this.ctx.storage.get<string>('baseUrl')
         try {
+          await this.ensureGeneratedArtifactUploaded(data.artifactId)
           const result = await initArtifactDownload({
             config: this.config,
             baseUrl,
@@ -1428,6 +1429,40 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
     }
   }
+
+  private async ensureGeneratedArtifactUploaded(artifactId: string): Promise<void> {
+    const artifact = await artifactRepo.getArtifact(artifactId)
+    if (!artifact || artifact.r2_key || artifact.source !== 'generated') return
+
+    const filePath = artifactPathFromMetadata(artifact.metadata_json)
+    if (!filePath) {
+      throw new Error('Generated artifact has no local path')
+    }
+
+    const topicId = artifact.topic_id ?? artifact.origin_topic_id
+    if (!topicId) {
+      throw new Error('Generated artifact is not linked to a topic')
+    }
+    const topic = await topicRepo.getTopic(topicId)
+    if (!topic?.pi_session_id) {
+      throw new Error('Generated artifact topic has no active adapter session')
+    }
+
+    const pi = await this.ensurePiClient()
+    if (!pi) {
+      throw new Error('Adapter is not connected')
+    }
+
+    const result = await pi.rpc('uploadGeneratedArtifact', {
+      sessionId: topic.pi_session_id,
+      topicId,
+      artifactId: artifact.id,
+      filePath,
+    })
+    if (result.uploadStatus !== 'uploaded') {
+      throw new Error('Generated artifact upload failed')
+    }
+  }
 }
 
 function parseTextContent(contentJson: string): string {
@@ -1436,6 +1471,16 @@ function parseTextContent(contentJson: string): string {
     return typeof parsed === 'string' ? parsed : parsed.content ?? ''
   } catch {
     return ''
+  }
+}
+
+function artifactPathFromMetadata(metadataJson: string | null | undefined): string | null {
+  if (!metadataJson) return null
+  try {
+    const parsed = JSON.parse(metadataJson) as { path?: unknown }
+    return typeof parsed.path === 'string' && parsed.path.trim() ? parsed.path : null
+  } catch {
+    return null
   }
 }
 

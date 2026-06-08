@@ -595,7 +595,8 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
 }
 
 function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
-  const disabled = (artifact.upload_status ?? 'uploaded') !== 'uploaded' || !artifact.r2_key
+  const needsUpload = artifact.source === 'generated' && !artifact.r2_key
+  const disabled = (artifact.upload_status ?? 'uploaded') === 'upload_failed' || (!artifact.r2_key && !needsUpload)
   const requestAccess = () => {
     if (disabled) return
     const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
@@ -642,7 +643,7 @@ function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-cha
       className="rounded px-1.5 py-0.5 text-[11px]"
       style={{ background: 'var(--glass-1)', color: disabled ? 'var(--fg-dim)' : 'var(--fg-regular)', border: '1px solid var(--hairline)', opacity: disabled ? 0.55 : 1 }}
     >
-      {mode === 'preview' ? '预览' : '下载'}
+      {needsUpload ? (mode === 'preview' ? '上传并预览' : '上传并下载') : (mode === 'preview' ? '预览' : '下载')}
     </button>
   )
 }

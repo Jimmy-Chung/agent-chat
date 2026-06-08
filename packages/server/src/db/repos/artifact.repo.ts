@@ -46,6 +46,44 @@ export async function getArtifact(id: string): Promise<Artifact | undefined> {
   return rows[0] ? toDomain(rows[0]) : undefined
 }
 
+export async function updateArtifact(
+  id: string,
+  input: Partial<{
+    topicId: string | null
+    originTopicId: string | null
+    name: string
+    mime: string | null
+    sizeBytes: number | null
+    r2Key: string
+    source: Artifact['source']
+    uploadStatus: Artifact['upload_status']
+    failureCode: string | null
+    failureMessage: string | null
+    metadataJson: string | null
+  }>,
+): Promise<Artifact | undefined> {
+  const updates: Record<string, unknown> = {}
+  if ('topicId' in input) updates.topicId = input.topicId ?? null
+  if ('originTopicId' in input) updates.originTopicId = input.originTopicId ?? null
+  if ('name' in input) updates.name = input.name
+  if ('mime' in input) updates.mime = input.mime ?? null
+  if ('sizeBytes' in input) updates.sizeBytes = input.sizeBytes ?? null
+  if ('r2Key' in input) updates.r2Key = input.r2Key
+  if ('source' in input) updates.source = input.source
+  if ('uploadStatus' in input) updates.uploadStatus = input.uploadStatus
+  if ('failureCode' in input) updates.failureCode = input.failureCode ?? null
+  if ('failureMessage' in input) updates.failureMessage = input.failureMessage ?? null
+  if ('metadataJson' in input) updates.metadataJson = input.metadataJson ?? null
+
+  if (Object.keys(updates).length === 0) return getArtifact(id)
+  await getDb()
+    .update(artifacts)
+    .set(updates)
+    .where(eq(artifacts.id, id))
+    .run()
+  return getArtifact(id)
+}
+
 export async function listArtifactsByTopic(topicId: string): Promise<Artifact[]> {
   const rows = await getDb()
     .select()

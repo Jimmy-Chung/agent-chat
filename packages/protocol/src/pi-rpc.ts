@@ -128,6 +128,23 @@ export const sendUserMessageResultSchema = z.object({
 export type SendUserMessageParams = z.infer<typeof sendUserMessageParamsSchema>
 export type SendUserMessageResult = z.infer<typeof sendUserMessageResultSchema>
 
+// uploadGeneratedArtifact
+export const uploadGeneratedArtifactParamsSchema = z.object({
+  sessionId: z.string(),
+  artifactId: z.string(),
+  filePath: z.string(),
+  topicId: z.string().optional(),
+})
+
+export const uploadGeneratedArtifactResultSchema = z.object({
+  ok: z.literal(true),
+  artifactId: z.string(),
+  uploadStatus: z.enum(['uploaded', 'upload_failed']),
+})
+
+export type UploadGeneratedArtifactParams = z.infer<typeof uploadGeneratedArtifactParamsSchema>
+export type UploadGeneratedArtifactResult = z.infer<typeof uploadGeneratedArtifactResultSchema>
+
 // resolveInteraction
 export const resolveInteractionParamsSchema = z.object({
   sessionId: z.string(),
@@ -470,6 +487,10 @@ export type PiRpcMethod = {
   sendUserMessage: {
     params: SendUserMessageParams
     result: SendUserMessageResult
+  }
+  uploadGeneratedArtifact: {
+    params: UploadGeneratedArtifactParams
+    result: UploadGeneratedArtifactResult
   }
   resolveInteraction: {
     params: ResolveInteractionParams

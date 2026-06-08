@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-08 [v1.10.26] — feat: generated artifact 按需上传预览
+
+- 前端 generated artifact 即使尚无 `r2_key` 也展示“上传并预览/上传并下载”，点击后复用 `artifact.download.init` 触发按需上传。
+- Server 在下载本地 generated artifact 前请求 adapter 上传对应 `metadata.path`，上传完成后更新同一条 artifact 的 `r2_key/upload_status` 并返回签名预览 URL。
+- Artifact 上传完成/失败支持更新既有 artifact，避免按需上传产生重复产物记录。
+- 前端 `artifact.added` 同步 `upload_status/failure_message`，让按需上传结果能正确反映到产物面板。
+
 ## 2026-06-08 [v1.10.25] — fix: Codex provider 识别 apipass 分组
 
 - 前端 provider 选择逻辑将 `apipass` 归一为 Codex 逻辑组。

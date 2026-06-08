@@ -91,6 +91,40 @@ describe('artifact control plane', () => {
     expect((await artifactRepo.getArtifact(artifact.id))?.name).toBe('report.md')
   })
 
+  it('completes on-demand upload by updating an existing generated artifact', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'session-1' })
+    const existing = await artifactRepo.createArtifact({
+      id: 'artifact-existing',
+      topicId: topic.id,
+      originTopicId: topic.id,
+      name: 'local.md',
+      mime: 'text/markdown',
+      sizeBytes: 12,
+      r2Key: '',
+      source: 'generated',
+      metadataJson: JSON.stringify({ path: '/workspace/local.md' }),
+    })
+    const request = await requestArtifactUpload(makeContext(pendingUploads), {
+      sessionId: 'session-1',
+      artifactId: existing.id,
+      name: 'local.md',
+      mime: 'text/markdown',
+      sizeBytes: 12,
+      metadata: { path: '/workspace/local.md' },
+    })
+
+    const { artifact } = await completeArtifactUpload(makeContext(pendingUploads), {
+      uploadId: request.uploadId as string,
+      artifactId: existing.id,
+    })
+
+    expect(artifact.id).toBe(existing.id)
+    expect(artifact.r2_key).toContain('/local.md')
+    expect(artifact.upload_status).toBe('uploaded')
+    expect((await artifactRepo.listArtifactsByTopic(topic.id))).toHaveLength(1)
+  })
+
   it('records Adapter upload failure as failed artifact', async () => {
     const topic = await topicRepo.createTopic({ name: 'Topic', kind: 'normal', agentType: 'general' })
     await topicRepo.updateTopic(topic.id, { pi_session_id: 'session-1' })
