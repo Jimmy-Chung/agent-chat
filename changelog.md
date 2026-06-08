@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-08 [v1.10.28] — fix: Agent processing 状态条不再挤压消息列表
+
+- 话题标题下方的 AgentStatusBar 改为浮层 overlay，processing/aborting 状态切换时不再占用 flex 布局高度，避免消息气泡被上下挤压。
+- 状态点外层容器改为固定等宽等高圆形，避免 `px/py + rounded-full` 形成椭圆 pill。
+- 版本显示更新为 `v1.10.28`。
+
 ## 2026-06-08 [v1.10.27] — feat: 输入框直接粘贴图片自动上传并引用
 
 - 聊天输入框支持直接 Ctrl/⌘+V 粘贴图片：自动识别剪贴板图片并复用现有产物上传链路（`artifact.upload.init → PUT R2 → artifact.upload.complete`）。

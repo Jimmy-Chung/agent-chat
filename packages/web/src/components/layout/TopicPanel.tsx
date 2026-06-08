@@ -207,7 +207,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
     : 'hidden'
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <header
         className="flex h-14 shrink-0 items-center gap-2.5 px-4 md:px-6"
         style={{
@@ -475,13 +475,19 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 md:px-6"
+      className="pointer-events-none absolute left-0 right-0 top-14 z-30 flex items-center gap-3 px-4 py-2 md:px-6"
       style={{
         borderBottom: '1px solid var(--hairline)',
-        background: 'linear-gradient(180deg, rgba(255,214,10,0.07), rgba(255,214,10,0.02) 55%, transparent)',
+        background: 'linear-gradient(180deg, rgba(11,12,15,0.62), rgba(11,12,15,0.36) 72%, transparent)',
+        WebkitBackdropFilter: 'blur(18px) saturate(160%)',
+        backdropFilter: 'blur(18px) saturate(160%)',
       }}
     >
-      <span className="inline-flex items-center rounded-full px-2 py-1" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hairline)' }} aria-label={isActive ? 'Agent active' : 'Agent idle'}>
+      <span
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hairline)' }}
+        aria-label={isActive ? 'Agent active' : 'Agent idle'}
+      >
         <span
           className={isActive ? 'animate-pulse' : ''}
           style={{
@@ -535,7 +541,7 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
           type="button"
           disabled={!isActive}
           onClick={() => getWsClient().send({ type: 'user.action', data: { topicId, action: 'abort' } })}
-          className="inline-flex h-7 items-center rounded-full px-3 text-[12px] font-medium"
+          className="pointer-events-auto inline-flex h-7 items-center rounded-full px-3 text-[12px] font-medium"
           style={{
             background: isActive ? 'rgba(255,69,58,0.14)' : 'rgba(255,255,255,0.04)',
             color: isActive ? '#FF8B82' : 'var(--fg-dim)',
