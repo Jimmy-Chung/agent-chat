@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-08 [v1.10.27] — feat: 输入框直接粘贴图片自动上传并引用
+
+- 聊天输入框支持直接 Ctrl/⌘+V 粘贴图片：自动识别剪贴板图片并复用现有产物上传链路（`artifact.upload.init → PUT R2 → artifact.upload.complete`）。
+- 粘贴图片合成唯一文件名 `pasted-<时间戳>-<rand>.<ext>`，上传完成后自动以 `@文件名` 引用进当前消息，无需手动再 @。
+- 纯文本/非图片粘贴行为不受影响；附件按钮上传也同步改为上传后自动引用。
+- 新增 `packages/web/src/lib/paste-image.ts`（mime→ext、唯一名生成、剪贴板图片提取），纯前端改动，不涉及协议/server。
+
 ## 2026-06-08 [v1.10.26] — feat: generated artifact 按需上传预览
 
 - 前端 generated artifact 即使尚无 `r2_key` 也展示“上传并预览/上传并下载”，点击后复用 `artifact.download.init` 触发按需上传。

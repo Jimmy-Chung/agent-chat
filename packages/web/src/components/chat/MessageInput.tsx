@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import TextareaAutosize from 'react-textarea-autosize'
 import { getWsClient } from '@/lib/ws-client'
 import { buildModelOptions } from '@/lib/model-mapping'
+import { buildPastedName, extractImageFiles } from '@/lib/paste-image'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore, type PendingMessage } from '@/stores/message-store'
 import { useTopicStore } from '@/stores/topic-store'
@@ -227,7 +228,44 @@ export function MessageInput({ topicId }: MessageInputProps) {
     })
   }, [topicId, wsClient])
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  // Append `@name ` to the current topic's draft using a functional update so
+  // it stays correct even when called from an async upload callback (where the
+  // captured `value` may be stale).
+  const appendMentionText = useCallback((name: string) => {
+    setDraftsByTopic((prev) => {
+      const cur = prev[topicId] ?? ''
+      const sep = cur && !/\s$/.test(cur) ? ' ' : ''
+      return { ...prev, [topicId]: `${cur}${sep}@${name} ` }
+    })
+  }, [topicId])
+
+  // After an upload completes the artifact arrives asynchronously via the
+  // `artifact.added` WS event → artifact store. Wait for the artifact whose name
+  // matches the one we uploaded, so we can auto-reference it.
+  const waitForArtifactByName = useCallback((name: string, timeoutMs = 8000) => {
+    return new Promise<Artifact | null>((resolve) => {
+      const find = () => useArtifactStore.getState().byTopic[topicId]?.find((a) => a.name === name)
+      const existing = find()
+      if (existing) {
+        resolve(existing)
+        return
+      }
+      const timer = setTimeout(() => {
+        unsub()
+        resolve(null)
+      }, timeoutMs)
+      const unsub = useArtifactStore.subscribe((state) => {
+        const found = state.byTopic[topicId]?.find((a) => a.name === name)
+        if (found) {
+          clearTimeout(timer)
+          unsub()
+          resolve(found)
+        }
+      })
+    })
+  }, [topicId])
+
+  const handleFileUpload = useCallback(async (file: File, opts?: { autoReference?: boolean }) => {
     setUploading(true)
     try {
       const ready = await new Promise<{ uploadId: string; uploadUrl: string; method: 'PUT' }>((resolve, reject) => {
@@ -267,6 +305,15 @@ export function MessageInput({ topicId }: MessageInputProps) {
         type: 'artifact.upload.complete',
         data: { uploadId: ready.uploadId, topicId },
       })
+      if (opts?.autoReference) {
+        const artifact = await waitForArtifactByName(file.name)
+        if (artifact) {
+          setTopicMentions((prev) =>
+            prev.find((m) => m.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
+          )
+          appendMentionText(artifact.name)
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed'
       console.error('Artifact upload failed', error)
@@ -274,7 +321,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
     } finally {
       setUploading(false)
     }
-  }, [topicId, wsClient])
+  }, [topicId, wsClient, waitForArtifactByName, setTopicMentions, appendMentionText])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -284,6 +331,21 @@ export function MessageInput({ topicId }: MessageInputProps) {
       }
     },
     [handleSend],
+  )
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      if (sessionLoading) return
+      const images = extractImageFiles(e.clipboardData)
+      if (images.length === 0) return // let plain text / non-image paste behave normally
+      e.preventDefault()
+      images.forEach((file, i) => {
+        const name = buildPastedName(file.type, Date.now() + i)
+        const renamed = new File([file], name, { type: file.type || 'image/png' })
+        void handleFileUpload(renamed, { autoReference: true })
+      })
+    },
+    [sessionLoading, handleFileUpload],
   )
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -543,7 +605,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
           onChange={(event) => {
             const file = event.target.files?.[0]
             event.currentTarget.value = ''
-            if (file) void handleFileUpload(file)
+            if (file) void handleFileUpload(file, { autoReference: true })
           }}
         />
         {/* Artifact selector popover (S6) */}
@@ -810,7 +872,8 @@ export function MessageInput({ topicId }: MessageInputProps) {
             value={value}
             onChange={handleChange}
             onKeyDown={sessionLoading ? undefined : handleKeyDown}
-            placeholder={sessionLoading ? '正在连接 Agent...' : '回复 agent... 按 Enter 发送 · @ 提及文件'}
+            onPaste={handlePaste}
+            placeholder={sessionLoading ? '正在连接 Agent...' : '回复 agent... 按 Enter 发送 · @ 提及文件 · 可直接粘贴图片'}
             maxRows={6}
             disabled={sessionLoading}
             className="min-h-[22px] flex-1 resize-none bg-transparent text-sm outline-none disabled:opacity-50"
