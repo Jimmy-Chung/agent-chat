@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-09 [v1.10.34] — fix: Codex mirror 会话恢复
+
+- Mirror adapter 升级到 `v1.11.19`：CodexBackend 恢复持久化会话时先调用 Codex app-server `thread/resume`，避免 session recreate 后直接 `turn/start` 触发 `[codex_error] thread not found`。
+- Helm 版本显示更新为 `v1.10.34`。
+
 ## 2026-06-09 [v1.10.33] — feat: Attention mirror R5 语义聚合门禁
 
 - Attention 聚合增加三类语义分层：`capacity` 容量 compact 直接执行，`content` 同话题聚合与 `branch` 支线收束先由本地算法提出候选，再交给 LLM 做后置门禁。
