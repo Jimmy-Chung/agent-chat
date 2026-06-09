@@ -212,6 +212,7 @@ export function buildMindMapProjection(
 
   const emittedBySource = new Set<string>()
   const emittedByTopic = new Set<string>()
+  const visibleOwnerBySourceNodeId = new Map<string, string>()
   let lastMainId = tree.rootId
   let lastBranchByTopic = new Map<string, string>()
 
@@ -228,7 +229,7 @@ export function buildMindMapProjection(
         const nodeTopic = topicByTurn.get(node.id)
         return nodeOrder < topic.order && tree.nodes[nodeTopic ?? '']?.relation === 'main'
       })
-    return anchor ? `user_${anchor.id}` : lastMainId
+    return anchor ? visibleOwnerBySourceNodeId.get(anchor.id) ?? lastMainId : lastMainId
   }
 
   const multiTraceAggregation = (traceNode: TraceNode): AggregationInfo => ({
@@ -283,6 +284,7 @@ export function buildMindMapProjection(
       position: { x, y },
     })
     emittedBySource.add(id)
+    if (!opts.nested) visibleOwnerBySourceNodeId.set(traceNode.id, id)
 
     if (isMultiTrace && expandedIds.has(id)) {
       let previousNested: string | null = null
@@ -363,6 +365,11 @@ export function buildMindMapProjection(
       position: { x, y },
     })
     emittedByTopic.add(id)
+    if (!opts.nested) {
+      for (const sourceNodeId of topic.sourceNodeIds) {
+        visibleOwnerBySourceNodeId.set(sourceNodeId, id)
+      }
+    }
 
     if (expandedIds.has(id)) {
       let previousNested: string | null = null

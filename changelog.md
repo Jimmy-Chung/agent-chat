@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-09 [v1.10.39] — fix: Attention projection 支线边重锚
+
+- 修复 Attention mind projection 在 capacity compact 后仍把支线边 source 指向已隐藏 `user_*` 节点的问题；现在支线 anchor 会重写到包含原始 trace node 的可见聚合节点。
+- 该修复只影响 projection edge 的可见 source，不改变 LLM 评分、节点标题、trace 节点或聚合决策。
+- 新增回归测试覆盖支线挂靠点被 compact 折叠后的重锚场景，并校验 projection 不再产出 source/target 不存在的 edge。
+- 版本显示更新为 `v1.10.39`。
+
 ## 2026-06-09 [v1.10.38] — fix: Attention mirror 小批并行增量 rebuild
 
 - Attention 增量 rebuild 将新增候选节点拆成单节点 LLM 解释请求，并以受控并发执行，降低长话题积压 delta 一次性解释导致的超时风险。
