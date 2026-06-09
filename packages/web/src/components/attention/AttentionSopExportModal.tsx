@@ -132,42 +132,60 @@ export function AttentionSopExportModal({
         <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_360px]">
           <section className="min-h-0 overflow-auto p-4" style={{ borderRight: '1px solid var(--hairline)' }}>
             <div className="space-y-2">
-              {projection.nodes.map((node) => (
-                <div
-                  key={node.id}
-                  className="flex items-start gap-2 rounded-[8px] px-3 py-2"
-                  style={{ background: selectedNodeIds.has(node.id) ? 'rgba(10,132,255,.14)' : 'var(--glass-1)', border: '1px solid var(--hairline)' }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedNodeIds.has(node.id)}
-                    onChange={() => toggleSelected(node.id)}
-                    className="mt-1 h-4 w-4 shrink-0"
-                    aria-label={`选择 ${node.title}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleSelected(node.id)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate text-[13px] font-medium" style={{ color: 'var(--fg-strong)' }}>{node.title}</span>
-                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{node.kind}</span>
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--fg-dim)' }}>{node.subtitle || `${node.sourceNodeIds.length} 个源节点`}</div>
-                  </button>
-                  {node.hasChildren && (
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(node.id)}
-                      className="h-7 shrink-0 rounded-[7px] px-2 text-[11px]"
-                      style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.25)' }}
+              {projection.nodes.map((node) => {
+                const visualDepth = Math.max(0, Math.min(4, node.depth - 1))
+                const isNested = visualDepth > 0
+                return (
+                  <div key={node.id} className="relative" style={{ marginLeft: visualDepth * 18 }}>
+                    {isNested && (
+                      <div
+                        className="absolute bottom-2 left-[-10px] top-2 w-px"
+                        style={{ background: 'rgba(125,183,255,.28)' }}
+                      />
+                    )}
+                    <div
+                      className="flex items-start gap-2 rounded-[8px] px-3 py-2"
+                      style={{
+                        background: selectedNodeIds.has(node.id)
+                          ? 'rgba(10,132,255,.14)'
+                          : isNested
+                            ? 'rgba(255,255,255,.035)'
+                            : 'var(--glass-1)',
+                        border: isNested ? '1px solid rgba(255,255,255,.08)' : '1px solid var(--hairline)',
+                      }}
                     >
-                      {expandedNodeIds.has(node.id) ? '收起' : '展开'}
-                    </button>
-                  )}
-                </div>
-              ))}
+                      <input
+                        type="checkbox"
+                        checked={selectedNodeIds.has(node.id)}
+                        onChange={() => toggleSelected(node.id)}
+                        className="mt-1 h-4 w-4 shrink-0"
+                        aria-label={`选择 ${node.title}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleSelected(node.id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className={`${isNested ? 'text-[12px]' : 'text-[13px]'} truncate font-medium`} style={{ color: 'var(--fg-strong)' }}>{node.title}</span>
+                          <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{node.kind}</span>
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--fg-dim)' }}>{node.subtitle || `${node.sourceNodeIds.length} 个源节点`}</div>
+                      </button>
+                      {node.hasChildren && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(node.id)}
+                          className="h-7 shrink-0 rounded-[7px] px-2 text-[11px]"
+                          style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.25)' }}
+                        >
+                          {expandedNodeIds.has(node.id) ? '收起' : '展开'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </section>
 
