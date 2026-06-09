@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAttentionTrace } from '@/lib/attention'
 import { AttentionXPanel } from './AttentionXPanel'
+import { AttentionSopExportModal } from './AttentionSopExportModal'
 
 export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose: () => void }) {
   const attention = useAttentionTrace(topicId)
   const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing, llmUnavailableReason } = attention
   const fitViewCallbackRef = useRef<(() => void) | null>(null)
+  const [showSopExport, setShowSopExport] = useState(false)
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -78,6 +80,17 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSopExport(true)}
+              disabled={nodes.length === 0}
+              title="导出 SOP"
+              className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40"
+              style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
+            >
+              导出 SOP
+            </button>
+
             {/* Reset view */}
             <button
               type="button"
@@ -125,6 +138,16 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             fitViewCallbackRef={fitViewCallbackRef}
           />
         </div>
+        {showSopExport && (
+          <AttentionSopExportModal
+            topicId={topicId}
+            activeGoalId={attention.activeGoalId}
+            nodes={nodes}
+            goalAnchor={goalAnchor}
+            planItems={planItems}
+            onClose={() => setShowSopExport(false)}
+          />
+        )}
       </div>
     </div>,
     document.body,

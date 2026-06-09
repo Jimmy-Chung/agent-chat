@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-09 [v1.10.40] — feat: Attention 节点导出 SOP
+
+- Attention 抽屉新增 `导出 SOP` 入口，使用独立的节点选择弹窗从当前 projection 副本选择普通节点、聚合节点和展开节点，不复用或修改原面板的选中/展开状态。
+- 新增 `sop_template.export_from_attention` 协议事件；服务端从 active/指定 goal snapshot 解析所选 projection node 的 `sourceNodeIds`，按 trace 原始顺序去重后由 Attention LLM 生成 SOP 字段，LLM 不可用时使用结构化兜底并直接保存到 SOP 中心。
+- SOP 中心改为导出模板管理入口，隐藏旧的手工新建/编辑和话题菜单“生成 SOP”入口；新话题选择 SOP 的既有流程保持不变。
+- 新增协议、服务端 SOP builder、前端导出弹窗测试，覆盖聚合节点展开、源节点去重和导出事件发送。
+- 版本显示更新为 `v1.10.40`。
+
 ## 2026-06-09 [v1.10.39] — fix: Attention projection 支线边重锚
 
 - 修复 Attention mind projection 在 capacity compact 后仍把支线边 source 指向已隐藏 `user_*` 节点的问题；现在支线 anchor 会重写到包含原始 trace node 的可见聚合节点。

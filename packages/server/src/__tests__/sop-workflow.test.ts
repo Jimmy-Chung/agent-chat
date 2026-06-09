@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   assertValidSopNode,
+  buildSopDraftFromAttentionNodes,
   buildSopDraftFromHistory,
   composeSopWorkflow,
   type SopNode,
 } from '../sop/workflow'
+import type { TraceNode } from '@agent-chat/protocol'
 
 function makeSop(overrides: Partial<SopNode> = {}): SopNode {
   return {
@@ -19,6 +21,31 @@ function makeSop(overrides: Partial<SopNode> = {}): SopNode {
     todo_items: [
       { id: '1', content: '读取需求', status: 'pending' },
     ],
+    ...overrides,
+  }
+}
+
+function traceNode(id: string, overrides: Partial<TraceNode> = {}): TraceNode {
+  const order = Number(id.replace(/\D/g, '')) || 1
+  return {
+    id,
+    parent_id: null,
+    branch_id: 'main',
+    user_message: `用户输入 ${id}`,
+    user_summary: `步骤 ${id}`,
+    assistant_summary: `助手输出 ${id}`,
+    intent: `处理 ${id}`,
+    rationale: null,
+    conclusion: `结论 ${id}`,
+    planned_ref: null,
+    alignment: 'unplanned',
+    goal_distance: 0.2,
+    status: 'done',
+    event_ids: [id],
+    source_message_ids: [`m-${id}`],
+    step_count: 1,
+    ts_start: order * 100,
+    ts_end: order * 100 + 1,
     ...overrides,
   }
 }
@@ -79,5 +106,24 @@ describe('AIT-224 SOP workflow', () => {
     expect(draft.output_contract).toContain('可直接交付')
     expect(draft.instruction).toContain('需要优化移动端布局')
     expect(draft.todo_items?.length).toBeGreaterThan(0)
+  })
+
+  it('builds a SOP draft from selected attention nodes in trace order', () => {
+    const draft = buildSopDraftFromAttentionNodes({
+      name: 'AkShare SOP',
+      topicName: '/akshare',
+      goalText: '维护 akshare 话题',
+      agentType: 'programming',
+      nodes: [
+        traceNode('n3', { user_summary: '第三步' }),
+        traceNode('n1', { user_summary: '第一步' }),
+      ],
+    })
+
+    expect(draft.name).toBe('AkShare SOP')
+    expect(draft.agent_type).toBe('programming')
+    expect(draft.instruction.indexOf('第一步')).toBeLessThan(draft.instruction.indexOf('第三步'))
+    expect(draft.plan_template).toBe('1. 第一步\n2. 第三步')
+    expect(draft.todo_items?.map((item) => item.content)).toEqual(['第一步', '第三步'])
   })
 })

@@ -837,6 +837,16 @@ describe('Server event schemas', () => {
     expect(result.byModel['claude-sonnet-4-6'].costMicroUsd).toBe(150)
   })
 
+  it('parses sop_template.export_from_attention client event', () => {
+    const result = clientEventDataSchemas['sop_template.export_from_attention'].parse({
+      topicId: 'topic-1',
+      goalId: 'goal-1',
+      name: '调研 SOP',
+      selectedNodeIds: ['tree_goal', 'user_n1'],
+    })
+    expect(result.selectedNodeIds).toEqual(['tree_goal', 'user_n1'])
+  })
+
   it('parses error', () => {
     const result = errorSchema.parse({
       code: 'auth_invalid',
