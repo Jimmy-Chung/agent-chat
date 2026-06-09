@@ -511,7 +511,7 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
   r.post('/api/agent-chat/v1/attention/goals/:goalId/rebuild', async (c) => {
     const cfg = getConfig()
     if (!authorized(c.req.header('Authorization'))) return c.json({ error: 'Unauthorized' }, 401)
-    let body: { maxTokens?: unknown } = {}
+    let body: { maxTokens?: unknown; mode?: unknown } = {}
     try {
       body = await c.req.json()
     } catch {
@@ -519,12 +519,14 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
     }
     const llm = cfg?.attentionLlm ?? { apiKey: '', baseUrl: '', model: '' }
     const maxTokens = typeof body.maxTokens === 'number' ? body.maxTokens : undefined
+    const mode = body.mode === 'full' ? 'full' : 'incremental'
     const result = await rebuildAttentionGoalSnapshot({
       goalId: c.req.param('goalId'),
       llm,
       interpretTrace,
       decideAggregations: decideAggregationGroups,
       maxTokens,
+      mode,
     })
     if (result.reason === 'not_found') return c.json({ ok: false, error: 'not_found' }, 404)
     return c.json(result, 200, { 'Cache-Control': 'no-store' })

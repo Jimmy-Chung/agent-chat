@@ -440,6 +440,388 @@ describe('Attention server rebuild pipeline', () => {
     }
   })
 
+  it('incremental rebuild 只解释新增节点，并冻结旧 snapshot 节点', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention incremental append', kind: 'normal', agentType: 'general' })
+      const userB = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: userB.id, kind: 'text', contentJson: JSON.stringify({ content: '旧节点 B：注册平台开户' }) })
+      const assistantB = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistantB.id, kind: 'text', contentJson: JSON.stringify({ content: '旧 B 结论：开户注册需要资料校验。' }) })
+      const userC = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: userC.id, kind: 'text', contentJson: JSON.stringify({ content: '旧节点 C：券码验证链路' }) })
+      const assistantC = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistantC.id, kind: 'text', contentJson: JSON.stringify({ content: '旧 C 结论：验证链路需要兑换记录。' }) })
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A：设计 token 中心', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const prompts: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        prompts.push(prompt)
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        if (prompt.includes('新增节点 D')) {
+          return openAiResponse(JSON.stringify({
+            normalizedGoal: '目标 A：设计 token 中心',
+            nodes: [{
+              userSummary: '新增 D 摘要',
+              assistantSummary: '新增 D 结论',
+              aggregateTitle: '新增 D 标题',
+              sameTopic: true,
+              closeCurrentTopic: false,
+              reason: '只解释新增 D',
+              goalAlignment: 6,
+            }],
+          }))
+        }
+        return openAiResponse(JSON.stringify({
+          normalizedGoal: '目标 A：设计 token 中心',
+          nodes: [
+            {
+              userSummary: '冻结 B 摘要',
+              assistantSummary: '冻结 B 结论',
+              aggregateTitle: '冻结 B 标题',
+              sameTopic: true,
+              closeCurrentTopic: false,
+              reason: '初始 B',
+              goalAlignment: 9,
+            },
+            {
+              userSummary: '冻结 C 摘要',
+              assistantSummary: '冻结 C 结论',
+              aggregateTitle: '冻结 C 标题',
+              sameTopic: true,
+              closeCurrentTopic: false,
+              reason: '初始 C',
+              goalAlignment: 8,
+            },
+          ],
+        }))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const firstBody = (await firstRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string } }
+        expect(firstBody.ok).toBe(true)
+        const frozenNodes = JSON.parse(firstBody.snapshot.trace_nodes_json)
+        expect(frozenNodes).toHaveLength(2)
+
+        const userD = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+        await messageRepo.createMessagePart({ messageId: userD.id, kind: 'text', contentJson: JSON.stringify({ content: '新增节点 D：账单对账策略' }) })
+        const assistantD = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+        await messageRepo.createMessagePart({ messageId: assistantD.id, kind: 'text', contentJson: JSON.stringify({ content: '新增 D 结论：需要账单快照和差异表。' }) })
+
+        prompts.length = 0
+        const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(secondBody.ok).toBe(true)
+        const interpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
+        expect(interpretPrompts).toHaveLength(1)
+        expect(interpretPrompts[0]).toContain('新增节点 D')
+        expect(interpretPrompts[0]).not.toContain('旧节点 B')
+        expect(interpretPrompts[0]).not.toContain('旧节点 C')
+        const nodes = JSON.parse(secondBody.snapshot.trace_nodes_json)
+        expect(nodes).toHaveLength(3)
+        expect(nodes.slice(0, 2)).toEqual(frozenNodes)
+        expect(nodes[2].user_message).toBe('新增 D 摘要')
+        expect(nodes[2].assistant_summary).toBe('新增 D 结论')
+        expect(secondBody.snapshot.source_message_count).toBe(6)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      teardownTestDb()
+    }
+  })
+
+  it('incremental rebuild 对大量新增节点分批追赶，避免一次性全量解释', async () => {
+    await setupTestDb()
+    const originalNow = Date.now
+    let now = 1_000_000
+    Date.now = () => now
+    const createTurn = async (topicId: string, userText: string, assistantText: string) => {
+      now += 60 * 60 * 1000
+      const user = await messageRepo.createMessage({ topicId, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user.id, kind: 'text', contentJson: JSON.stringify({ content: userText }) })
+      now += 1
+      const assistant = await messageRepo.createMessage({ topicId, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistant.id, kind: 'text', contentJson: JSON.stringify({ content: assistantText }) })
+    }
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention incremental backlog', kind: 'normal', agentType: 'general' })
+      await createTurn(topic.id, '初始问题：如何设计 token 中心？', '初始结论：先确定目标。')
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A：设计 token 中心', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const prompts: string[] = []
+      const nodes = (labels: string[]) => JSON.stringify({
+        normalizedGoal: '目标 A：设计 token 中心',
+        nodes: labels.map((label, index) => ({
+          userSummary: `${label} 摘要`,
+          assistantSummary: `${label} 结论`,
+          aggregateTitle: `${label} 标题`,
+          sameTopic: true,
+          closeCurrentTopic: false,
+          reason: `解释 ${label}`,
+          goalAlignment: Math.max(1, 9 - index),
+        })),
+      })
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        prompts.push(prompt)
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        if (prompt.includes('新增问题 5')) return openAiResponse(nodes(['新增问题 5', '新增问题 6']))
+        if (prompt.includes('新增问题 1')) return openAiResponse(nodes(['新增问题 1', '新增问题 2', '新增问题 3', '新增问题 4']))
+        return openAiResponse(nodes(['初始问题']))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const firstBody = (await firstRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(firstBody.ok).toBe(true)
+        expect(JSON.parse(firstBody.snapshot.trace_nodes_json)).toHaveLength(1)
+        expect(firstBody.snapshot.source_message_count).toBe(2)
+
+        for (let i = 1; i <= 6; i += 1) {
+          await createTurn(topic.id, `新增问题 ${i}：这一步如何处理？`, `新增问题 ${i} 结论：按增量处理。`)
+        }
+
+        prompts.length = 0
+        const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(secondBody.ok).toBe(true)
+        const secondInterpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
+        expect(secondInterpretPrompts).toHaveLength(1)
+        expect(secondInterpretPrompts[0]).toContain('新增问题 1')
+        expect(secondInterpretPrompts[0]).toContain('新增问题 4')
+        expect(secondInterpretPrompts[0]).not.toContain('新增问题 5')
+        expect(JSON.parse(secondBody.snapshot.trace_nodes_json)).toHaveLength(5)
+        expect(secondBody.snapshot.source_message_count).toBe(10)
+
+        prompts.length = 0
+        const thirdRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const thirdBody = (await thirdRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(thirdBody.ok).toBe(true)
+        const thirdInterpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
+        expect(thirdInterpretPrompts).toHaveLength(1)
+        expect(thirdInterpretPrompts[0]).toContain('新增问题 5')
+        expect(thirdInterpretPrompts[0]).toContain('新增问题 6')
+        expect(thirdInterpretPrompts[0]).not.toContain('新增问题 1')
+        expect(JSON.parse(thirdBody.snapshot.trace_nodes_json)).toHaveLength(7)
+        expect(thirdBody.snapshot.source_message_count).toBe(14)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      Date.now = originalNow
+      teardownTestDb()
+    }
+  })
+
+  it('incremental rebuild 用 raw event id 识别同毫秒新增事件', async () => {
+    await setupTestDb()
+    const originalNow = Date.now
+    Date.now = () => 2_000_000
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention incremental same timestamp', kind: 'normal', agentType: 'general' })
+      const userB = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: userB.id, kind: 'text', contentJson: JSON.stringify({ content: '旧节点 B：注册平台开户？' }) })
+      const assistantB = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistantB.id, kind: 'text', contentJson: JSON.stringify({ content: '旧 B 结论：先校验资料。' }) })
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A：设计 token 中心', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const prompts: string[] = []
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        prompts.push(prompt)
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        if (prompt.includes('同毫秒新增 D')) {
+          return openAiResponse(JSON.stringify({
+            normalizedGoal: '目标 A：设计 token 中心',
+            nodes: [{
+              userSummary: '同毫秒新增 D 摘要',
+              assistantSummary: '同毫秒新增 D 结论',
+              aggregateTitle: '同毫秒新增 D 标题',
+              sameTopic: true,
+              closeCurrentTopic: false,
+              reason: '同毫秒 delta',
+              goalAlignment: 6,
+            }],
+          }))
+        }
+        return openAiResponse(JSON.stringify({
+          normalizedGoal: '目标 A：设计 token 中心',
+          nodes: [{
+            userSummary: '旧 B 摘要',
+            assistantSummary: '旧 B 结论',
+            aggregateTitle: '旧 B 标题',
+            sameTopic: true,
+            closeCurrentTopic: false,
+            reason: '初始 B',
+            goalAlignment: 9,
+          }],
+        }))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const firstBody = (await firstRes.json()) as { ok: boolean; snapshot: { source_last_event_ts: number } }
+        expect(firstBody.ok).toBe(true)
+
+        const userD = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+        await messageRepo.createMessagePart({ messageId: userD.id, kind: 'text', contentJson: JSON.stringify({ content: '同毫秒新增 D：账单对账策略？' }) })
+        const assistantD = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+        await messageRepo.createMessagePart({ messageId: assistantD.id, kind: 'text', contentJson: JSON.stringify({ content: '同毫秒新增 D 结论：保存差异表。' }) })
+
+        prompts.length = 0
+        const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number; source_last_event_ts: number } }
+        expect(secondBody.ok).toBe(true)
+        expect(secondBody.snapshot.source_last_event_ts).toBe(firstBody.snapshot.source_last_event_ts)
+        const interpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
+        expect(interpretPrompts).toHaveLength(1)
+        expect(interpretPrompts[0]).toContain('同毫秒新增 D')
+        expect(interpretPrompts[0]).not.toContain('旧节点 B')
+        expect(JSON.parse(secondBody.snapshot.trace_nodes_json)).toHaveLength(2)
+
+        prompts.length = 0
+        const thirdRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const thirdBody = (await thirdRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(thirdBody.ok).toBe(true)
+        expect(prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))).toHaveLength(0)
+        expect(JSON.parse(thirdBody.snapshot.trace_nodes_json)).toHaveLength(2)
+        expect(thirdBody.snapshot.source_message_count).toBe(4)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      Date.now = originalNow
+      teardownTestDb()
+    }
+  })
+
+  it('mode=full 允许从目标根节点刷新整棵树', async () => {
+    await setupTestDb()
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention full refresh', kind: 'normal', agentType: 'general' })
+      const userB = await messageRepo.createMessage({ topicId: topic.id, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: userB.id, kind: 'text', contentJson: JSON.stringify({ content: '节点 B：开户' }) })
+      const assistantB = await messageRepo.createMessage({ topicId: topic.id, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistantB.id, kind: 'text', contentJson: JSON.stringify({ content: 'B 初始结论' }) })
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      let version = 1
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        return openAiResponse(JSON.stringify({
+          normalizedGoal: '目标 A',
+          nodes: [{
+            userSummary: `B_v${version}`,
+            assistantSummary: `B 结论 v${version}`,
+            aggregateTitle: `B 标题 v${version}`,
+            sameTopic: true,
+            closeCurrentTopic: false,
+            reason: `root refresh v${version}`,
+            goalAlignment: version === 1 ? 8 : 4,
+          }],
+        }))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const firstBody = (await firstRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string } }
+        expect(firstBody.ok).toBe(true)
+        expect(JSON.parse(firstBody.snapshot.trace_nodes_json)[0].user_message).toBe('B_v1')
+
+        version = 2
+        const fullRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: JSON.stringify({ mode: 'full' }),
+        })
+        const fullBody = (await fullRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string } }
+        expect(fullBody.ok).toBe(true)
+        const refreshed = JSON.parse(fullBody.snapshot.trace_nodes_json)
+        expect(refreshed[0].user_message).toBe('B_v2')
+        expect(refreshed[0].assistant_summary).toBe('B 结论 v2')
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      teardownTestDb()
+    }
+  })
+
   it('runtime todo/plan 事件落库后进入 attention rebuild rawEvents', async () => {
     await setupTestDb()
     try {
