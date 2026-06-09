@@ -284,9 +284,9 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     setActiveGoalId((prev) => (prev && loaded.some((goal) => goal.id === prev) ? prev : active?.id ?? null))
   }, [sourceSignal, topicId])
 
-  const rebuild = useCallback(async (goalId: string, opts: { force?: boolean } = {}) => {
+  const rebuild = useCallback(async (goalId: string, opts: { force?: boolean; staleKey?: string } = {}) => {
     if (!goalId) return
-    const key = `${goalId}:${sourceSignal}`
+    const key = `${goalId}:${sourceSignal}:${opts.staleKey ?? ''}`
     if (!opts.force && lastRebuildKeyRef.current === key) return
     lastRebuildKeyRef.current = key
     setIsAnalyzing(true)
@@ -375,7 +375,7 @@ export function useAttentionTrace(topicId: string): AttentionTrace {
     ) {
       return
     }
-    void rebuild(activeGoalId)
+    void rebuild(activeGoalId, { staleKey: `${snapshot?.meta.source_message_count ?? 0}:${snapshot?.meta.source_last_event_ts ?? 0}` })
   }, [activeGoalId, agentStatus, hasLiveMessages, isLoadingSnapshot, messages.length, rebuild, snapshot?.meta.id, snapshot?.meta.source_last_event_ts, snapshot?.meta.source_message_count, sourceLastEventTs, sourceSignal])
 
   const createGoal = useCallback(async (goalTextInput?: string) => {

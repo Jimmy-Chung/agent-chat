@@ -110,6 +110,24 @@ describe('attention aggregation decisions', () => {
     expect(result.projection.nodes.find((n) => n.id === 'agg_topic_1')?.title).toBe('登录修复')
   })
 
+  it('incremental review does not re-review old capacity aggregations', async () => {
+    const decide = vi.fn()
+    const result = await resolveAggregationDecisions({
+      projection: projection(),
+      frozenStore: {},
+      llm: { apiKey: 'k', baseUrl: 'u', model: 'm' },
+      decideAggregations: decide,
+      reviewSourceNodeIds: new Set(['new_node']),
+    })
+    expect(decide).not.toHaveBeenCalled()
+    expect(result.nextStore['capacity:a|b|c']).toMatchObject({
+      mergeable: true,
+      title: '已 compact：旧上下文',
+      summary: '3 轮用户输入',
+      reason: 'frozen old aggregation',
+    })
+  })
+
   it('parses frozen store defensively', () => {
     expect(parseAggregationDecisionStore('{bad')).toEqual({})
     expect(parseAggregationDecisionStore(JSON.stringify({

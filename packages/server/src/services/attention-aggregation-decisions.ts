@@ -15,6 +15,7 @@ export interface AggregationDecisionGroup {
   nodeId: string
   decisionKey: string
   blockKey: string
+  sourceNodeIds: string[]
   groupType: 'capacity' | 'content' | 'branch'
   reason: string
   childTitles: string[]
@@ -90,6 +91,7 @@ export function collectAggregationGroups(projection: MindMapProjection): Aggrega
         nodeId: node.id,
         decisionKey: decisionKey(groupType, aggregation.groupKey!),
         blockKey: decisionKey(groupType, [...new Set(node.sourceNodeIds)].sort().join('|')),
+        sourceNodeIds: node.sourceNodeIds,
         groupType,
         reason: aggregation.reason ?? 'unknown',
         childTitles: aggregation.sourceTitles,
@@ -159,6 +161,7 @@ export async function resolveAggregationDecisions(input: {
   llm: AttentionLlmConfig
   decideAggregations: DecideAggregationsFn
   maxTokens?: number
+  reviewSourceNodeIds?: Set<string>
 }): Promise<{ projection: MindMapProjection; nextStore: AggregationDecisionStore; rejectedKeys: Set<string>; degradedReason?: string }> {
   const groups = collectAggregationGroups(input.projection)
   const nextStore: AggregationDecisionStore = {}
@@ -172,6 +175,18 @@ export async function resolveAggregationDecisions(input: {
     const frozen = input.frozenStore[group.decisionKey]
     if (frozen) {
       nextStore[group.decisionKey] = frozen
+      continue
+    }
+    if (
+      input.reviewSourceNodeIds &&
+      !group.sourceNodeIds.some((sourceNodeId) => input.reviewSourceNodeIds!.has(sourceNodeId))
+    ) {
+      nextStore[group.decisionKey] = {
+        ...DEFAULT_DECISION,
+        title: group.currentTitle,
+        summary: group.currentSummary.replace(/\s*·\s*已聚合$/, ''),
+        reason: 'frozen old aggregation',
+      }
       continue
     }
     if (group.groupType === 'capacity') {
