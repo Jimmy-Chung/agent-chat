@@ -96,6 +96,15 @@ function focusMessageForSources(traceNodes: TraceNode[], sourceNodeIds: string[]
   return null
 }
 
+function sourceMessageKeyForSources(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
+  const sourceSet = new Set(sourceNodeIds)
+  return [...new Set(
+    traceNodes
+      .filter((node) => sourceSet.has(node.id))
+      .flatMap((node) => node.source_message_ids),
+  )].sort().join('|')
+}
+
 function aggregateTitle(traceNodes: TraceNode[], sourceNodeIds: string[]): string {
   const sourceSet = new Set(sourceNodeIds)
   const sources = traceNodes.filter((node) => sourceSet.has(node.id))
@@ -114,6 +123,10 @@ function sourceSummary(traceNodes: TraceNode[], sourceNodeIds: string[]): string
   const turnCount = sources.reduce((sum, node) => sum + Math.max(1, traceMessageCount(node)), 0)
   const toolCount = sources.reduce((sum, node) => sum + node.step_count, 0)
   return `${turnCount} 轮用户输入${toolCount ? ` · ${toolCount} 工具` : ''}`
+}
+
+function aggregationDecisionKey(groupType: 'capacity' | 'content' | 'branch', sourceNodeIds: string[]): string {
+  return `${groupType}:${[...new Set(sourceNodeIds)].sort().join('|')}`
 }
 
 function resolvePositionCollisions(nodes: MindMapNode[]): MindMapNode[] {
@@ -220,6 +233,8 @@ export function buildMindMapProjection(
 
   const multiTraceAggregation = (traceNode: TraceNode): AggregationInfo => ({
     reason: 'too_long',
+    groupKey: [...new Set(traceNode.source_message_ids)].sort().join('|'),
+    groupType: 'content',
     childCount: traceMessageCount(traceNode),
     turnCount: traceMessageCount(traceNode),
     toolCount: traceNode.step_count,
@@ -235,7 +250,9 @@ export function buildMindMapProjection(
     const topic = topicId ? tree.nodes[topicId] : null
     const relation = topic?.relation ?? 'main'
     const messageCount = traceMessageCount(traceNode)
-    const isMultiTrace = messageCount > 1
+    const isMultiTrace =
+      messageCount > 1 &&
+      !treeOptions.blockedAggregationKeys?.has(aggregationDecisionKey('content', [traceNode.id]))
     const y = opts.nested
       ? SUBGRAPH_Y + (topic?.relation === 'branch' ? BRANCH_Y : 0)
       : relation === 'branch'
@@ -250,7 +267,7 @@ export function buildMindMapProjection(
       id,
       kind: isMultiTrace ? 'aggregate' : 'user',
       treeNodeId: `turn_${traceNode.id}`,
-      title: traceTitle(traceNode),
+      title: multiTraceAggregation(traceNode).semanticTitle ?? traceTitle(traceNode),
       subtitle: isMultiTrace ? `${messageCount} 条消息 · 已聚合` : '',
       relation,
       goalDistance: traceNode.goal_distance,
@@ -325,8 +342,8 @@ export function buildMindMapProjection(
       id,
       kind: 'aggregate',
       treeNodeId: topicId,
-      title: aggregateTitle(traceNodes, topic.sourceNodeIds),
-      subtitle: `${sourceSummary(traceNodes, topic.sourceNodeIds)} · 已聚合`,
+      title: topic.aggregation?.semanticTitle ?? aggregateTitle(traceNodes, topic.sourceNodeIds),
+      subtitle: `${topic.aggregation?.semanticSummary ?? sourceSummary(traceNodes, topic.sourceNodeIds)} · 已聚合`,
       relation: topic.relation,
       goalDistance: topic.goalDistance,
       active: topic.active,
@@ -335,7 +352,12 @@ export function buildMindMapProjection(
       depth: topicDepth,
       sourceNodeIds: topic.sourceNodeIds,
       focusMessageId: focusMessageForSources(traceNodes, topic.sourceNodeIds),
-      aggregation: topic.aggregation,
+      aggregation: topic.aggregation
+        ? {
+            ...topic.aggregation,
+            groupKey: sourceMessageKeyForSources(traceNodes, topic.sourceNodeIds) || topic.aggregation.groupKey,
+          }
+        : null,
       hasChildren: topic.childIds.length > 0,
       status: topic.status,
       position: { x, y },

@@ -7,10 +7,17 @@ export type CollapseReason = 'resolved' | 'topic_shift' | 'too_long' | 'inactive
 
 export interface AggregationInfo {
   reason: CollapseReason
+  groupKey?: string
+  groupType?: 'capacity' | 'content' | 'branch'
   childCount: number
   turnCount: number
   toolCount: number
   sourceTitles: string[]
+  semanticTitle?: string
+  semanticSummary?: string
+  semanticMergeable?: boolean
+  semanticConfidence?: number
+  semanticReason?: string
 }
 
 export interface ConversationTreeNode {
@@ -110,6 +117,7 @@ export interface ConversationTreeOptions {
   keepExpandedRecentTopics?: number
   maxDirectChildren?: number
   compactSoftLimit?: number
+  blockedAggregationKeys?: ReadonlySet<string>
 }
 
 const DEFAULT_TOPIC_TURN_LIMIT = 4
@@ -286,12 +294,20 @@ function latestAssistantContext(node: TraceNode | null): string {
   ].filter(Boolean).join(' ')
 }
 
-function resolveBranch(tree: ConversationTree, branchId: string | null): void {
+function resolveBranch(
+  tree: ConversationTree,
+  branchId: string | null,
+  opts: Required<Omit<ConversationTreeOptions, 'blockedAggregationKeys'>> & Pick<ConversationTreeOptions, 'blockedAggregationKeys'>,
+): void {
   const branch = branchId ? tree.nodes[branchId] : null
   if (!branch || branch.kind !== 'topic' || branch.relation !== 'branch') return
+  const sourceNodeIds = collectSourceNodeIds(tree, branch.id)
+  if (isAggregationBlocked(opts, 'branch', sourceNodeIds)) return
   branch.collapsed = true
   branch.aggregation = {
     reason: 'resolved',
+    groupKey: groupKeyFromSourceNodeIds(sourceNodeIds),
+    groupType: 'branch',
     childCount: branch.childIds.length,
     turnCount: branch.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length,
     toolCount: 0,
@@ -311,6 +327,33 @@ function collectSourceTitles(tree: ConversationTree, childIds: string[]): string
     .map((id) => tree.nodes[id]?.title)
     .filter(Boolean)
     .slice(0, 8)
+}
+
+function collectSourceNodeIds(tree: ConversationTree, nodeId: string): string[] {
+  const node = tree.nodes[nodeId]
+  if (!node) return []
+  const ids = new Set(node.sourceNodeIds)
+  for (const childId of node.childIds) {
+    for (const sourceId of collectSourceNodeIds(tree, childId)) ids.add(sourceId)
+  }
+  return [...ids]
+}
+
+function groupKeyFromSourceNodeIds(sourceNodeIds: string[]): string {
+  return [...new Set(sourceNodeIds)].sort().join('|')
+}
+
+function aggregationDecisionKey(groupType: 'capacity' | 'content' | 'branch', groupKey: string): string {
+  return `${groupType}:${groupKey}`
+}
+
+function isAggregationBlocked(
+  opts: Required<Omit<ConversationTreeOptions, 'blockedAggregationKeys'>> & Pick<ConversationTreeOptions, 'blockedAggregationKeys'>,
+  groupType: 'content' | 'branch',
+  sourceNodeIds: string[],
+): boolean {
+  const groupKey = groupKeyFromSourceNodeIds(sourceNodeIds)
+  return !!groupKey && (opts.blockedAggregationKeys?.has(aggregationDecisionKey(groupType, groupKey)) ?? false)
 }
 
 function compactId(parentId: string, childIds: string[]): string {
@@ -333,7 +376,7 @@ function makeCapacityCompactNode(
   const children = childIds.map((id) => tree.nodes[id]).filter(Boolean)
   const first = children[0]
   const last = children[children.length - 1]
-  const sourceNodeIds = children.flatMap((child) => child.sourceNodeIds)
+  const sourceNodeIds = childIds.flatMap((childId) => collectSourceNodeIds(tree, childId))
   const turnCount = childIds.reduce((sum, childId) => sum + countTurns(tree, childId), 0)
   const id = compactId(parent.id, childIds)
   return makeNode({
@@ -352,6 +395,8 @@ function makeCapacityCompactNode(
     depth: parent.depth + 1,
     aggregation: {
       reason: 'capacity_compact',
+      groupKey: groupKeyFromSourceNodeIds(sourceNodeIds),
+      groupType: 'capacity',
       childCount: childIds.length,
       turnCount,
       toolCount: 0,
@@ -517,7 +562,10 @@ function decideRoute(input: {
   return { type: 'continue_main', targetTopicId: mainTopicId }
 }
 
-function collapseFinishedTopics(tree: ConversationTree, opts: Required<ConversationTreeOptions>): void {
+function collapseFinishedTopics(
+  tree: ConversationTree,
+  opts: Required<Omit<ConversationTreeOptions, 'blockedAggregationKeys'>> & Pick<ConversationTreeOptions, 'blockedAggregationKeys'>,
+): void {
   const topics = tree.orderedIds.map((id) => tree.nodes[id]).filter((node) => node.kind === 'topic')
   const recentTopics = new Set(topics.slice(-opts.keepExpandedRecentTopics).map((node) => node.id))
   for (const topic of topics) {
@@ -532,10 +580,13 @@ function collapseFinishedTopics(tree: ConversationTree, opts: Required<Conversat
     const turnCount = topic.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length
     const tooLong = turnCount > opts.topicTurnLimit
     const inactive = !topic.active && !recentTopics.has(topic.id)
-    topic.collapsed = tooLong || inactive
+    const sourceNodeIds = collectSourceNodeIds(tree, topic.id)
+    topic.collapsed = (tooLong || inactive) && !isAggregationBlocked(opts, 'content', sourceNodeIds)
     if (topic.collapsed) {
       topic.aggregation = {
         reason: tooLong ? 'too_long' : 'inactive',
+        groupKey: groupKeyFromSourceNodeIds(sourceNodeIds),
+        groupType: 'content',
         childCount: topic.childIds.length,
         turnCount,
         toolCount: 0,
@@ -574,6 +625,7 @@ export function governConversationTree(
     keepExpandedRecentTopics: options.keepExpandedRecentTopics ?? DEFAULT_KEEP_EXPANDED_RECENT_TOPICS,
     maxDirectChildren: options.maxDirectChildren ?? DEFAULT_MAX_DIRECT_CHILDREN,
     compactSoftLimit: options.compactSoftLimit ?? DEFAULT_COMPACT_SOFT_LIMIT,
+    blockedAggregationKeys: options.blockedAggregationKeys ?? new Set(),
   }
   const rootId = 'tree_goal'
   const tree: ConversationTree = {
@@ -622,7 +674,7 @@ export function governConversationTree(
     let topicId = activeTopicId
 
     if (route.type === 'return_to_main') {
-      resolveBranch(tree, route.resolvedBranchId)
+      resolveBranch(tree, route.resolvedBranchId, opts)
       topicId = route.targetTopicId
       activeTopicId = topicId
       currentTopicTurnCount = tree.nodes[topicId]?.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length ?? 0
@@ -636,10 +688,13 @@ export function governConversationTree(
       const parentTopic = tree.nodes[parentId]
       topicId = `topic_${relation}_${traceNode.id}`
       const activeTopic = activeTopicId ? tree.nodes[activeTopicId] : null
-      if (activeTopic && activeTopic.id !== parentId && !activeTopic.active) {
+      const activeTopicSourceIds = activeTopic ? collectSourceNodeIds(tree, activeTopic.id) : []
+      if (activeTopic && activeTopic.id !== parentId && !activeTopic.active && !isAggregationBlocked(opts, 'content', activeTopicSourceIds)) {
         activeTopic.collapsed = true
         activeTopic.aggregation = {
           reason: route.type === 'start_new_main_phase' ? 'too_long' : 'topic_shift',
+          groupKey: groupKeyFromSourceNodeIds(activeTopicSourceIds),
+          groupType: 'content',
           childCount: activeTopic.childIds.length,
           turnCount: activeTopic.childIds.filter((id) => tree.nodes[id]?.kind === 'turn').length,
           toolCount: 0,

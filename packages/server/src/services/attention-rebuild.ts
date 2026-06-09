@@ -23,6 +23,11 @@ import {
   upsertAttentionGoalSnapshot,
   type AttentionGoalSnapshot,
 } from '../db/repos/attention_goal_snapshot.repo'
+import {
+  parseAggregationDecisionStore,
+  resolveAggregationDecisions,
+  type DecideAggregationsFn,
+} from './attention-aggregation-decisions'
 import { listInteractionsByTopic } from '../db/repos/interaction.repo'
 import { listMessagesAndPartsByTopic } from '../db/repos/message.repo'
 import { listTopicRuntimeEvents, runtimeEventToRawEvent } from '../db/repos/topic_runtime_event.repo'
@@ -89,6 +94,7 @@ export async function rebuildAttentionGoalSnapshot(input: {
   goalId: string
   llm: AttentionLlmConfig
   interpretTrace: InterpretTraceFn
+  decideAggregations: DecideAggregationsFn
   maxTokens?: number
 }): Promise<AttentionRebuildResult> {
   const goal = await getAttentionGoalSnapshot(input.goalId)
@@ -178,6 +184,36 @@ export async function rebuildAttentionGoalSnapshot(input: {
   }
 
   const mindProjection = buildMindMapProjection(traceNodes, semanticGoalAnchor, planItems)
+  const aggregationResult = await resolveAggregationDecisions({
+    projection: mindProjection,
+    frozenStore: parseAggregationDecisionStore(goal.aggregation_decisions_json),
+    llm: input.llm,
+    decideAggregations: input.decideAggregations,
+    maxTokens: Math.min(input.maxTokens ?? 1200, 1200),
+  })
+  if (aggregationResult.degradedReason) {
+    await logGatewayEvent({
+      eventKind: 'attention.aggregation.degraded',
+      status: aggregationResult.degradedReason,
+      topicId: goal.topic_id,
+      payload: {
+        goalId: goal.id,
+        reason: aggregationResult.degradedReason,
+      },
+    })
+  }
+  const finalAggregationResult = aggregationResult.rejectedKeys.size > 0
+    ? await resolveAggregationDecisions({
+        projection: buildMindMapProjection(traceNodes, semanticGoalAnchor, planItems, new Set(), {
+          blockedAggregationKeys: aggregationResult.rejectedKeys,
+        }),
+        frozenStore: aggregationResult.nextStore,
+        llm: input.llm,
+        decideAggregations: input.decideAggregations,
+        maxTokens: Math.min(input.maxTokens ?? 1200, 1200),
+      })
+    : aggregationResult
+  const finalProjection = finalAggregationResult.projection
   const snapshot = await upsertAttentionGoalSnapshot({
     id: goal.id,
     goalJson: JSON.stringify(semanticGoalAnchor),
@@ -186,7 +222,8 @@ export async function rebuildAttentionGoalSnapshot(input: {
     interpretJson: JSON.stringify(interpreted),
     traceNodesJson: JSON.stringify(traceNodes),
     planItemsJson: JSON.stringify(planItems),
-    mindProjectionJson: JSON.stringify(mindProjection),
+    mindProjectionJson: JSON.stringify(finalProjection),
+    aggregationDecisionsJson: JSON.stringify(finalAggregationResult.nextStore),
     sourceMessageCount,
     sourceLastEventTs,
     degradedReason: null,

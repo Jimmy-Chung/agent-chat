@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-09 [v1.10.33] — feat: Attention mirror R5 语义聚合门禁
+
+- Attention 聚合增加三类语义分层：`capacity` 容量 compact 直接执行，`content` 同话题聚合与 `branch` 支线收束先由本地算法提出候选，再交给 LLM 做后置门禁。
+- 聚合候选经 LLM 生成语义标题、摘要、置信度和原因；通过 `aggregation_decisions_json` 冻结落库，稳定复用同一组的聚合决策。
+- 当 LLM 判定 `content`/`branch` 不应聚合时，server 会二次 rebuild 并传入 block key，阻止同一组在本次投影中继续 collapse；容量 compact 不受门禁影响。
+- 聚合冻结 key 使用原始 message ids，block key 使用 trace node ids，兼顾跨 rebuild 稳定性和树构建阶段的拦截能力。
+- 新增 `attention-aggregation-decisions.ts` 与 6 项回归测试，覆盖标题摘要应用、冻结 store、防御解析、分支打回展开、多消息 content 打回展开。
+- 版本显示更新为 `v1.10.33`。
+
 ## 2026-06-09 [v1.10.32] — perf: 注意力面板增量重建（冻结 LLM 层）
 
 - 重建从「每次全量把所有候选塞进 LLM」改为**增量**：只对新候选调 LLM，旧候选复用上次快照的冻结解释（`conclusion`/`goalAlignment`/`userSummary`/`assistantSummary`/`aggregateTitle` 等）。冻结身份按节点 `source_message_ids` 集合，不受 `cand_N` 重排影响。

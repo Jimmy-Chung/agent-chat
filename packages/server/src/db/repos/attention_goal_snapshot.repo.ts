@@ -25,6 +25,7 @@ export interface AttentionGoalSnapshot extends AttentionGoalSnapshotMeta {
   trace_nodes_json: string
   plan_items_json: string
   mind_projection_json: string | null
+  aggregation_decisions_json: string
   degraded_reason: string | null
 }
 
@@ -104,6 +105,7 @@ export async function createAttentionGoal(input: {
     traceNodesJson: EMPTY_JSON,
     planItemsJson: EMPTY_JSON,
     mindProjectionJson: null,
+    aggregationDecisionsJson: '{}',
     degradedReason: null,
     createdAt: now,
     updatedAt: now,
@@ -144,6 +146,7 @@ export async function upsertAttentionGoalSnapshot(input: {
   traceNodesJson: string
   planItemsJson: string
   mindProjectionJson?: string | null
+  aggregationDecisionsJson?: string | null
   sourceMessageCount: number
   sourceLastEventTs: number
   degradedReason?: string | null
@@ -160,6 +163,7 @@ export async function upsertAttentionGoalSnapshot(input: {
       traceNodesJson: input.traceNodesJson,
       planItemsJson: input.planItemsJson,
       mindProjectionJson: input.mindProjectionJson ?? null,
+      aggregationDecisionsJson: input.aggregationDecisionsJson ?? existing.aggregation_decisions_json ?? '{}',
       degradedReason: input.degradedReason ?? null,
       sourceMessageCount: input.sourceMessageCount,
       sourceLastEventTs: input.sourceLastEventTs,
@@ -222,6 +226,7 @@ function toSnapshot(row: Record<string, unknown>): AttentionGoalSnapshot {
     trace_nodes_json: (row.traceNodesJson as string) || EMPTY_JSON,
     plan_items_json: (row.planItemsJson as string) || EMPTY_JSON,
     mind_projection_json: (row.mindProjectionJson as string) || null,
+    aggregation_decisions_json: (row.aggregationDecisionsJson as string) || '{}',
     degraded_reason: (row.degradedReason as string) || null,
   }
 }
