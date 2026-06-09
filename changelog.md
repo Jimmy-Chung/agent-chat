@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-09 [v1.10.35] — fix: Attention mirror 增量 snapshot rebuild
+
+- Attention rebuild 改为以旧 snapshot 为权威状态进行增量 append：旧节点解释、评分和摘要冻结，只对新增节点调用 LLM，避免活跃长话题反复全量 review 触发超时。
+- 增量追赶按批处理新增候选，并用旧 `raw_events_json` 的 event id 识别 delta，覆盖同毫秒消息场景；前端 rebuild 去重 key 加入 snapshot watermark，允许同一消息批次继续追后续分批。
+- 聚合 review 限定在包含新节点的候选上，旧 capacity/content/branch 聚合不重新进入 LLM，降低对既有聚合结果的扰动。
+- 新增回归测试覆盖新增节点冻结、full refresh、分批追赶、同毫秒 delta 与旧聚合冻结。
+- 版本显示更新为 `v1.10.35`。
+
 ## 2026-06-09 [v1.10.34] — fix: Codex mirror 会话恢复
 
 - Mirror adapter 升级到 `v1.11.19`：CodexBackend 恢复持久化会话时先调用 Codex app-server `thread/resume`，避免 session recreate 后直接 `turn/start` 触发 `[codex_error] thread not found`。
