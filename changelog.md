@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-09 [v1.10.38] — fix: Attention mirror 小批并行增量 rebuild
+
+- Attention 增量 rebuild 将新增候选节点拆成单节点 LLM 解释请求，并以受控并发执行，降低长话题积压 delta 一次性解释导致的超时风险。
+- 并发结果按原始候选顺序归并，snapshot 只 append 连续成功前缀；中间节点失败时，后续即使已成功返回也不会越序入库，留给下一轮 retry。
+- 增加 `attention.rebuild.partial_degraded` 日志，记录部分成功提交后的失败位置、提交数量和尝试数量，便于线上排查。
+- 新增回归测试覆盖并发乱序返回但按序 append、以及中间节点失败时只提交成功前缀。
+- 版本显示更新为 `v1.10.38`。
+
 ## 2026-06-09 [v1.10.37] — fix: 中文文件名产物无法预览/下载
 
 - 修复产物文件名含非 ASCII 字符（中文/日文/emoji）时，server 在 R2 下载出口将原始文件名直接写入 `content-disposition` 头，触发 Workers `Headers.set` 的 ByteString 异常，导致整个 GET 返回 500、预览与下载同时失败；纯 ASCII 文件名不受影响，表现为「部分文件可以、部分不行」。
