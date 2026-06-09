@@ -11,6 +11,7 @@ import { useAttentionTrace, type AttentionTrace } from '@/lib/attention'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
 import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
+import { AttentionSopExportModal } from '@/components/attention/AttentionSopExportModal'
 
 const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
@@ -276,6 +277,7 @@ function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'f
 export function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
   const { nodes, goalAnchor, planItems, rawEvents, llmUnavailableReason } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const [showSopExport, setShowSopExport] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -311,14 +313,26 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
         pointerEvents: closing ? 'none' : 'auto',
       }}
     >
-      <button
-        onClick={onClose}
-        className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
-        style={{ color: 'var(--fg-dim)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hairline)' }}
-        title="缩小"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-      </button>
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowSopExport(true)}
+          disabled={nodes.length === 0}
+          className="inline-flex h-7 items-center rounded-md px-2.5 text-[12px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
+          style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
+          title="导出 SOP"
+        >
+          导出 SOP
+        </button>
+        <button
+          onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+          style={{ color: 'var(--fg-dim)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hairline)' }}
+          title="缩小"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
+      </div>
       <div className="min-h-0 flex-1">
         <AttentionXPanel
           topicId={topicId}
@@ -335,6 +349,16 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
           focusCurrent
         />
       </div>
+      {showSopExport && (
+        <AttentionSopExportModal
+          topicId={topicId}
+          activeGoalId={attention.activeGoalId}
+          nodes={nodes}
+          goalAnchor={goalAnchor}
+          planItems={planItems}
+          onClose={() => setShowSopExport(false)}
+        />
+      )}
     </div>
   )
 }

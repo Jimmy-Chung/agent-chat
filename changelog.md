@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-10 [v1.10.41] — fix: Inspector Attention 补齐 SOP 导出入口
+
+- 修复 `v1.10.40` 只在话题顶部打开的 Attention Drawer 中显示 `导出 SOP`，但右侧 Inspector 展开的 Attention overlay 没有入口的问题。
+- Inspector overlay 复用同一个 `AttentionSopExportModal`，导出逻辑、节点选择、LLM 生成与结构化兜底路径保持一致。
+- 版本显示更新为 `v1.10.41`。
+
 ## 2026-06-09 [v1.10.40] — feat: Attention 节点导出 SOP
 
 - Attention 抽屉新增 `导出 SOP` 入口，使用独立的节点选择弹窗从当前 projection 副本选择普通节点、聚合节点和展开节点，不复用或修改原面板的选中/展开状态。
