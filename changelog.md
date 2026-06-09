@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-09 [v1.10.36] — feat: 移动端二维码照片配对
+
+- 移动端连接 Helm 时不再只提示扫码，改为复用 PC 端二维码图片配对入口，可上传二维码照片或粘贴配对链接。
+- 移动端额外提供“拍照识别二维码”入口，通过浏览器/PWA 的图片 capture 调起后置摄像头拍摄二维码照片并本地解码。
+- 新增 `PairingScanCard` UI 回归测试，覆盖默认上传/粘贴入口和移动端拍照入口。
+- 版本显示更新为 `v1.10.36`。
+
 ## 2026-06-09 [v1.10.35] — fix: Attention mirror 增量 snapshot rebuild
 
 - Attention rebuild 改为以旧 snapshot 为权威状态进行增量 append：旧节点解释、评分和摘要冻结，只对新增节点调用 LLM，避免活跃长话题反复全量 review 触发超时。

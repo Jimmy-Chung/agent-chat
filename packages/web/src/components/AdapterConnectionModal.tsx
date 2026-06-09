@@ -110,11 +110,11 @@ export function PairingRecoveryPanel({
             lineHeight: 1.65,
           }}
         >
-          扫描 Helm 二维码以完成配对流程。
+          拍摄或上传 Helm 二维码以完成配对流程。
         </div>
-      ) : (
-        <PairingScanCard onClose={onClose} />
-      )}
+      ) : null}
+
+      <PairingScanCard onClose={onClose} showCameraOption={isMobile} />
     </div>
   )
 }
@@ -140,10 +140,10 @@ export function PairingRequiredScreen() {
             连接到 Helm
           </h1>
           <p style={{ color: 'var(--fg-dim)', fontSize: 13, lineHeight: 1.6 }}>
-            {isMobile ? '扫描 Helm 二维码以完成配对流程。' : '上传 Helm 的配对二维码以完成配对流程。'}
+            {isMobile ? '拍摄或上传 Helm 二维码以完成配对流程。' : '上传 Helm 的配对二维码以完成配对流程。'}
           </p>
         </div>
-        {isMobile ? null : <PairingRecoveryPanel />}
+        <PairingRecoveryPanel />
       </div>
     </div>
   )

@@ -5,11 +5,18 @@ import { useRouter } from 'next/navigation'
 import { parsePairingUrl } from '@/lib/pairing'
 import { decodeQrImage } from '@/lib/qr-decode'
 
-// Desktop "scan" entry (AIT-216 D-1): upload a QR image (decoded client-side)
+// QR/link entry (AIT-216 D-1): capture/upload a QR image (decoded client-side)
 // or paste the pairing link, then jump into the shared /pair flow.
-export function PairingScanCard({ onClose }: { onClose?: () => void }) {
+export function PairingScanCard({
+  onClose,
+  showCameraOption = false,
+}: {
+  onClose?: () => void
+  showCameraOption?: boolean
+}) {
   const router = useRouter()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const uploadRef = useRef<HTMLInputElement>(null)
   const [pasted, setPasted] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -38,17 +45,41 @@ export function PairingScanCard({ onClose }: { onClose?: () => void }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {showCameraOption && (
+        <input
+          ref={cameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) void onFile(f) }}
+        />
+      )}
       <input
-        ref={fileRef}
+        ref={uploadRef}
         type="file"
         accept="image/*"
         style={{ display: 'none' }}
         onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ''; if (f) void onFile(f) }}
       />
+      {showCameraOption && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => cameraRef.current?.click()}
+          style={{
+            height: 40, borderRadius: 10, fontWeight: 600,
+            background: 'rgba(10,132,255,.16)', color: '#7CB6FF',
+            border: '1px solid rgba(10,132,255,.3)', cursor: 'pointer',
+          }}
+        >
+          {busy ? '识别中…' : '拍照识别二维码'}
+        </button>
+      )}
       <button
         type="button"
         disabled={busy}
-        onClick={() => fileRef.current?.click()}
+        onClick={() => uploadRef.current?.click()}
         style={{
           height: 40, borderRadius: 10, fontWeight: 600,
           background: 'var(--glass-2, rgba(255,255,255,.08))', color: 'var(--fg-strong,#fff)',
