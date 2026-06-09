@@ -50,6 +50,14 @@ function expectNormalEdgeLengths(projection: ReturnType<typeof buildMindMapProje
   }
 }
 
+function expectEdgesReferenceVisibleNodes(projection: ReturnType<typeof buildMindMapProjection>) {
+  const nodeIds = new Set(projection.nodes.map((entry) => entry.id))
+  for (const edge of projection.edges) {
+    expect(nodeIds.has(edge.source), `missing source ${edge.source}`).toBe(true)
+    expect(nodeIds.has(edge.target), `missing target ${edge.target}`).toBe(true)
+  }
+}
+
 describe('attention-x conversation tree governance', () => {
   it('groups long chat turns into collapsed topic nodes while keeping the active topic expanded', () => {
     const tree = governConversationTree([
@@ -326,6 +334,37 @@ describe('attention-x conversation tree governance', () => {
     expect(expanded.nodes.some((entry) => entry.id.startsWith('nested_n'))).toBe(true)
     expectUniquePositions(expanded)
     expectNormalEdgeLengths(expanded)
+  })
+
+  it('re-anchors branch edges to the visible aggregate when the original branch anchor is compacted', () => {
+    const nodes = [
+      node('n1', { user_message: '启动主线排查', goal_distance: 0.1 }),
+      node('n2', { user_message: '支线：配置外网访问', user_kind: 'question', goal_distance: 0.9 }),
+      node('n3', { user_message: '支线：修复外网访问', goal_distance: 0.88 }),
+      node('n4', { user_message: '回到主线：收集事件', goal_distance: 0.1 }),
+      node('n5', { user_message: '主线：解释搜索限制', goal_distance: 0.12 }),
+      node('n6', { user_message: '主线：确认网络节点', goal_distance: 0.13 }),
+      node('n7', { user_message: '支线：评估任务关联性', user_kind: 'question', goal_distance: 0.9 }),
+      node('n8', { user_message: '回到主线：保存文档', goal_distance: 0.12 }),
+      node('n9', { user_message: '主线：搜索预期事件', goal_distance: 0.1 }),
+      node('n10', { user_message: '主线：排查 API 域名', goal_distance: 0.12 }),
+      node('n11', { user_message: '主线：修复网络分组', goal_distance: 0.1 }),
+      node('n12', { user_message: '主线：继续调研', goal_distance: 0.1 }),
+      node('n13', { user_message: '主线：汇总结论', goal_distance: 0.1 }),
+      node('n14', { user_message: '主线：复核材料', goal_distance: 0.1 }),
+    ]
+    const projection = buildMindMapProjection(nodes, GOAL, [], new Set(), {
+      topicTurnLimit: 30,
+      compactSoftLimit: 8,
+      maxDirectChildren: 10,
+    })
+
+    expectEdgesReferenceVisibleNodes(projection)
+    const branch = projection.nodes.find((entry) => entry.relation === 'branch' && entry.sourceNodeIds.includes('n7'))
+    expect(branch).toBeTruthy()
+    const branchEdge = projection.edges.find((entry) => entry.target === branch?.id)
+    expect(branchEdge?.kind).toBe('branch')
+    expect(branchEdge?.source.startsWith('agg_')).toBe(true)
   })
 
   it('keeps long mainline aggregate projections compact without overlapping nodes', () => {
