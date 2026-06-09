@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-09 [v1.10.32] — perf: 注意力面板增量重建（冻结 LLM 层）
+
+- 重建从「每次全量把所有候选塞进 LLM」改为**增量**：只对新候选调 LLM，旧候选复用上次快照的冻结解释（`conclusion`/`goalAlignment`/`userSummary`/`assistantSummary`/`aggregateTitle` 等）。冻结身份按节点 `source_message_ids` 集合，不受 `cand_N` 重排影响。
+- 结构层（路由 / compact / 布局）仍每次全量重跑——保持确定性、稳定，且支持多层 rollup；只冻结贵且会漂移的 LLM 层。
+- 根目标归一化文字（`normalized_goal`）钉死：目标未变时复用旧值，不让 LLM 每次重新措辞导致新节点归属抖动。**目标变更是唯一的全量重解释触发器**。
+- 候选全部命中冻结（无新增）时直接跳过 LLM 调用。LLM prompt 大小不再随话题长度增长 → 收敛长话题的 `timeout`/`parse_error` 降级与 token 成本。
+- 零 schema 改动：冻结状态复用现有快照的 `candidates_json`/`interpret_json`/`goal_json`。
+- 新增 `attention-incremental.ts`（纯逻辑）+ `attention-incremental.test.ts`（12 项单测，覆盖冻结 key / 冻结表 / 增量划分 / 合并 / 目标钉死）。
+- 设计文档：`attention-incremental-rebuild-design.md`。compact 聚合节点的 LLM 语义标题（R5）留作下一版。
+- 版本显示更新为 `v1.10.32`。
+
 ## 2026-06-08 [v1.10.31] — fix: 注意力面板「更新目标」丢失用户输入
 
 - 修复 InspectorPanel 注意力面板里「更新目标」保存后未生效的问题：`onCreateGoal` 漏传弹窗输入的文本，导致 `createGoal` 回退到 `goalDraft`（当前激活目标的文本），落库的是默认目标副本，表现为「目标没新增、节点图不重绘」（与 LLM、目标数量上限均无关）。
