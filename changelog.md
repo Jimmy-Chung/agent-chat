@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-09 [v1.10.37] — fix: 中文文件名产物无法预览/下载
+
+- 修复产物文件名含非 ASCII 字符（中文/日文/emoji）时，server 在 R2 下载出口将原始文件名直接写入 `content-disposition` 头，触发 Workers `Headers.set` 的 ByteString 异常，导致整个 GET 返回 500、预览与下载同时失败；纯 ASCII 文件名不受影响，表现为「部分文件可以、部分不行」。
+- `content-disposition` 改为 RFC 6266/5987 规范写法：保留 ASCII 回退 `filename="..."`，并新增 `filename*=UTF-8''<percent-encoded>` 承载真实文件名；同时对 header 写入做防御性兜底，异常文件名不再阻断字节交付。
+- 新增 `artifact-access.test.ts` 回归测试，覆盖中文名、emoji/混合脚本与 ASCII 回退。
+- 版本显示更新为 `v1.10.37`。
+
 ## 2026-06-09 [v1.10.36] — feat: 移动端二维码照片配对
 
 - 移动端连接 Helm 时不再只提示扫码，改为复用 PC 端二维码图片配对入口，可上传二维码照片或粘贴配对链接。

@@ -113,7 +113,18 @@ export async function handleArtifactAccessRequest(
   object.writeHttpMetadata(headers)
   headers.set('etag', object.httpEtag)
   const name = url.searchParams.get('name')
-  if (name) headers.set('content-disposition', `inline; filename="${sanitizeHeaderFilename(name)}"`)
+  if (name) {
+    // RFC 6266 / 5987: non-ASCII filenames (e.g. Chinese) must not be placed
+    // verbatim into the header value — header values are ByteStrings (≤ 0xFF),
+    // so a raw multi-byte char makes `Headers.set` throw and the whole artifact
+    // GET fails (both preview and download). Carry the original name via
+    // `filename*` and keep an ASCII-only `filename=` fallback.
+    try {
+      headers.set('content-disposition', buildContentDisposition(name))
+    } catch {
+      // content-disposition is non-essential — never let it block delivery.
+    }
+  }
   return artifactResponse(request.method === 'HEAD' ? null : object.body, { headers })
 }
 
@@ -135,8 +146,20 @@ function safeFilename(input: string): string {
   return cleaned.slice(0, 180) || 'artifact'
 }
 
-function sanitizeHeaderFilename(input: string): string {
-  return safeFilename(input).replace(/"/g, "'")
+function buildContentDisposition(name: string): string {
+  const cleaned = safeFilename(name)
+  // Legacy ASCII fallback: strip anything outside printable ASCII and quotes.
+  const asciiFallback = cleaned.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, "'")
+  return `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeRfc5987(cleaned)}`
+}
+
+function encodeRfc5987(value: string): string {
+  // encodeURIComponent leaves !'()*~ unescaped; of those, '()* are not valid
+  // attr-chars in an RFC 5987 ext-value, so percent-encode them explicitly.
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  )
 }
 
 async function sign(secret: string, body: string): Promise<string> {
