@@ -94,6 +94,7 @@ function hasValidNodes(nodes: TraceNode[]): boolean {
 }
 
 const MAX_INCREMENTAL_CANDIDATES_PER_REBUILD = 4
+const INCREMENTAL_INTERPRET_CONCURRENCY = 2
 
 function safeParseArray<T>(json: string | null | undefined): T[] {
   if (!json) return []
@@ -185,6 +186,107 @@ function appendInterpretJson(
     nodeReason: append(previous.nodeReason, previousNodes.map((node) => node.rationale ?? ''), delta.nodeReason),
     normalizedGoal: delta.normalizedGoal,
   })
+}
+
+type CandidateInterpretResult =
+  | { ok: true; result: Required<Pick<AttentionInterpretResult, 'conclusion' | 'goalAlignment'>> & Partial<AttentionInterpretResult> }
+  | { ok: false; reason: string; diagnostics?: InterpretResult['diagnostics'] }
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      out[index] = await fn(items[index], index)
+    }
+  })
+  await Promise.all(workers)
+  return out
+}
+
+function firstInterpretItem<T>(items: T[] | undefined, fallback: T): T {
+  return items?.[0] ?? fallback
+}
+
+function normalizeCandidateInterpret(llmResult: InterpretResult): CandidateInterpretResult {
+  if (!llmResult.ok || !Array.isArray(llmResult.conclusion) || !Array.isArray(llmResult.goalAlignment)) {
+    return {
+      ok: false,
+      reason: llmResult.reason ?? 'unknown',
+      diagnostics: llmResult.diagnostics,
+    }
+  }
+  return {
+    ok: true,
+    result: {
+      conclusion: [firstInterpretItem(llmResult.conclusion, '')],
+      goalAlignment: [firstInterpretItem(llmResult.goalAlignment, 5)],
+      userSummary: [firstInterpretItem(llmResult.userSummary, '')],
+      assistantSummary: [firstInterpretItem(llmResult.assistantSummary, '')],
+      aggregateTitle: [firstInterpretItem(llmResult.aggregateTitle, '')],
+      sameTopic: [firstInterpretItem(llmResult.sameTopic, true)],
+      closeCurrentTopic: [firstInterpretItem(llmResult.closeCurrentTopic, false)],
+      nodeReason: [firstInterpretItem(llmResult.nodeReason, '')],
+      normalizedGoal: llmResult.normalizedGoal,
+    },
+  }
+}
+
+async function interpretCandidatesConcurrently(input: {
+  candidates: CandidateNode[]
+  goalAnchor: GoalAnchor
+  llm: AttentionLlmConfig
+  interpretTrace: InterpretTraceFn
+  maxTokens?: number
+}): Promise<CandidateInterpretResult[]> {
+  return mapWithConcurrency(
+    input.candidates,
+    INCREMENTAL_INTERPRET_CONCURRENCY,
+    async (candidate) => {
+      const prompt = buildInterpretPrompt([candidate], input.goalAnchor)
+      try {
+        const llmResult = await input.interpretTrace(prompt, input.llm, { maxTokens: input.maxTokens })
+        return normalizeCandidateInterpret(llmResult)
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? `exception:${error.name}` : 'exception',
+        }
+      }
+    },
+  )
+}
+
+function successfulPrefixLength(results: CandidateInterpretResult[]): number {
+  let count = 0
+  for (const result of results) {
+    if (!result.ok) break
+    count += 1
+  }
+  return count
+}
+
+function combineCandidateInterpretResults(
+  results: Array<Extract<CandidateInterpretResult, { ok: true }>>,
+  normalizedGoal: string,
+): AttentionInterpretResult {
+  return {
+    conclusion: results.map((item) => item.result.conclusion[0] ?? ''),
+    goalAlignment: results.map((item) => item.result.goalAlignment[0] ?? 5),
+    userSummary: results.map((item) => item.result.userSummary?.[0] ?? ''),
+    assistantSummary: results.map((item) => item.result.assistantSummary?.[0] ?? ''),
+    aggregateTitle: results.map((item) => item.result.aggregateTitle?.[0] ?? ''),
+    sameTopic: results.map((item) => item.result.sameTopic?.[0] ?? true),
+    closeCurrentTopic: results.map((item) => item.result.closeCurrentTopic?.[0] ?? false),
+    nodeReason: results.map((item) => item.result.nodeReason?.[0] ?? ''),
+    normalizedGoal,
+  }
 }
 
 function messageEventTs(message: { started_at: number; finished_at?: number | null }): number {
@@ -291,10 +393,19 @@ async function rebuildIncrementalAttentionGoalSnapshot(input: {
     return snapshot ? { ok: true, snapshot } : { ok: false, reason: 'not_found' }
   }
 
-  const prompt = buildInterpretPrompt(deltaCandidates, input.goalAnchor)
-  const llmResult = await input.interpretTrace(prompt, input.llm, { maxTokens: input.maxTokens })
-  if (!llmResult.ok || !Array.isArray(llmResult.conclusion) || !Array.isArray(llmResult.goalAlignment)) {
-    const reason = llmResult.reason ?? 'unknown'
+  const pinnedNormalizedGoal = previousGoalAnchor(input.goal)?.normalized_goal?.trim() || input.goalAnchor.normalized_goal
+  const semanticGoalAnchor: GoalAnchor = { ...input.goalAnchor, normalized_goal: pinnedNormalizedGoal }
+  const interpretResults = await interpretCandidatesConcurrently({
+    candidates: deltaCandidates,
+    goalAnchor: semanticGoalAnchor,
+    llm: input.llm,
+    interpretTrace: input.interpretTrace,
+    maxTokens: input.maxTokens,
+  })
+  const prefixLength = successfulPrefixLength(interpretResults)
+  if (prefixLength === 0) {
+    const firstFailure = interpretResults.find((result) => !result.ok) as Extract<CandidateInterpretResult, { ok: false }> | undefined
+    const reason = firstFailure?.reason ?? 'unknown'
     await logGatewayEvent({
       eventKind: 'attention.rebuild.degraded',
       status: reason,
@@ -310,24 +421,50 @@ async function rebuildIncrementalAttentionGoalSnapshot(input: {
         hasModel: !!input.llm.model,
         sourceMessageCount: input.sourceMessageCount,
         sourceLastEventTs: input.sourceLastEventTs,
-        diagnostics: llmResult.diagnostics,
+        diagnostics: firstFailure?.diagnostics,
       },
     })
     const snapshot = await markAttentionGoalSnapshotDegraded({ id: input.goal.id, reason })
     return { ok: false, degraded: true, reason, snapshot: snapshot ?? input.goal }
   }
 
-  const pinnedNormalizedGoal = previousGoalAnchor(input.goal)?.normalized_goal?.trim() || input.goalAnchor.normalized_goal
-  const semanticGoalAnchor: GoalAnchor = { ...input.goalAnchor, normalized_goal: pinnedNormalizedGoal }
-  const deltaInterpreted = mergeInterpret(deltaCandidates, new Map(), deltaCandidates.map((_, index) => index), llmResult, semanticGoalAnchor.normalized_goal)
-  const deltaTraceNodes = buildTrace(deltaCandidates, semanticGoalAnchor, deltaInterpreted)
+  const committedCandidates = deltaCandidates.slice(0, prefixLength)
+  const committedInterpretResults = interpretResults.slice(0, prefixLength) as Array<Extract<CandidateInterpretResult, { ok: true }>>
+  if (prefixLength < interpretResults.length) {
+    const firstFailure = interpretResults[prefixLength] as Extract<CandidateInterpretResult, { ok: false }>
+    await logGatewayEvent({
+      eventKind: 'attention.rebuild.partial_degraded',
+      status: firstFailure.reason,
+      topicId: input.goal.topic_id,
+      payload: {
+        goalId: input.goal.id,
+        reason: firstFailure.reason,
+        incremental: true,
+        committedCount: prefixLength,
+        attemptedCount: interpretResults.length,
+        failedIndex: prefixLength,
+        frozenCount: input.previousNodes.length,
+        sourceMessageCount: input.sourceMessageCount,
+        sourceLastEventTs: input.sourceLastEventTs,
+        diagnostics: firstFailure.diagnostics,
+      },
+    })
+  }
+  const deltaInterpreted = mergeInterpret(
+    committedCandidates,
+    new Map(),
+    committedCandidates.map((_, index) => index),
+    combineCandidateInterpretResults(committedInterpretResults, semanticGoalAnchor.normalized_goal),
+    semanticGoalAnchor.normalized_goal,
+  )
+  const deltaTraceNodes = buildTrace(committedCandidates, semanticGoalAnchor, deltaInterpreted)
   if (!deltaTraceNodes.length || !hasValidNodes(deltaTraceNodes)) {
     const snapshot = await markAttentionGoalSnapshotDegraded({ id: input.goal.id, reason: 'empty_trace' })
     return { ok: false, degraded: true, reason: 'empty_trace', snapshot: snapshot ?? input.goal }
   }
 
   const combinedTraceNodes = [...input.previousNodes, ...deltaTraceNodes]
-  const processedDeltaEvents = processedEventsThroughCandidates(deltaEvents, deltaCandidates)
+  const processedDeltaEvents = processedEventsThroughCandidates(deltaEvents, committedCandidates)
   const processedEventIds = new Set([
     ...previousEventIds,
     ...processedDeltaEvents.map((event) => event.id),
@@ -337,7 +474,7 @@ async function rebuildIncrementalAttentionGoalSnapshot(input: {
     ?? Math.max(...deltaTraceNodes.map((node) => node.ts_end ?? node.ts_start ?? 0))
   const currentPlanItems = aggregate(processedRawEvents).planItems
   const previousCandidates = safeParseArray<CandidateNode>(input.goal.candidates_json)
-  const combinedCandidates = [...previousCandidates, ...deltaCandidates]
+  const combinedCandidates = [...previousCandidates, ...committedCandidates]
   const mindProjection = buildMindMapProjection(combinedTraceNodes, semanticGoalAnchor, currentPlanItems)
   const deltaNodeIds = new Set(deltaTraceNodes.map((node) => node.id))
   const aggregationResult = await resolveAggregationDecisions({

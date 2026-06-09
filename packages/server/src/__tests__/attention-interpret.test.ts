@@ -595,8 +595,9 @@ describe('Attention server rebuild pipeline', () => {
         const prompt = body.messages?.[1]?.content ?? ''
         prompts.push(prompt)
         if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
-        if (prompt.includes('新增问题 5')) return openAiResponse(nodes(['新增问题 5', '新增问题 6']))
-        if (prompt.includes('新增问题 1')) return openAiResponse(nodes(['新增问题 1', '新增问题 2', '新增问题 3', '新增问题 4']))
+        for (let i = 1; i <= 6; i += 1) {
+          if (prompt.includes(`新增问题 ${i}`)) return openAiResponse(nodes([`新增问题 ${i}`]))
+        }
         return openAiResponse(nodes(['初始问题']))
       }) as unknown as typeof fetch
       try {
@@ -623,10 +624,14 @@ describe('Attention server rebuild pipeline', () => {
         const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
         expect(secondBody.ok).toBe(true)
         const secondInterpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
-        expect(secondInterpretPrompts).toHaveLength(1)
-        expect(secondInterpretPrompts[0]).toContain('新增问题 1')
-        expect(secondInterpretPrompts[0]).toContain('新增问题 4')
-        expect(secondInterpretPrompts[0]).not.toContain('新增问题 5')
+        expect(secondInterpretPrompts).toHaveLength(4)
+        expect(secondInterpretPrompts.map((prompt) => /新增问题 \d/.exec(prompt)?.[0])).toEqual([
+          '新增问题 1',
+          '新增问题 2',
+          '新增问题 3',
+          '新增问题 4',
+        ])
+        expect(secondInterpretPrompts.join('\n')).not.toContain('新增问题 5')
         expect(JSON.parse(secondBody.snapshot.trace_nodes_json)).toHaveLength(5)
         expect(secondBody.snapshot.source_message_count).toBe(10)
 
@@ -639,12 +644,179 @@ describe('Attention server rebuild pipeline', () => {
         const thirdBody = (await thirdRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
         expect(thirdBody.ok).toBe(true)
         const thirdInterpretPrompts = prompts.filter((prompt) => prompt.includes('请按节点顺序输出 JSON'))
-        expect(thirdInterpretPrompts).toHaveLength(1)
-        expect(thirdInterpretPrompts[0]).toContain('新增问题 5')
-        expect(thirdInterpretPrompts[0]).toContain('新增问题 6')
-        expect(thirdInterpretPrompts[0]).not.toContain('新增问题 1')
+        expect(thirdInterpretPrompts).toHaveLength(2)
+        expect(thirdInterpretPrompts.map((prompt) => /新增问题 \d/.exec(prompt)?.[0])).toEqual([
+          '新增问题 5',
+          '新增问题 6',
+        ])
+        expect(thirdInterpretPrompts.join('\n')).not.toContain('新增问题 1')
         expect(JSON.parse(thirdBody.snapshot.trace_nodes_json)).toHaveLength(7)
         expect(thirdBody.snapshot.source_message_count).toBe(14)
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      Date.now = originalNow
+      teardownTestDb()
+    }
+  })
+
+  it('incremental rebuild 并行解释小批节点，但按原始顺序 append', async () => {
+    await setupTestDb()
+    const originalNow = Date.now
+    let now = 3_000_000
+    Date.now = () => now
+    const createTurn = async (topicId: string, userText: string, assistantText: string) => {
+      now += 1000
+      const user = await messageRepo.createMessage({ topicId, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user.id, kind: 'text', contentJson: JSON.stringify({ content: userText }) })
+      now += 1
+      const assistant = await messageRepo.createMessage({ topicId, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistant.id, kind: 'text', contentJson: JSON.stringify({ content: assistantText }) })
+    }
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention parallel ordered append', kind: 'normal', agentType: 'general' })
+      await createTurn(topic.id, '初始节点 C：确定目标', '初始 C 结论')
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A：设计 token 中心', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      let inFlight = 0
+      let maxInFlight = 0
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        const label = ['新增 D', '新增 E', '新增 F', '初始节点 C']
+          .find((item) => prompt.includes(`用户1：「${item}`)) ?? '未知'
+        if (prompt.includes('请按节点顺序输出 JSON')) {
+          inFlight += 1
+          maxInFlight = Math.max(maxInFlight, inFlight)
+          const delay = label === '新增 D' ? 25 : label === '新增 F' ? 10 : 0
+          await new Promise((resolve) => setTimeout(resolve, delay))
+          inFlight -= 1
+        }
+        return openAiResponse(JSON.stringify({
+          normalizedGoal: '目标 A：设计 token 中心',
+          nodes: [{
+            userSummary: `${label} 摘要`,
+            assistantSummary: `${label} 结论`,
+            aggregateTitle: `${label} 标题`,
+            sameTopic: true,
+            closeCurrentTopic: false,
+            reason: `解释 ${label}`,
+            goalAlignment: 8,
+          }],
+        }))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        expect(((await firstRes.json()) as { ok: boolean }).ok).toBe(true)
+
+        await createTurn(topic.id, '新增 D：账单对账', '新增 D 结论')
+        await createTurn(topic.id, '新增 E：额度校验', '新增 E 结论')
+        await createTurn(topic.id, '新增 F：风控告警', '新增 F 结论')
+
+        const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string } }
+        expect(secondBody.ok).toBe(true)
+        expect(maxInFlight).toBeLessThanOrEqual(2)
+        const nodeSummaries = (JSON.parse(secondBody.snapshot.trace_nodes_json) as Array<{ user_message: string }>)
+          .map((node) => node.user_message)
+        expect(nodeSummaries).toEqual(['初始节点 C 摘要', '新增 D 摘要', '新增 E 摘要', '新增 F 摘要'])
+      } finally {
+        globalThis.fetch = originalFetch
+      }
+    } finally {
+      Date.now = originalNow
+      teardownTestDb()
+    }
+  })
+
+  it('incremental rebuild 中间节点失败时只提交连续成功前缀', async () => {
+    await setupTestDb()
+    const originalNow = Date.now
+    let now = 4_000_000
+    Date.now = () => now
+    const createTurn = async (topicId: string, userText: string, assistantText: string) => {
+      now += 1000
+      const user = await messageRepo.createMessage({ topicId, role: 'user', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: user.id, kind: 'text', contentJson: JSON.stringify({ content: userText }) })
+      now += 1
+      const assistant = await messageRepo.createMessage({ topicId, role: 'assistant', status: 'done' })
+      await messageRepo.createMessagePart({ messageId: assistant.id, kind: 'text', contentJson: JSON.stringify({ content: assistantText }) })
+    }
+    try {
+      const topic = await topicRepo.createTopic({ name: 'attention parallel prefix failure', kind: 'normal', agentType: 'general' })
+      await createTurn(topic.id, '初始节点 C：确定目标', '初始 C 结论')
+
+      const app = createAttentionRoutes(() => cfg({ attentionLlm: GOOD_LLM }))
+      const auth = { Authorization: 'Bearer secret', 'content-type': 'application/json' }
+      const defaultRes = await app.request(`/api/agent-chat/v1/attention/goals/${topic.id}/default`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ goalText: '目标 A：设计 token 中心', title: '默认目标' }),
+      })
+      const defaultBody = (await defaultRes.json()) as { goal: { id: string } }
+
+      const originalFetch = globalThis.fetch
+      globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { messages?: Array<{ content: string }> }
+        const prompt = body.messages?.[1]?.content ?? ''
+        if (prompt.includes('组0')) return openAiResponse('{"groups":[]}')
+        if (prompt.includes('用户1：「新增 E')) return openAiResponse('not json')
+        const label = ['新增 D', '新增 F', '初始节点 C']
+          .find((item) => prompt.includes(`用户1：「${item}`)) ?? '未知'
+        return openAiResponse(JSON.stringify({
+          normalizedGoal: '目标 A：设计 token 中心',
+          nodes: [{
+            userSummary: `${label} 摘要`,
+            assistantSummary: `${label} 结论`,
+            aggregateTitle: `${label} 标题`,
+            sameTopic: true,
+            closeCurrentTopic: false,
+            reason: `解释 ${label}`,
+            goalAlignment: 8,
+          }],
+        }))
+      }) as unknown as typeof fetch
+      try {
+        const firstRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        expect(((await firstRes.json()) as { ok: boolean }).ok).toBe(true)
+
+        await createTurn(topic.id, '新增 D：账单对账', '新增 D 结论')
+        await createTurn(topic.id, '新增 E：额度校验', '新增 E 结论')
+        await createTurn(topic.id, '新增 F：风控告警', '新增 F 结论')
+
+        const secondRes = await app.request(`/api/agent-chat/v1/attention/goals/${defaultBody.goal.id}/rebuild`, {
+          method: 'POST',
+          headers: auth,
+          body: '{}',
+        })
+        const secondBody = (await secondRes.json()) as { ok: boolean; snapshot: { trace_nodes_json: string; source_message_count: number } }
+        expect(secondBody.ok).toBe(true)
+        const nodes = JSON.parse(secondBody.snapshot.trace_nodes_json) as Array<{ user_message: string }>
+        expect(nodes.map((node) => node.user_message)).toEqual(['初始节点 C 摘要', '新增 D 摘要'])
+        expect(secondBody.snapshot.source_message_count).toBe(4)
       } finally {
         globalThis.fetch = originalFetch
       }
