@@ -522,6 +522,13 @@ export const sopTemplateGenerateSchema = z.object({
   topicId: z.string(),
 })
 
+export const sopTemplateExportFromAttentionSchema = z.object({
+  topicId: z.string(),
+  goalId: z.string().optional(),
+  name: z.string().min(1),
+  selectedNodeIds: z.array(z.string()).min(1),
+})
+
 export const topicDeleteSchema = z.object({
   id: z.string(),
   artifactStrategy: z.enum(['pool', 'delete']),
@@ -702,6 +709,7 @@ export type ClientEvent =
   | { type: 'sop_template.update'; data: z.infer<typeof sopTemplateSaveSchema> }
   | { type: 'sop_template.delete'; data: z.infer<typeof sopTemplateDeleteSchema> }
   | { type: 'sop_template.generate'; data: z.infer<typeof sopTemplateGenerateSchema> }
+  | { type: 'sop_template.export_from_attention'; data: z.infer<typeof sopTemplateExportFromAttentionSchema> }
 
 export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'topic.create': topicCreateSchema,
@@ -732,4 +740,5 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'sop_template.update': sopTemplateSaveSchema,
   'sop_template.delete': sopTemplateDeleteSchema,
   'sop_template.generate': sopTemplateGenerateSchema,
+  'sop_template.export_from_attention': sopTemplateExportFromAttentionSchema,
 }

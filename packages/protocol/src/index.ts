@@ -260,6 +260,7 @@ export {
   sopTemplateSaveSchema,
   sopTemplateDeleteSchema,
   sopTemplateGenerateSchema,
+  sopTemplateExportFromAttentionSchema,
   clientEventDataSchemas,
 } from './ws-events'
 
