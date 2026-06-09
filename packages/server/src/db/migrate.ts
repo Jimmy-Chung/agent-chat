@@ -283,6 +283,24 @@ export async function runMigrations() {
     }
   }
 
+  // Run 0015: persist attention aggregation gate/title decisions
+  {
+    const hash = '0015_attention_aggregation_decisions'
+    const applied = await d1
+      .prepare(`SELECT hash FROM ${MIGRATION_TABLE} WHERE hash = ?`)
+      .bind(hash)
+      .first()
+
+    if (!applied) {
+      try { await d1.prepare(`ALTER TABLE attention_goal_snapshots ADD COLUMN aggregation_decisions_json TEXT`).run() } catch { /* column may already exist */ }
+      await d1
+        .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
+        .bind(hash, Date.now())
+        .run()
+      logger.info('Applied migration: 0015_attention_aggregation_decisions')
+    }
+  }
+
   // Run 0003: add message retry metadata
   {
     const hash = '0003_message_retry'

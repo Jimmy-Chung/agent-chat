@@ -222,6 +222,7 @@ export const attentionGoalSnapshots = sqliteTable('attention_goal_snapshots', {
   traceNodesJson: text('trace_nodes_json').notNull(),
   planItemsJson: text('plan_items_json').notNull(),
   mindProjectionJson: text('mind_projection_json'),
+  aggregationDecisionsJson: text('aggregation_decisions_json'),
   degradedReason: text('degraded_reason'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),

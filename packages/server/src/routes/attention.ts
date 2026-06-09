@@ -15,6 +15,7 @@ import {
 } from '../db/repos/attention_goal_snapshot.repo'
 import { logGatewayEvent } from '../server-logs'
 import { rebuildAttentionGoalSnapshot } from '../services/attention-rebuild'
+import type { AggregationDecisionResult } from '../services/attention-aggregation-decisions'
 import { extractGoalAnchor } from '@agent-chat/protocol'
 import { listMessagesAndPartsByTopic } from '../db/repos/message.repo'
 
@@ -62,6 +63,11 @@ const SYSTEM_PROMPT =
   'reason（简短判断依据）与 goalAlignment（0-10 整数，与总目标的相关程度，越高越贴目标）。' +
   '同时输出 normalizedGoal（总目标归一化表达）。严格只输出 JSON：' +
   '{"normalizedGoal":string,"nodes":[{"userSummary":string,"assistantSummary":string,"aggregateTitle":string,"sameTopic":boolean,"closeCurrentTopic":boolean,"reason":string,"goalAlignment":number}, ...]}，顺序与输入节点一致。'
+
+const AGGREGATION_SYSTEM_PROMPT =
+  '你是会话聚合审阅器。判断聚合候选是否语义成立，并生成短标题和短摘要。' +
+  'capacity 类型必须允许聚合；content/branch 类型只有在同一问题、同一阶段或已收束支线时才允许。' +
+  '严格只输出 JSON：{"groups":[{"mergeable":boolean,"confidence":0-1,"title":string,"summary":string,"reason":string}, ...]}。'
 
 function waitUntil(c: { executionCtx: ExecutionContext }, promise: Promise<unknown>): void {
   try {
@@ -295,6 +301,99 @@ export async function interpretTrace(
   }
 }
 
+export function parseAggregationDecisions(content: string): AggregationDecisionResult | null {
+  const data = unwrapInterpretPayload(safeJsonParse(content))
+  const groups = data && typeof data === 'object' && Array.isArray((data as { groups?: unknown }).groups)
+    ? (data as { groups: unknown[] }).groups
+    : Array.isArray(data)
+      ? data
+      : null
+  if (!groups) return null
+  const decisions = []
+  for (const item of groups) {
+    if (!item || typeof item !== 'object') return null
+    const record = item as Record<string, unknown>
+    const confidence = Number(record.confidence ?? record.score ?? 0)
+    decisions.push({
+      mergeable: record.mergeable !== false,
+      confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0,
+      title: pickString(record, ['title', 'name', 'topic']),
+      summary: pickString(record, ['summary', 'description']),
+      reason: pickString(record, ['reason', 'rationale']),
+    })
+  }
+  return { ok: true, decisions }
+}
+
+export async function decideAggregationGroups(
+  prompt: string,
+  llm: AttentionLlmConfig,
+  opts: { fetchImpl?: typeof fetch; timeoutMs?: number; maxTokens?: number } = {},
+): Promise<AggregationDecisionResult> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const maxTokens = opts.maxTokens ?? 1200
+  const baseDiagnostics: AttentionInterpretDiagnostics = {
+    promptChars: prompt.length,
+    timeoutMs,
+    maxTokens,
+  }
+  if (!llm.apiKey || !llm.baseUrl || !llm.model) {
+    return { ok: false, decisions: [], reason: 'not_configured', diagnostics: baseDiagnostics }
+  }
+  const doFetch = opts.fetchImpl ?? fetch
+  const url = `${llm.baseUrl.replace(/\/+$/, '')}/chat/completions`
+  const startedAt = Date.now()
+  try {
+    const res = await doFetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${llm.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: llm.model,
+        max_tokens: maxTokens,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: AGGREGATION_SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        response_format: { type: 'json_object' },
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const diagnostics: AttentionInterpretDiagnostics = {
+      ...baseDiagnostics,
+      durationMs: Date.now() - startedAt,
+      httpStatus: res.status,
+    }
+    if (!res.ok) return { ok: false, decisions: [], reason: `upstream_${res.status}`, diagnostics }
+    const data = (await res.json()) as { choices?: Array<{ finish_reason?: string; message?: { content?: string } }> }
+    const choice = data.choices?.[0]
+    const content = choice?.message?.content ?? ''
+    diagnostics.responseChars = content.length
+    if (choice?.finish_reason) diagnostics.finishReason = choice.finish_reason
+    const parsed = parseAggregationDecisions(content)
+    if (!parsed) {
+      diagnostics.parseError = diagnoseParseFailure(content)
+      return { ok: false, decisions: [], reason: 'parse_error', diagnostics }
+    }
+    return { ...parsed, diagnostics }
+  } catch (err) {
+    const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timeout' : 'fetch_error'
+    return {
+      ok: false,
+      decisions: [],
+      reason,
+      diagnostics: {
+        ...baseDiagnostics,
+        durationMs: Date.now() - startedAt,
+        errorName: err instanceof Error ? err.name : typeof err,
+      },
+    }
+  }
+}
+
 export function createAttentionRoutes(getConfig: () => AppConfig | null) {
   const r = new Hono()
 
@@ -424,6 +523,7 @@ export function createAttentionRoutes(getConfig: () => AppConfig | null) {
       goalId: c.req.param('goalId'),
       llm,
       interpretTrace,
+      decideAggregations: decideAggregationGroups,
       maxTokens,
     })
     if (result.reason === 'not_found') return c.json({ ok: false, error: 'not_found' }, 404)
