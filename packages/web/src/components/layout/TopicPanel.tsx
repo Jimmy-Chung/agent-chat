@@ -447,7 +447,7 @@ function AgentStatusBar({ topicId, state, sessionState, sessionError }: { topicI
       }}
     >
       <span
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+        className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full"
         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--hairline)' }}
         aria-label={isActive ? 'Agent active' : 'Agent idle'}
       >

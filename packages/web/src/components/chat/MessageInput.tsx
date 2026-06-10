@@ -14,6 +14,9 @@ import type { Artifact } from '@agent-chat/protocol'
 const EMPTY_ARTIFACTS: Artifact[] = []
 const EMPTY_PENDING: PendingMessage[] = []
 
+// 单条消息的「简洁回答」开关：开启时把这条指令拼到发送内容末尾，引导 agent 简短作答。
+const CONCISE_DIRECTIVE = '（请用最直接、最简洁、逻辑最清晰、术语最少的方式回答上面的问题。）'
+
 const MIME_ICON: Record<string, { bg: string; color: string; border: string; label: string }> = {
   xlsx: { bg: 'rgba(48,209,88,.16)', color: '#6FE39A', border: 'rgba(48,209,88,.30)', label: 'XLSX' },
   xls: { bg: 'rgba(48,209,88,.16)', color: '#6FE39A', border: 'rgba(48,209,88,.30)', label: 'XLS' },
@@ -79,6 +82,13 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const [pickerTab, setPickerTab] = useState<'topic' | 'pool'>('topic')
   const [highlightIndex, setHighlightIndex] = useState(0)
   const [filterType, setFilterType] = useState<FilterType>('all')
+  // 单条消息的「简洁回答」开关，按 topic 维护，发送后自动关闭。
+  const [conciseByTopic, setConciseByTopic] = useState<Record<string, boolean>>({})
+  const conciseMode = conciseByTopic[topicId] ?? false
+  const setConciseMode = useCallback(
+    (next: boolean) => setConciseByTopic((prev) => ({ ...prev, [topicId]: next })),
+    [topicId],
+  )
   const pickerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -109,8 +119,6 @@ export function MessageInput({ topicId }: MessageInputProps) {
     })
   }, [topicId])
 
-  const streamingTopicId = useMessageStore((s) => s.streamingTopicId)
-  const isStreaming = streamingTopicId === topicId
   const agentStatus = useMessageStore((s) => s.agentStatusByTopic[topicId])
   const isAgentActive = agentStatus === 'processing' || agentStatus === 'aborting'
   const hasPendingUserMessage = useMessageStore((s) => {
@@ -120,7 +128,6 @@ export function MessageInput({ topicId }: MessageInputProps) {
     return last?.role === 'user' && last?.status === 'pending'
   })
   const pendingMessages = useMessageStore((s) => s.pendingMessagesByTopic[topicId] ?? EMPTY_PENDING)
-  const showStopButton = isStreaming || isAgentActive || hasPendingUserMessage
   const sessionReady = useWsStore((s) => s.sessionReadyByTopic[topicId])
   const sessionLoading = sessionReady !== true
 
@@ -200,11 +207,13 @@ export function MessageInput({ topicId }: MessageInputProps) {
     if (!trimmed) return
 
     const clientMessageId = `cm-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const outgoing = conciseMode ? `${trimmed}\n\n${CONCISE_DIRECTIVE}` : trimmed
 
     if (agentStatus === 'processing') {
-      useMessageStore.getState().addPendingMessage(topicId, trimmed, clientMessageId)
+      useMessageStore.getState().addPendingMessage(topicId, outgoing, clientMessageId)
       setTopicValue('')
       setTopicMentions([])
+      setConciseMode(false)
       return
     }
 
@@ -212,7 +221,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
       type: 'user.message',
       data: {
         topicId,
-        content: trimmed,
+        content: outgoing,
         clientMessageId,
         mentions: mentions.map((m) => ({ id: m.id, name: m.name })),
       },
@@ -220,14 +229,8 @@ export function MessageInput({ topicId }: MessageInputProps) {
     if (!sent) return
     setTopicValue('')
     setTopicMentions([])
-  }, [value, topicId, wsClient, mentions, agentStatus, setTopicValue, setTopicMentions])
-
-  const handleAbort = useCallback(() => {
-    wsClient.send({
-      type: 'user.action',
-      data: { topicId, action: 'abort' },
-    })
-  }, [topicId, wsClient])
+    setConciseMode(false)
+  }, [value, topicId, wsClient, mentions, agentStatus, conciseMode, setConciseMode, setTopicValue, setTopicMentions])
 
   // Append `@name ` to the current topic's draft using a functional update so
   // it stays correct even when called from an async upload callback (where the
@@ -865,15 +868,58 @@ export function MessageInput({ topicId }: MessageInputProps) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.40), inset 0 1px 0 rgba(255,255,255,0.06)',
           }}
         >
-          {availableModels.length > 0 && (
-            <ProviderModelSelect
-              label="Model"
-              value={selectedModel}
-              options={modelOptions}
-              loading={false}
-              onChange={handleModelChange}
-            />
-          )}
+          <div className="flex items-center gap-2">
+            {availableModels.length > 0 && (
+              <ProviderModelSelect
+                label="Model"
+                value={selectedModel}
+                options={modelOptions}
+                loading={false}
+                onChange={handleModelChange}
+              />
+            )}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={conciseMode}
+              onClick={() => setConciseMode(!conciseMode)}
+              title="豆包模式：用最直接、最简洁、术语最少的方式作答（单条生效，发送后自动关闭）"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors"
+              style={{
+                background: conciseMode ? 'rgba(247,194,107,0.12)' : 'var(--glass-1)',
+                border: `1px solid ${conciseMode ? 'rgba(247,194,107,0.30)' : 'var(--hairline)'}`,
+              }}
+            >
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: conciseMode ? '#F7C26B' : 'var(--fg-dim)' }}>
+                DOUBAO MODE
+              </span>
+              <span
+                style={{
+                  position: 'relative',
+                  width: 26,
+                  height: 15,
+                  flexShrink: 0,
+                  borderRadius: 999,
+                  background: conciseMode ? '#F7C26B' : 'var(--glass-2)',
+                  border: `1px solid ${conciseMode ? 'rgba(247,194,107,0.5)' : 'var(--hairline)'}`,
+                  transition: 'background 140ms ease',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 1,
+                    left: conciseMode ? 12 : 1,
+                    width: 11,
+                    height: 11,
+                    borderRadius: 999,
+                    background: conciseMode ? '#1A1A1A' : 'var(--fg-dim)',
+                    transition: 'left 140ms ease',
+                  }}
+                />
+              </span>
+            </button>
+          </div>
           <TextareaAutosize
             ref={textareaRef}
             value={value}
@@ -905,34 +951,23 @@ export function MessageInput({ topicId }: MessageInputProps) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              {showStopButton ? (
-                <button
-                  onClick={handleAbort}
-                  className="flex h-7 items-center gap-1.5 rounded-lg px-3 text-xs font-medium transition-opacity hover:opacity-80"
-                  style={{ color: 'var(--state-danger)', background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}
-                >
-                  <StopIcon />
-                  Stop
-                </button>
-              ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={!value.trim() || sessionLoading}
-                  className="flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-30"
-                  style={{
-                    background: value.trim()
-                      ? 'linear-gradient(180deg, #2090FF, #0A84FF 60%, #0064D8)'
-                      : 'var(--glass-2)',
-                    color: value.trim() ? '#fff' : 'var(--fg-dim)',
-                    boxShadow: value.trim()
-                      ? 'inset 0 1px 0 rgba(255,255,255,0.30), 0 4px 12px rgba(10,132,255,0.45)'
-                      : 'inset 0 0 0 1px var(--hairline)',
-                  }}
-                  aria-label="Send message"
-                >
-                  <SendIcon />
-                </button>
-              )}
+              <button
+                onClick={handleSend}
+                disabled={!value.trim() || sessionLoading}
+                className="flex h-7 w-7 items-center justify-center rounded-full transition-opacity disabled:opacity-30"
+                style={{
+                  background: value.trim()
+                    ? 'linear-gradient(180deg, #2090FF, #0A84FF 60%, #0064D8)'
+                    : 'var(--glass-2)',
+                  color: value.trim() ? '#fff' : 'var(--fg-dim)',
+                  boxShadow: value.trim()
+                    ? 'inset 0 1px 0 rgba(255,255,255,0.30), 0 4px 12px rgba(10,132,255,0.45)'
+                    : 'inset 0 0 0 1px var(--hairline)',
+                }}
+                aria-label="Send message"
+              >
+                <SendIcon />
+              </button>
             </div>
           </div>
         </div>
@@ -1020,14 +1055,6 @@ function SendIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19V5" /><polyline points="6 11 12 5 18 11" />
-    </svg>
-  )
-}
-
-function StopIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor" />
     </svg>
   )
 }
