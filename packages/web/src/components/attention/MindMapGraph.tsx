@@ -27,6 +27,9 @@ interface MindMapFlowNodeData extends Record<string, unknown> {
   onFocus?: (messageId: string) => void
   onUpdateGoal?: () => void
   remainingGoalEdits?: number
+  exportSelectedIds?: ReadonlySet<string>
+  onToggleExportSelect?: (id: string) => void
+  onToggleExpand?: (id: string) => void
 }
 
 const WIDTH: Record<MindMapNode['kind'], number> = {
@@ -105,11 +108,12 @@ function PencilIcon() {
 }
 
 function MindMapFlowNode({ data, selected }: NodeProps) {
-  const { node, onFocus, onUpdateGoal, remainingGoalEdits } = data as MindMapFlowNodeData
+  const { node, onFocus, onUpdateGoal, remainingGoalEdits, exportSelectedIds, onToggleExportSelect, onToggleExpand } = data as MindMapFlowNodeData
   const dotColor = nodeDotColor(node)
   const kindColor = nodeKindColor(node)
   const focusMessageId = node.focusMessageId
   const kindLabel = nodeKindLabel(node)
+  const showExportCheckbox = !!onToggleExportSelect && node.sourceNodeIds.length > 0
 
   const tagText = node.kind === 'goal'
     ? node.subtitle
@@ -151,6 +155,26 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
 
       {/* Header: dot · kind · tag · actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+        {showExportCheckbox && (
+          <input
+            type="checkbox"
+            className="nodrag nopan"
+            checked={exportSelectedIds?.has(node.id) ?? false}
+            aria-label={`选择 ${node.title}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              e.stopPropagation()
+              onToggleExportSelect?.(node.id)
+            }}
+            style={{
+              width: 14,
+              height: 14,
+              flexShrink: 0,
+              accentColor: '#0A84FF',
+            }}
+          />
+        )}
         <span
           style={{
             width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
@@ -197,6 +221,12 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
               }}
               title={node.collapsed ? '展开' : '折叠'}
               onPointerDown={(e) => e.stopPropagation()}
+              onClick={onToggleExpand
+                ? (e) => {
+                    e.stopPropagation()
+                    onToggleExpand(node.id)
+                  }
+                : undefined}
             >
               {node.collapsed ? (
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -385,6 +415,9 @@ export default function MindMapGraph({
   focusNodeId,
   projection: providedProjection,
   fitViewCallbackRef,
+  exportSelectedIds,
+  onToggleExportSelect,
+  onToggleExpand,
 }: {
   nodes: TraceNode[]
   goalAnchor: GoalAnchor | null
@@ -398,6 +431,9 @@ export default function MindMapGraph({
   focusNodeId?: string | null
   projection?: MindMapProjection
   fitViewCallbackRef?: React.MutableRefObject<(() => void) | null>
+  exportSelectedIds?: ReadonlySet<string>
+  onToggleExportSelect?: (id: string) => void
+  onToggleExpand?: (id: string) => void
 }) {
   const didFitViewRef = useRef(false)
   const draggedPositionsRef = useRef<Record<string, XYPosition>>({})
@@ -417,10 +453,10 @@ export default function MindMapGraph({
       position: dragProjectionSignatureRef.current === projectionSignature
         ? draggedPositionsRef.current[node.id] ?? node.position
         : node.position,
-      data: { node, onFocus, onUpdateGoal, remainingGoalEdits },
+      data: { node, onFocus, onUpdateGoal, remainingGoalEdits, exportSelectedIds, onToggleExportSelect, onToggleExpand },
       selected: node.id === selectedId,
     })),
-    [onFocus, onUpdateGoal, remainingGoalEdits, projection.nodes, projectionSignature, selectedId],
+    [exportSelectedIds, onFocus, onToggleExpand, onToggleExportSelect, onUpdateGoal, remainingGoalEdits, projection.nodes, projectionSignature, selectedId],
   )
   const [displayNodes, setDisplayNodes] = useState<MindFlowNode[]>(projectedNodes)
   useEffect(() => {
