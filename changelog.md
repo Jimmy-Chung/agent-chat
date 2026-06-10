@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-10 [v1.10.51] — fix: Attention sidebar 降级快照展示
+
+- 修复 Attention sidebar 窄版预览在 snapshot 已有节点时仍被 `degraded_reason` 覆盖为「LLM 不可用」的问题。
+- sidebar 现在只有在 LLM 降级且没有可用快照节点时才显示阻断错误；已有快照节点时继续展示当前节点。
+- 版本显示更新为 `v1.10.51`。
+
 ## 2026-06-10 [v1.10.50] — fix: 上传文本预览 UTF-8 解码
 
 - 修复上传文本/Markdown 预览中文乱码的问题：上传写入 R2 与下载预览返回时都会为文本类 `Content-Type` 补充 `charset=UTF-8`，并对 `.md/.txt/.html/.json` 等常见文本扩展名做兜底推断。
