@@ -843,8 +843,10 @@ describe('Server event schemas', () => {
       goalId: 'goal-1',
       name: '调研 SOP',
       selectedNodeIds: ['tree_goal', 'user_n1'],
+      selectedSourceIds: ['n1'],
     })
     expect(result.selectedNodeIds).toEqual(['tree_goal', 'user_n1'])
+    expect(result.selectedSourceIds).toEqual(['n1'])
   })
 
   it('parses error', () => {

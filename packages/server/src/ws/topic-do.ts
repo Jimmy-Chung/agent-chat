@@ -887,7 +887,11 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           break
         }
 
-        const selectedSourceIds = resolveSelectedAttentionSourceIds(projection, data.selectedNodeIds)
+        const selectedSourceIds = resolveSelectedAttentionSourceIds(
+          projection,
+          data.selectedNodeIds,
+          data.selectedSourceIds,
+        )
         if (!selectedSourceIds.length) {
           this.broadcastAll('error', { code: 'ATTENTION_NODE_SELECTION_EMPTY', message: '所选注意力节点没有可导出的源内容' })
           break
@@ -1567,9 +1571,18 @@ function parseJsonObject<T extends object>(value: string | null | undefined): T 
   }
 }
 
-function resolveSelectedAttentionSourceIds(projection: MindMapProjection, selectedNodeIds: string[]): string[] {
-  const selected = new Set(selectedNodeIds)
+export function resolveSelectedAttentionSourceIds(
+  projection: MindMapProjection,
+  selectedNodeIds: string[],
+  selectedSourceIds?: string[],
+): string[] {
   const sourceIds = new Set<string>()
+  for (const sourceId of selectedSourceIds ?? []) {
+    if (sourceId) sourceIds.add(sourceId)
+  }
+  if (sourceIds.size > 0) return [...sourceIds]
+
+  const selected = new Set(selectedNodeIds)
   for (const node of projection.nodes) {
     if (!selected.has(node.id)) continue
     for (const sourceId of node.sourceNodeIds ?? []) {

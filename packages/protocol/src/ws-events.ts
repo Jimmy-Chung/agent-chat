@@ -527,6 +527,7 @@ export const sopTemplateExportFromAttentionSchema = z.object({
   goalId: z.string().optional(),
   name: z.string().min(1),
   selectedNodeIds: z.array(z.string()).min(1),
+  selectedSourceIds: z.array(z.string()).min(1).optional(),
 })
 
 export const topicDeleteSchema = z.object({
