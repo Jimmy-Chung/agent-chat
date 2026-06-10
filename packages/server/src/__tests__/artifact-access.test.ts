@@ -6,26 +6,57 @@ const SECRET = 'test-secret'
 const config = { artifactTokenSecret: SECRET } as AppConfig
 
 // Minimal R2 stub: enough surface for handleArtifactAccessRequest's GET path.
-function mockEnv(body: string): Env {
+function mockGetEnv(body: string, contentType = 'application/octet-stream'): Env {
   return {
     R2: {
       get: async () => ({
         body,
         httpEtag: '"etag"',
         writeHttpMetadata: (headers: Headers) => {
-          headers.set('content-type', 'application/octet-stream')
+          headers.set('content-type', contentType)
         },
       }),
     },
   } as unknown as Env
 }
 
-async function get(key: string, name: string, body = 'payload') {
+function mockPutEnv(capture: { key?: string; contentType?: string }): Env {
+  return {
+    R2: {
+      put: async (key: string, _body: unknown, options?: { httpMetadata?: { contentType?: string } }) => {
+        capture.key = key
+        capture.contentType = options?.httpMetadata?.contentType
+      },
+    },
+  } as unknown as Env
+}
+
+async function get(key: string, name: string, body = 'payload', contentType?: string) {
   const token = await createArtifactTokenWithSecret(SECRET, { action: 'download', key })
   const url = `http://localhost/api/artifacts/download/${encodeURIComponent(key)}?token=${token}&name=${encodeURIComponent(name)}`
-  const res = await handleArtifactAccessRequest(new Request(url), mockEnv(body), config)
+  const res = await handleArtifactAccessRequest(new Request(url), mockGetEnv(body, contentType), config)
   if (!res) throw new Error('handler did not match request')
   return res
+}
+
+async function put(key: string, contentType: string) {
+  const token = await createArtifactTokenWithSecret(SECRET, { action: 'upload', key, maxBytes: 1024 })
+  const url = `http://localhost/api/artifacts/upload/${encodeURIComponent(key)}?token=${token}`
+  const capture: { key?: string; contentType?: string } = {}
+  const res = await handleArtifactAccessRequest(
+    new Request(url, {
+      method: 'PUT',
+      headers: {
+        'content-length': '7',
+        'content-type': contentType,
+      },
+      body: 'payload',
+    }),
+    mockPutEnv(capture),
+    config,
+  )
+  if (!res) throw new Error('handler did not match request')
+  return { res, capture }
 }
 
 describe('artifact download content-disposition', () => {
@@ -53,5 +84,22 @@ describe('artifact download content-disposition', () => {
     const res = await get('topics/t/u/App.css', 'App.css')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-disposition')).toContain('filename="App.css"')
+  })
+
+  it('adds UTF-8 charset for existing text artifacts on preview', async () => {
+    const res = await get('topics/t/u/notes.md', 'notes.md', '# 标题', 'text/plain')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=UTF-8')
+    expect(await res.text()).toBe('# 标题')
+  })
+
+  it('infers UTF-8 markdown content type when uploading an octet-stream Chinese filename', async () => {
+    const key = 'topics/t/u/全量重建.md'
+    const { res, capture } = await put(key, 'application/octet-stream')
+
+    expect(res.status).toBe(204)
+    expect(capture.key).toBe(key)
+    expect(capture.contentType).toBe('text/markdown; charset=UTF-8')
   })
 })

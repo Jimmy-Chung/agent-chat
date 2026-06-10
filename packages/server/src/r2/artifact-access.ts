@@ -97,7 +97,7 @@ export async function handleArtifactAccessRequest(
     }
     await env.R2.put(key, request.body, {
       httpMetadata: {
-        contentType: request.headers.get('content-type') ?? undefined,
+        contentType: normalizeArtifactContentType(request.headers.get('content-type'), key),
       },
     })
     return artifactResponse(null, { status: 204 })
@@ -111,6 +111,8 @@ export async function handleArtifactAccessRequest(
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
+  const contentType = normalizeArtifactContentType(headers.get('content-type'), key)
+  if (contentType) headers.set('content-type', contentType)
   headers.set('etag', object.httpEtag)
   const name = url.searchParams.get('name')
   if (name) {
@@ -162,6 +164,71 @@ function encodeRfc5987(value: string): string {
   )
 }
 
+function normalizeArtifactContentType(contentType: string | null, key: string): string | undefined {
+  const provided = contentType?.trim()
+  const providedBase = provided?.split(';', 1)[0]?.trim().toLowerCase()
+  const resolved = (!provided || providedBase === 'application/octet-stream')
+    ? inferContentTypeFromKey(key) ?? provided
+    : provided
+  if (!resolved) return undefined
+
+  const resolvedBase = resolved.split(';', 1)[0]?.trim().toLowerCase()
+  if (resolvedBase && isUtf8TextContentType(resolvedBase) && !/;\s*charset\s*=/i.test(resolved)) {
+    return `${resolved}; charset=UTF-8`
+  }
+  return resolved
+}
+
+function inferContentTypeFromKey(key: string): string | undefined {
+  const filename = key.split('/').pop()?.toLowerCase() ?? key.toLowerCase()
+  const dot = filename.lastIndexOf('.')
+  const ext = dot >= 0 ? filename.slice(dot) : ''
+  switch (ext) {
+    case '.css':
+      return 'text/css'
+    case '.csv':
+      return 'text/csv'
+    case '.htm':
+    case '.html':
+      return 'text/html'
+    case '.js':
+    case '.mjs':
+      return 'text/javascript'
+    case '.json':
+      return 'application/json'
+    case '.log':
+    case '.text':
+    case '.txt':
+      return 'text/plain'
+    case '.md':
+    case '.markdown':
+      return 'text/markdown'
+    case '.svg':
+      return 'image/svg+xml'
+    case '.ts':
+    case '.tsx':
+      return 'text/typescript'
+    case '.xml':
+      return 'application/xml'
+    case '.yaml':
+    case '.yml':
+      return 'application/yaml'
+    default:
+      return undefined
+  }
+}
+
+function isUtf8TextContentType(contentType: string): boolean {
+  return contentType.startsWith('text/')
+    || contentType === 'application/json'
+    || contentType === 'application/ld+json'
+    || contentType === 'application/xml'
+    || contentType === 'application/yaml'
+    || contentType === 'image/svg+xml'
+    || contentType.endsWith('+json')
+    || contentType.endsWith('+xml')
+}
+
 async function sign(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     'raw',
@@ -187,7 +254,10 @@ function base64UrlEncodeBytes(bytes: Uint8Array): string {
 function base64UrlDecode(input: string): string {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-  return atob(padded)
+  const binary = atob(padded)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new TextDecoder().decode(bytes)
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
