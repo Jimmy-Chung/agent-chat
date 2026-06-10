@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react'
 import type { GoalAnchor, TraceNode } from '../lib/attention'
 import type { AttentionTrace, AttentionGoalMeta } from '../lib/attention/use-attention-trace'
-import { AttentionInspectorOverlay } from '../components/layout/InspectorPanel'
+import { AttentionInspectorOverlay, AttentionInspectorTab } from '../components/layout/InspectorPanel'
 
 afterEach(cleanup)
 
@@ -69,7 +69,10 @@ function defaultGoalMeta(): AttentionGoalMeta {
   }
 }
 
-function makeAttention(createGoal: AttentionTrace['createGoal']): AttentionTrace {
+function makeAttention(
+  createGoal: AttentionTrace['createGoal'] = vi.fn(async () => {}),
+  overrides: Partial<AttentionTrace> = {},
+): AttentionTrace {
   return {
     nodes: [traceNode()],
     goalAnchor: GOAL,
@@ -87,6 +90,7 @@ function makeAttention(createGoal: AttentionTrace['createGoal']): AttentionTrace
     selectGoal: vi.fn(async () => {}),
     renameGoal: vi.fn(async () => {}),
     reloadGoals: vi.fn(async () => {}),
+    ...overrides,
   }
 }
 
@@ -120,5 +124,36 @@ describe('AttentionInspectorOverlay 更新目标透传文本', () => {
     expect(createGoal).toHaveBeenCalledWith('我真正想要的新目标')
     expect(createGoal).not.toHaveBeenCalledWith()
     expect(createGoal).not.toHaveBeenCalledWith('默认目标文本')
+  })
+})
+
+describe('AttentionInspectorTab 降级快照展示', () => {
+  it('LLM 降级但已有快照节点时继续展示节点，而不是整块错误', () => {
+    render(
+      <AttentionInspectorTab
+        attention={makeAttention(undefined, {
+          nodes: [traceNode({ user_message: '继续展示已有快照' })],
+          llmUnavailableReason: 'fetch_error',
+        })}
+        onExpand={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('继续展示已有快照')).toBeTruthy()
+    expect(screen.queryByText(/LLM 不可用/)).toBeNull()
+  })
+
+  it('LLM 降级且没有快照节点时才显示阻断错误', () => {
+    render(
+      <AttentionInspectorTab
+        attention={makeAttention(undefined, {
+          nodes: [],
+          llmUnavailableReason: 'fetch_error',
+        })}
+        onExpand={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/LLM 不可用（fetch_error）/)).toBeTruthy()
   })
 })

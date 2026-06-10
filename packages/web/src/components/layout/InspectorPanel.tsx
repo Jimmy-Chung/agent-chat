@@ -180,7 +180,7 @@ function AttentionInspectorAttention({
   )
 }
 
-function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTrace; onExpand: () => void }) {
+export function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTrace; onExpand: () => void }) {
   const { nodes, goalAnchor, planItems, llmUnavailableReason, isLoadingSnapshot } = attention
   const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
   const currentNode =
@@ -211,7 +211,7 @@ function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTr
           <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
             加载注意力节点快照…
           </div>
-        ) : llmUnavailableReason ? (
+        ) : llmUnavailableReason && nodes.length === 0 ? (
           <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
             LLM 不可用（{llmUnavailableReason}），请检查配置。
           </div>
