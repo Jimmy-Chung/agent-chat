@@ -89,7 +89,7 @@ export function ChatLayout() {
         </aside>
 
         {/* Main topic panel */}
-        <main className="min-w-0 overflow-hidden">
+        <main className="isolate min-w-0 overflow-hidden">
           <TopicPanel />
         </main>
 
