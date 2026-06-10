@@ -83,9 +83,8 @@ export function AttentionDrawer({ topicId, onClose }: { topicId: string; onClose
             <button
               type="button"
               onClick={() => setShowSopExport(true)}
-              disabled={nodes.length === 0}
               title="导出 SOP"
-              className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40"
+              className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-colors"
               style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
             >
               导出 SOP

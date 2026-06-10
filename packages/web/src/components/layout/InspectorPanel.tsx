@@ -317,8 +317,7 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
         <button
           type="button"
           onClick={() => setShowSopExport(true)}
-          disabled={nodes.length === 0}
-          className="inline-flex h-7 items-center rounded-md px-2.5 text-[12px] font-medium transition-opacity hover:opacity-80 disabled:opacity-40"
+          className="inline-flex h-7 items-center rounded-md px-2.5 text-[12px] font-medium transition-opacity hover:opacity-80"
           style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
           title="导出 SOP"
         >

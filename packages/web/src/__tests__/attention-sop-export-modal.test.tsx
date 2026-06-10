@@ -5,6 +5,7 @@ import type { MindMapNode } from '../lib/attention/mind-map-projector'
 import {
   AttentionSopExportModal,
   resolveAttentionSopSelectionPreview,
+  resolveAttentionSopVisualDepths,
 } from '../components/attention/AttentionSopExportModal'
 
 const send = vi.fn(() => true)
@@ -105,5 +106,29 @@ describe('Attention SOP export modal', () => {
         selectedNodeIds: ['user_n1'],
       },
     })
+  })
+
+  it('computes nested visual indentation from expansion edges only', () => {
+    const depths = resolveAttentionSopVisualDepths({
+      nodes: [
+        mindNode('tree_goal', ['n1']),
+        mindNode('agg_topic', ['n1', 'n2']),
+        mindNode('nested_n1', ['n1']),
+        mindNode('nested_child', ['n2']),
+        mindNode('user_n3', ['n3']),
+      ],
+      edges: [
+        { id: 'main_tree_goal_agg_topic', source: 'tree_goal', target: 'agg_topic', kind: 'main' },
+        { id: 'expand_agg_topic_nested_n1', source: 'agg_topic', target: 'nested_n1', kind: 'main' },
+        { id: 'nested_nested_n1_nested_child', source: 'nested_n1', target: 'nested_child', kind: 'main' },
+        { id: 'main_nested_child_user_n3', source: 'nested_child', target: 'user_n3', kind: 'main' },
+      ],
+    })
+
+    expect(depths.get('tree_goal')).toBe(0)
+    expect(depths.get('agg_topic')).toBe(0)
+    expect(depths.get('nested_n1')).toBe(1)
+    expect(depths.get('nested_child')).toBe(2)
+    expect(depths.get('user_n3')).toBe(0)
   })
 })
