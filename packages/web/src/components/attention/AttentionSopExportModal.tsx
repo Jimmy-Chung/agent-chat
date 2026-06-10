@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
-import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
+import { buildMindMapProjection, type MindMapNode, type MindMapProjection } from '@/lib/attention/mind-map-projector'
 import { getWsClient } from '@/lib/ws-client'
 
 type PreviewNode = {
@@ -38,6 +38,30 @@ export function resolveAttentionSopSelectionPreview(nodes: TraceNode[], selected
     }))
 }
 
+export function resolveAttentionSopVisualDepths(projection: MindMapProjection): Map<string, number> {
+  const depths = new Map(projection.nodes.map((node) => [node.id, 0]))
+  const expansionEdges = projection.edges.filter((edge) =>
+    edge.id.startsWith('expand_') ||
+    edge.id.startsWith('nested_') ||
+    edge.id.startsWith('multi_'),
+  )
+
+  for (let pass = 0; pass < expansionEdges.length + 1; pass++) {
+    let changed = false
+    for (const edge of expansionEdges) {
+      if (!depths.has(edge.source) || !depths.has(edge.target)) continue
+      const nextDepth = Math.min(6, (depths.get(edge.source) ?? 0) + 1)
+      if (nextDepth > (depths.get(edge.target) ?? 0)) {
+        depths.set(edge.target, nextDepth)
+        changed = true
+      }
+    }
+    if (!changed) break
+  }
+
+  return depths
+}
+
 export function AttentionSopExportModal({
   topicId,
   activeGoalId,
@@ -68,6 +92,7 @@ export function AttentionSopExportModal({
     () => resolveAttentionSopSelectionPreview(nodes, selectedMindNodes),
     [nodes, selectedMindNodes],
   )
+  const visualDepths = useMemo(() => resolveAttentionSopVisualDepths(projection), [projection])
   const canSubmit = name.trim().length > 0 && selectedNodeIds.size > 0 && previewNodes.length > 0
 
   const toggleSelected = (id: string) => {
@@ -133,7 +158,7 @@ export function AttentionSopExportModal({
           <section className="min-h-0 overflow-auto p-4" style={{ borderRight: '1px solid var(--hairline)' }}>
             <div className="space-y-2">
               {projection.nodes.map((node) => {
-                const visualDepth = Math.max(0, Math.min(4, node.depth - 1))
+                const visualDepth = visualDepths.get(node.id) ?? 0
                 const isNested = visualDepth > 0
                 return (
                   <div key={node.id} className="relative" style={{ marginLeft: visualDepth * 18 }}>
