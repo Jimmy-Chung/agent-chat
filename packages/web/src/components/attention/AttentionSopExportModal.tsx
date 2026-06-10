@@ -1,9 +1,19 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
-import { buildMindMapProjection, type MindMapNode, type MindMapProjection } from '@/lib/attention/mind-map-projector'
+import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { getWsClient } from '@/lib/ws-client'
+
+const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+      加载节点图...
+    </div>
+  ),
+})
 
 type PreviewNode = {
   id: string
@@ -38,28 +48,9 @@ export function resolveAttentionSopSelectionPreview(nodes: TraceNode[], selected
     }))
 }
 
-export function resolveAttentionSopVisualDepths(projection: MindMapProjection): Map<string, number> {
-  const depths = new Map(projection.nodes.map((node) => [node.id, 0]))
-  const expansionEdges = projection.edges.filter((edge) =>
-    edge.id.startsWith('expand_') ||
-    edge.id.startsWith('nested_') ||
-    edge.id.startsWith('multi_'),
-  )
-
-  for (let pass = 0; pass < expansionEdges.length + 1; pass++) {
-    let changed = false
-    for (const edge of expansionEdges) {
-      if (!depths.has(edge.source) || !depths.has(edge.target)) continue
-      const nextDepth = Math.min(6, (depths.get(edge.source) ?? 0) + 1)
-      if (nextDepth > (depths.get(edge.target) ?? 0)) {
-        depths.set(edge.target, nextDepth)
-        changed = true
-      }
-    }
-    if (!changed) break
-  }
-
-  return depths
+function sourcePreviewForMindNode(nodes: TraceNode[], mindNode: MindMapNode | null): PreviewNode[] {
+  if (!mindNode) return []
+  return resolveAttentionSopSelectionPreview(nodes, [mindNode])
 }
 
 export function AttentionSopExportModal({
@@ -78,6 +69,7 @@ export function AttentionSopExportModal({
   onClose: () => void
 }) {
   const [name, setName] = useState('')
+  const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set())
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set())
   const projection = useMemo(
@@ -92,7 +84,14 @@ export function AttentionSopExportModal({
     () => resolveAttentionSopSelectionPreview(nodes, selectedMindNodes),
     [nodes, selectedMindNodes],
   )
-  const visualDepths = useMemo(() => resolveAttentionSopVisualDepths(projection), [projection])
+  const selectedMindNode = useMemo(
+    () => projection.nodes.find((node) => node.id === selectedMindId) ?? projection.nodes.find((node) => node.kind !== 'goal') ?? projection.nodes[0] ?? null,
+    [projection.nodes, selectedMindId],
+  )
+  const selectedSourcePreview = useMemo(
+    () => sourcePreviewForMindNode(nodes, selectedMindNode),
+    [nodes, selectedMindNode],
+  )
   const canSubmit = name.trim().length > 0 && selectedNodeIds.size > 0 && previewNodes.length > 0
 
   const toggleSelected = (id: string) => {
@@ -104,6 +103,10 @@ export function AttentionSopExportModal({
     })
   }
 
+  const selectMindNode = (id: string) => {
+    setSelectedMindId(id)
+  }
+
   const toggleExpanded = (id: string) => {
     setExpandedNodeIds((prev) => {
       const next = new Set(prev)
@@ -112,6 +115,8 @@ export function AttentionSopExportModal({
       return next
     })
   }
+
+  const selectedMindChecked = selectedMindNode ? selectedNodeIds.has(selectedMindNode.id) : false
 
   const submit = () => {
     if (!canSubmit) return
@@ -154,64 +159,26 @@ export function AttentionSopExportModal({
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="min-h-0 overflow-auto p-4" style={{ borderRight: '1px solid var(--hairline)' }}>
-            <div className="space-y-2">
-              {projection.nodes.map((node) => {
-                const visualDepth = visualDepths.get(node.id) ?? 0
-                const isNested = visualDepth > 0
-                return (
-                  <div key={node.id} className="relative" style={{ marginLeft: visualDepth * 18 }}>
-                    {isNested && (
-                      <div
-                        className="absolute bottom-2 left-[-10px] top-2 w-px"
-                        style={{ background: 'rgba(125,183,255,.28)' }}
-                      />
-                    )}
-                    <div
-                      className="flex items-start gap-2 rounded-[8px] px-3 py-2"
-                      style={{
-                        background: selectedNodeIds.has(node.id)
-                          ? 'rgba(10,132,255,.14)'
-                          : isNested
-                            ? 'rgba(255,255,255,.035)'
-                            : 'var(--glass-1)',
-                        border: isNested ? '1px solid rgba(255,255,255,.08)' : '1px solid var(--hairline)',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedNodeIds.has(node.id)}
-                        onChange={() => toggleSelected(node.id)}
-                        className="mt-1 h-4 w-4 shrink-0"
-                        aria-label={`选择 ${node.title}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleSelected(node.id)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className={`${isNested ? 'text-[12px]' : 'text-[13px]'} truncate font-medium`} style={{ color: 'var(--fg-strong)' }}>{node.title}</span>
-                          <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{node.kind}</span>
-                        </div>
-                        <div className="mt-1 line-clamp-2 text-[11px]" style={{ color: 'var(--fg-dim)' }}>{node.subtitle || `${node.sourceNodeIds.length} 个源节点`}</div>
-                      </button>
-                      {node.hasChildren && (
-                        <button
-                          type="button"
-                          onClick={() => toggleExpanded(node.id)}
-                          className="h-7 shrink-0 rounded-[7px] px-2 text-[11px]"
-                          style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.25)' }}
-                        >
-                          {expandedNodeIds.has(node.id) ? '收起' : '展开'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_380px]">
+          <section className="min-h-0" style={{ borderRight: '1px solid var(--hairline)' }}>
+            {projection.nodes.length > 0 ? (
+              <MindMapGraph
+                nodes={nodes}
+                goalAnchor={goalAnchor}
+                planItems={planItems}
+                selectedId={selectedMindNode?.id ?? null}
+                onSelect={selectMindNode}
+                expandedIds={expandedNodeIds}
+                projection={projection}
+                exportSelectedIds={selectedNodeIds}
+                onToggleExportSelect={toggleSelected}
+                onToggleExpand={toggleExpanded}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+                暂无可导出的注意力节点
+              </div>
+            )}
           </section>
 
           <aside className="flex min-h-0 flex-col p-4">
@@ -226,6 +193,59 @@ export function AttentionSopExportModal({
               />
             </label>
 
+            <div className="mt-4 rounded-[8px] p-3" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}>
+              {selectedMindNode ? (
+                <>
+                  <div className="flex items-start gap-3">
+                    <label className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedMindChecked}
+                        onChange={() => toggleSelected(selectedMindNode.id)}
+                        className="h-4 w-4"
+                        aria-label={`选择当前节点 ${selectedMindNode.title}`}
+                      />
+                    </label>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-[13px] font-semibold" style={{ color: 'var(--fg-strong)' }}>{selectedMindNode.title}</span>
+                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--glass-2)', color: 'var(--fg-dim)' }}>{selectedMindNode.kind}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] leading-4" style={{ color: 'var(--fg-dim)' }}>
+                        {selectedMindNode.subtitle || `${selectedMindNode.sourceNodeIds.length} 个源节点`}
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedMindNode.hasChildren && (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(selectedMindNode.id)}
+                      className="mt-3 h-8 rounded-[8px] px-3 text-[12px] font-medium"
+                      style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.25)' }}
+                    >
+                      {expandedNodeIds.has(selectedMindNode.id) ? '收起子节点' : '展开子节点'}
+                    </button>
+                  )}
+
+                  <div className="mt-3 space-y-2">
+                    {selectedSourcePreview.slice(0, 4).map((node, index) => (
+                      <div key={node.id} className="rounded-[7px] p-2 text-[11px] leading-4" style={{ background: 'rgba(255,255,255,.035)', color: 'var(--fg-dim)' }}>
+                        <div className="font-semibold" style={{ color: 'var(--fg-strong)' }}>{index + 1}. {node.title}</div>
+                        <div className="mt-1 line-clamp-2">用户：{node.userText}</div>
+                        <div className="line-clamp-2">助手：{node.assistantText}</div>
+                      </div>
+                    ))}
+                    {selectedSourcePreview.length > 4 && (
+                      <div className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>还有 {selectedSourcePreview.length - 4} 个源步骤...</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>左侧暂无可选节点。</p>
+              )}
+            </div>
+
             <div className="mt-4 flex items-center justify-between text-[12px]" style={{ color: 'var(--fg-dim)' }}>
               <span>已选 {selectedNodeIds.size} 个节点</span>
               <span>{previewNodes.length} 个步骤</span>
@@ -233,7 +253,7 @@ export function AttentionSopExportModal({
 
             <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-[8px] p-3" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}>
               {previewNodes.length === 0 ? (
-                <p className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>选择左侧节点后预览步骤。</p>
+                <p className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>勾选左侧图节点或右侧当前节点后预览步骤。</p>
               ) : (
                 <div className="space-y-3">
                   {previewNodes.map((node, index) => (

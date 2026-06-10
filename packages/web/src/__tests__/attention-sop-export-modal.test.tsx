@@ -5,13 +5,43 @@ import type { MindMapNode } from '../lib/attention/mind-map-projector'
 import {
   AttentionSopExportModal,
   resolveAttentionSopSelectionPreview,
-  resolveAttentionSopVisualDepths,
 } from '../components/attention/AttentionSopExportModal'
 
 const send = vi.fn(() => true)
 
 vi.mock('../lib/ws-client', () => ({
   getWsClient: () => ({ send }),
+}))
+
+vi.mock('../components/attention/MindMapGraph', () => ({
+  default: ({ projection, onSelect, exportSelectedIds, onToggleExportSelect, onToggleExpand }: {
+    projection?: { nodes: Array<{ id: string; title: string; hasChildren?: boolean }> }
+    onSelect?: (id: string) => void
+    exportSelectedIds?: ReadonlySet<string>
+    onToggleExportSelect?: (id: string) => void
+    onToggleExpand?: (id: string) => void
+  }) => (
+    <div data-testid="mind-map-graph">
+      {(projection?.nodes ?? []).map((entry) => (
+        <div key={entry.id}>
+          <button type="button" onClick={() => onSelect?.(entry.id)}>
+            {entry.title}
+          </button>
+          <input
+            type="checkbox"
+            checked={exportSelectedIds?.has(entry.id) ?? false}
+            aria-label={`选择 ${entry.title}`}
+            onChange={() => onToggleExportSelect?.(entry.id)}
+          />
+          {entry.hasChildren && (
+            <button type="button" onClick={() => onToggleExpand?.(entry.id)}>
+              展开 {entry.title}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  ),
 }))
 
 afterEach(() => {
@@ -94,7 +124,7 @@ describe('Attention SOP export modal', () => {
     fireEvent.change(screen.getByPlaceholderText('例如：AkShare 数据分析 SOP'), {
       target: { value: 'AkShare SOP' },
     })
-    fireEvent.click(screen.getByLabelText('选择 第一步'))
+    fireEvent.click(screen.getByLabelText('选择当前节点 第一步'))
     fireEvent.click(screen.getByText('导出到 SOP 中心'))
 
     expect(send).toHaveBeenCalledWith({
@@ -106,29 +136,5 @@ describe('Attention SOP export modal', () => {
         selectedNodeIds: ['user_n1'],
       },
     })
-  })
-
-  it('computes nested visual indentation from expansion edges only', () => {
-    const depths = resolveAttentionSopVisualDepths({
-      nodes: [
-        mindNode('tree_goal', ['n1']),
-        mindNode('agg_topic', ['n1', 'n2']),
-        mindNode('nested_n1', ['n1']),
-        mindNode('nested_child', ['n2']),
-        mindNode('user_n3', ['n3']),
-      ],
-      edges: [
-        { id: 'main_tree_goal_agg_topic', source: 'tree_goal', target: 'agg_topic', kind: 'main' },
-        { id: 'expand_agg_topic_nested_n1', source: 'agg_topic', target: 'nested_n1', kind: 'main' },
-        { id: 'nested_nested_n1_nested_child', source: 'nested_n1', target: 'nested_child', kind: 'main' },
-        { id: 'main_nested_child_user_n3', source: 'nested_child', target: 'user_n3', kind: 'main' },
-      ],
-    })
-
-    expect(depths.get('tree_goal')).toBe(0)
-    expect(depths.get('agg_topic')).toBe(0)
-    expect(depths.get('nested_n1')).toBe(1)
-    expect(depths.get('nested_child')).toBe(2)
-    expect(depths.get('user_n3')).toBe(0)
   })
 })
