@@ -245,6 +245,7 @@ export {
   artifactUploadInitSchema,
   artifactUploadCompleteSchema,
   artifactDownloadInitSchema,
+  artifactDeleteSchema,
   searchQuerySchema,
   topicResumeSchema,
   messagesLoadSchema,

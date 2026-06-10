@@ -1038,7 +1038,38 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         },
         'PI artifact.created payload received',
       )
-      if (await artifactRepo.getArtifact(payload.artifactId)) break
+      const existing = await artifactRepo.getArtifact(payload.artifactId)
+      if (existing) {
+        const nextMime = payload.mime ?? existing.mime
+        const nextSizeBytes = payload.sizeBytes ?? existing.size_bytes
+        const nextMetadataJson = payload.metadata
+          ? JSON.stringify(payload.metadata)
+          : existing.metadata_json
+        const shouldUpdate =
+          (payload.r2Key && payload.r2Key !== existing.r2_key) ||
+          payload.name !== existing.name ||
+          nextMime !== existing.mime ||
+          nextSizeBytes !== existing.size_bytes ||
+          nextMetadataJson !== existing.metadata_json
+
+        if (shouldUpdate) {
+          const artifact = await artifactRepo.updateArtifact(payload.artifactId, {
+            topicId: existing.topic_id ?? topicId,
+            originTopicId: existing.origin_topic_id ?? topicId,
+            name: payload.name,
+            mime: nextMime,
+            sizeBytes: nextSizeBytes,
+            r2Key: payload.r2Key ?? existing.r2_key,
+            source: 'generated',
+            uploadStatus: payload.r2Key ? 'uploaded' : existing.upload_status,
+            failureCode: payload.r2Key ? null : existing.failure_code,
+            failureMessage: payload.r2Key ? null : existing.failure_message,
+            metadataJson: nextMetadataJson,
+          }) ?? existing
+          hub.broadcast('artifact.added', artifactToPayload(artifact))
+        }
+        break
+      }
       const artifact = await artifactRepo.createArtifact({
         id: payload.artifactId,
         topicId,

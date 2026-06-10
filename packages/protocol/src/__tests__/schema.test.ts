@@ -1033,6 +1033,12 @@ describe('Client event schemas', () => {
     expect(result.artifactId).toBe('a1')
   })
 
+  it('parses artifact.delete', () => {
+    const schema = clientEventDataSchemas['artifact.delete']
+    const result = schema.parse({ ids: ['a1', 'a2'] })
+    expect(result.ids).toEqual(['a1', 'a2'])
+  })
+
   it('parses artifact.download.ready', () => {
     const schema = serverEventDataSchemas['artifact.download.ready']
     const result = schema.parse({

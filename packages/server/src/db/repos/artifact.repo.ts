@@ -1,6 +1,6 @@
-import { eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { Artifact } from '@agent-chat/protocol'
-import { artifacts } from '../schema'
+import { artifacts, messageArtifactRefs, messages, topics } from '../schema'
 import { getDb } from '../migrate'
 import { ulid } from '../../lib/ulid'
 
@@ -121,6 +121,20 @@ export async function deleteArtifact(id: string): Promise<boolean> {
     .run()
   const meta = result.meta as { rows_written?: number } | undefined
   return (meta?.rows_written ?? 0) > 0
+}
+
+export async function countActiveMessageRefs(id: string, options?: { excludeTopicId?: string }): Promise<number> {
+  const rows = await getDb()
+    .select({ messageId: messageArtifactRefs.messageId, topicId: messages.topicId })
+    .from(messageArtifactRefs)
+    .innerJoin(messages, eq(messageArtifactRefs.messageId, messages.id))
+    .innerJoin(topics, eq(messages.topicId, topics.id))
+    .where(and(
+      eq(messageArtifactRefs.artifactId, id),
+      eq(topics.archived, false),
+    ))
+    .all()
+  return rows.filter((row) => row.topicId !== options?.excludeTopicId).length
 }
 
 function toDomain(row: Record<string, unknown>): Artifact {

@@ -145,6 +145,12 @@ export function registerTopicHandlers(
         }
       } else {
         for (const a of artifacts) {
+          const externalRefs = await artifactRepo.countActiveMessageRefs(a.id, { excludeTopicId: data.id })
+          if (externalRefs > 0) {
+            await artifactRepo.updateArtifactTopic(a.id, null)
+            broadcaster.broadcast('artifact.moved', { id: a.id, fromTopicId: data.id, toTopicId: null })
+            continue
+          }
           await artifactRepo.deleteArtifact(a.id)
           broadcaster.broadcast('artifact.deleted', { id: a.id })
         }

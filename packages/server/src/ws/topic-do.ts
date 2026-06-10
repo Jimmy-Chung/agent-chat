@@ -10,11 +10,11 @@ import {
   userMessageRetrySchema, userMessageSchema,
   sopTemplateSaveSchema, sopTemplateDeleteSchema, sopTemplateGenerateSchema, sopTemplateExportFromAttentionSchema,
   cronPauseSchema, cronDeleteSchema, cronEditSchema,
-  searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema,
+  searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema, artifactDeleteSchema,
   mcpCommandSchema,
   providerRpcSchema,
 } from '@agent-chat/protocol'
-import type { TodoItem } from '@agent-chat/protocol'
+import type { Artifact, TodoItem } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { errorDetail } from '../error-detail'
 import { PiClient } from '../pi/client'
@@ -565,6 +565,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     return !!value && typeof value === 'object' && !Array.isArray(value)
   }
 
+  private async deleteArtifactReference(artifact: Artifact): Promise<void> {
+    if (artifact.r2_key && this.env.R2) {
+      try {
+        await this.env.R2.delete(artifact.r2_key)
+      } catch (err) {
+        logger.warn({ err, artifactId: artifact.id, r2Key: artifact.r2_key }, 'Failed to delete artifact R2 object')
+      }
+    }
+    await artifactRepo.deleteArtifact(artifact.id)
+    this.broadcastAll('artifact.deleted', { id: artifact.id })
+  }
+
   // ─── Frame dispatch ───────────────────────────────────────────────────────
   private async handleClientFrame(ws: WebSocket, frame: WSFrame): Promise<void> {
     this.ensureDb()
@@ -939,7 +951,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           break
         }
 
-        // Handle artifacts based on strategy
         const artifacts = await artifactRepo.listArtifactsByTopic(data.id)
         if (artifacts.length > 0) {
           if (data.artifactStrategy === 'pool') {
@@ -949,14 +960,46 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             }
           } else {
             for (const a of artifacts) {
-              await artifactRepo.deleteArtifact(a.id)
-              this.broadcastAll('artifact.deleted', { id: a.id })
+              const externalRefs = await artifactRepo.countActiveMessageRefs(a.id, { excludeTopicId: data.id })
+              if (externalRefs > 0) {
+                await artifactRepo.updateArtifactTopic(a.id, null)
+                this.broadcastAll('artifact.moved', { id: a.id, fromTopicId: data.id, toTopicId: null })
+                continue
+              }
+              await this.deleteArtifactReference(a)
             }
           }
         }
 
         await topicRepo.deleteTopic(data.id)
         this.broadcastAll('topic.deleted', { id: data.id })
+        break
+      }
+
+      case 'artifact.delete': {
+        const data = artifactDeleteSchema.parse(frame.d)
+        const blocked: Array<{ id: string; name: string; refs: number }> = []
+        for (const id of data.ids) {
+          const artifact = await artifactRepo.getArtifact(id)
+          if (!artifact) continue
+          if (artifact.topic_id) {
+            blocked.push({ id, name: artifact.name, refs: 1 })
+            continue
+          }
+          const refs = await artifactRepo.countActiveMessageRefs(id)
+          if (refs > 0) {
+            blocked.push({ id, name: artifact.name, refs })
+            continue
+          }
+          await this.deleteArtifactReference(artifact)
+        }
+        if (blocked.length > 0) {
+          this.sendTo(ws, 'error', {
+            code: 'artifact_delete_blocked',
+            message: `${blocked.length} 个产物仍被话题引用，未删除。`,
+            details: { blocked },
+          })
+        }
         break
       }
 

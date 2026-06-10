@@ -5,6 +5,7 @@ import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as pushRepo from '../db/repos/push-subscription.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
+import * as artifactRepo from '../db/repos/artifact.repo'
 import type { AppConfig } from '../config'
 import { EventEmitter } from 'node:events'
 import type { PIEvent, ServerEvent } from '@agent-chat/protocol'
@@ -73,6 +74,66 @@ describe('toUserFacingAgentErrorMessage', () => {
     expect(toUserFacingAgentErrorMessage('Payment required: insufficient_quota')).toBe(
       '模型服务额度或账单不可用。请检查当前 Provider 的余额、套餐、额度或账单状态后重试。',
     )
+  })
+})
+
+describe('Event router — artifact.created', () => {
+  let mockHub: ReturnType<typeof createMockHub>
+  let mockPi: ReturnType<typeof createMockPiClient>
+
+  beforeEach(async () => {
+    await setupTestDb()
+    setPiEventReorderWindowForTests(0)
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    routePiEvents(mockPi as any, mockHub as any)
+  })
+
+  afterEach(() => {
+    setPiEventReorderWindowForTests(150)
+    teardownTestDb()
+  })
+
+  it('updates an existing generated artifact when adapter later supplies r2Key', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Artifact Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-artifact-1' })
+
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-artifact-1',
+      ts: Date.now(),
+      payload: {
+        kind: 'artifact.created',
+        artifactId: 'artifact-md-1',
+        name: 'notes.md',
+        mime: 'text/markdown',
+        sizeBytes: 12,
+        metadata: { path: '/workspace/notes.md' },
+      },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await artifactRepo.getArtifact('artifact-md-1'))?.r2_key).toBe('')
+
+    mockPi.emit('event', {
+      seq: 2,
+      sessionId: 'sess-artifact-1',
+      ts: Date.now(),
+      payload: {
+        kind: 'artifact.created',
+        artifactId: 'artifact-md-1',
+        name: 'notes.md',
+        mime: 'text/markdown',
+        sizeBytes: 12,
+        r2Key: 'topics/topic/upload/notes.md',
+        metadata: { path: '/workspace/notes.md' },
+      },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    const artifact = await artifactRepo.getArtifact('artifact-md-1')
+    expect(artifact?.r2_key).toBe('topics/topic/upload/notes.md')
+    expect(artifact?.upload_status).toBe('uploaded')
+    expect(mockHub.getBroadcastEvents().filter((event) => event.type === 'artifact.added')).toHaveLength(2)
   })
 })
 

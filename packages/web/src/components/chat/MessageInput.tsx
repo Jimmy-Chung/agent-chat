@@ -82,6 +82,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
   const pickerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
   const wsClient = getWsClient()
   const value = draftsByTopic[topicId] ?? ''
   const mentions = mentionsByTopic[topicId] ?? []
@@ -265,62 +266,68 @@ export function MessageInput({ topicId }: MessageInputProps) {
     })
   }, [topicId])
 
-  const handleFileUpload = useCallback(async (file: File, opts?: { autoReference?: boolean }) => {
-    setUploading(true)
-    try {
-      const ready = await new Promise<{ uploadId: string; uploadUrl: string; method: 'PUT' }>((resolve, reject) => {
-        const onReady = (event: MessageEvent | Event) => {
-          const detail = (event as CustomEvent).detail as { uploadId: string; uploadUrl: string; method: 'PUT' }
-          cleanup()
-          resolve(detail)
-        }
-        const onError = (event: MessageEvent | Event) => {
-          const detail = (event as CustomEvent).detail as { code?: string; message?: string }
-          cleanup()
-          reject(new Error(detail.message ?? detail.code ?? 'Upload init failed'))
-        }
-        const cleanup = () => {
-          window.removeEventListener('agent-chat:artifact-upload-ready', onReady)
-          window.removeEventListener('agent-chat:error', onError)
-        }
-        window.addEventListener('agent-chat:artifact-upload-ready', onReady, { once: true })
-        window.addEventListener('agent-chat:error', onError, { once: true })
-        wsClient.send({
-          type: 'artifact.upload.init',
-          data: {
-            topicId,
-            name: file.name,
-            mime: file.type || 'application/octet-stream',
-            sizeBytes: file.size,
-          },
+  const handleFileUpload = useCallback((file: File, opts?: { autoReference?: boolean }) => {
+    const run = async () => {
+      setUploading(true)
+      try {
+        const ready = await new Promise<{ uploadId: string; uploadUrl: string; method: 'PUT' }>((resolve, reject) => {
+          const onReady = (event: MessageEvent | Event) => {
+            const detail = (event as CustomEvent).detail as { uploadId: string; uploadUrl: string; method: 'PUT' }
+            cleanup()
+            resolve(detail)
+          }
+          const onError = (event: MessageEvent | Event) => {
+            const detail = (event as CustomEvent).detail as { code?: string; message?: string }
+            cleanup()
+            reject(new Error(detail.message ?? detail.code ?? 'Upload init failed'))
+          }
+          const cleanup = () => {
+            window.removeEventListener('agent-chat:artifact-upload-ready', onReady)
+            window.removeEventListener('agent-chat:error', onError)
+          }
+          window.addEventListener('agent-chat:artifact-upload-ready', onReady, { once: true })
+          window.addEventListener('agent-chat:error', onError, { once: true })
+          wsClient.send({
+            type: 'artifact.upload.init',
+            data: {
+              topicId,
+              name: file.name,
+              mime: file.type || 'application/octet-stream',
+              sizeBytes: file.size,
+            },
+          })
         })
-      })
-      const response = await fetch(ready.uploadUrl, {
-        method: ready.method,
-        headers: { 'content-type': file.type || 'application/octet-stream' },
-        body: file,
-      })
-      if (!response.ok) throw new Error(`Upload failed: ${response.status}`)
-      wsClient.send({
-        type: 'artifact.upload.complete',
-        data: { uploadId: ready.uploadId, topicId },
-      })
-      if (opts?.autoReference) {
-        const artifact = await waitForArtifactByName(file.name)
-        if (artifact) {
-          setTopicMentions((prev) =>
-            prev.find((m) => m.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
-          )
-          appendMentionText(artifact.name)
+        const response = await fetch(ready.uploadUrl, {
+          method: ready.method,
+          headers: { 'content-type': file.type || 'application/octet-stream' },
+          body: file,
+        })
+        if (!response.ok) throw new Error(`Upload failed: ${response.status}`)
+        wsClient.send({
+          type: 'artifact.upload.complete',
+          data: { uploadId: ready.uploadId, topicId },
+        })
+        if (opts?.autoReference) {
+          const artifact = await waitForArtifactByName(file.name)
+          if (artifact) {
+            setTopicMentions((prev) =>
+              prev.find((m) => m.id === artifact.id) ? prev : [...prev, { id: artifact.id, name: artifact.name }],
+            )
+            appendMentionText(artifact.name)
+          }
         }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Upload failed'
+        console.error('Artifact upload failed', error)
+        window.alert(`上传失败: ${message}`)
+      } finally {
+        setUploading(false)
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Upload failed'
-      console.error('Artifact upload failed', error)
-      window.alert(`上传失败: ${message}`)
-    } finally {
-      setUploading(false)
     }
+
+    const next = uploadQueueRef.current.catch(() => undefined).then(run)
+    uploadQueueRef.current = next.catch(() => undefined)
+    return next
   }, [topicId, wsClient, waitForArtifactByName, setTopicMentions, appendMentionText])
 
   const handleKeyDown = useCallback(

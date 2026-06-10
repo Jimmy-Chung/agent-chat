@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as topicRepo from '../db/repos/topic.repo'
+import * as messageRepo from '../db/repos/message.repo'
 
 describe('ArtifactRepo', () => {
   let topicId: string
@@ -157,5 +158,25 @@ describe('ArtifactRepo', () => {
   it('should return false when deleting non-existent artifact', async () => {
     const result = await artifactRepo.deleteArtifact('nonexistent')
     expect(result).toBe(false)
+  })
+
+  it('counts active message refs and can exclude the deleting topic', async () => {
+    const topicA = await topicRepo.createTopic({ name: 'Ref A', kind: 'normal', agentType: 'general' })
+    const topicB = await topicRepo.createTopic({ name: 'Ref B', kind: 'normal', agentType: 'general' })
+    const artifact = await artifactRepo.createArtifact({
+      name: 'shared.md',
+      r2Key: 'uploads/shared.md',
+      source: 'generated',
+    })
+    const msgA = await messageRepo.createMessage({ topicId: topicA.id, role: 'user' })
+    const msgB = await messageRepo.createMessage({ topicId: topicB.id, role: 'user' })
+    await messageRepo.recordMessageArtifactRefs(msgA.id, [artifact.id])
+    await messageRepo.recordMessageArtifactRefs(msgB.id, [artifact.id])
+
+    expect(await artifactRepo.countActiveMessageRefs(artifact.id)).toBe(2)
+    expect(await artifactRepo.countActiveMessageRefs(artifact.id, { excludeTopicId: topicA.id })).toBe(1)
+
+    await topicRepo.deleteTopic(topicB.id)
+    expect(await artifactRepo.countActiveMessageRefs(artifact.id)).toBe(1)
   })
 })

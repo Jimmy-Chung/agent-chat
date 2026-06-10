@@ -612,6 +612,10 @@ export const artifactDownloadInitSchema = z.object({
   artifactId: z.string(),
 })
 
+export const artifactDeleteSchema = z.object({
+  ids: z.array(z.string()).min(1),
+})
+
 export const searchQuerySchema = z.object({
   q: z.string(),
   topicId: z.string().optional(),
@@ -695,6 +699,10 @@ export type ClientEvent =
       type: 'artifact.download.init'
       data: z.infer<typeof artifactDownloadInitSchema>
     }
+  | {
+      type: 'artifact.delete'
+      data: z.infer<typeof artifactDeleteSchema>
+    }
   | { type: 'search.query'; data: z.infer<typeof searchQuerySchema> }
   | { type: 'topic.resume'; data: z.infer<typeof topicResumeSchema> }
   | { type: 'messages.load'; data: z.infer<typeof messagesLoadSchema> }
@@ -729,6 +737,7 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'artifact.upload.init': artifactUploadInitSchema,
   'artifact.upload.complete': artifactUploadCompleteSchema,
   'artifact.download.init': artifactDownloadInitSchema,
+  'artifact.delete': artifactDeleteSchema,
   'search.query': searchQuerySchema,
   'topic.resume': topicResumeSchema,
   'messages.load': messagesLoadSchema,

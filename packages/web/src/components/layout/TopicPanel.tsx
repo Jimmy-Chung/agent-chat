@@ -21,7 +21,7 @@ import type { Message } from '@agent-chat/protocol'
 import type { SopTemplate } from '@/stores/sop-template-store'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
 import { resolvePiBadgeState, resolveTopicSessionDotState } from '@/lib/connection-status'
-import { getTopicCwd, getTopicDirectoryLabel } from '@/lib/workspace-path'
+import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceScopedPathLabel } from '@/lib/workspace-path'
 
 class TopicErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
@@ -177,13 +177,13 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   }, [interactions, activeTopic.id, byTopic])
 
   if (activeTopic.kind === 'system_artifact_pool') {
-    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar} toggleMobileInspector={toggleMobileInspector}><ArtifactPoolView /></SystemTopicLayout>
+    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar}><ArtifactPoolView /></SystemTopicLayout>
   }
   if (activeTopic.kind === 'system_cron_admin') {
-    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar} toggleMobileInspector={toggleMobileInspector}><CronAdminView /></SystemTopicLayout>
+    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar}><CronAdminView /></SystemTopicLayout>
   }
   if (activeTopic.kind === 'system_sop_library') {
-    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar} toggleMobileInspector={toggleMobileInspector}><SopLibraryView /></SystemTopicLayout>
+    return <SystemTopicLayout name={activeTopic.name} toggleSidebar={toggleSidebar}><SopLibraryView /></SystemTopicLayout>
   }
 
   const messages = byTopic[activeTopic.id] ?? EMPTY_MESSAGES
@@ -645,7 +645,7 @@ function RenameTopicModal({ topicId, currentName, onClose }: { topicId: string; 
   )
 }
 
-function SystemTopicLayout({ name, toggleSidebar, toggleMobileInspector, children }: { name: string; toggleSidebar: () => void; toggleMobileInspector: () => void; children: React.ReactNode }) {
+function SystemTopicLayout({ name, toggleSidebar, children }: { name: string; toggleSidebar: () => void; children: React.ReactNode }) {
   return (
     <div className="flex h-full flex-col">
       <header
@@ -661,9 +661,6 @@ function SystemTopicLayout({ name, toggleSidebar, toggleMobileInspector, childre
           <MenuIcon />
         </button>
         <h2 className="truncate text-[15px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-0.012em' }}>{name}</h2>
-        <button onClick={toggleMobileInspector} className="ml-auto flex h-7 w-7 items-center justify-center rounded-md md:hidden" style={{ color: 'var(--fg-dim)' }} aria-label="Inspector">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /></svg>
-        </button>
       </header>
       <div className="flex-1 overflow-y-auto p-4 md:p-6">{children}</div>
     </div>
@@ -672,30 +669,199 @@ function SystemTopicLayout({ name, toggleSidebar, toggleMobileInspector, childre
 
 function ArtifactPoolView() {
   const poolArtifacts = useArtifactStore((s) => s.poolArtifacts)
+  const workspacePath = useWsStore((s) => s.workspacePath)
+  const [query, setQuery] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const filteredArtifacts = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return poolArtifacts
+    return poolArtifacts.filter((artifact) => artifact.name.toLowerCase().includes(q))
+  }, [poolArtifacts, query])
+  const selectedArtifacts = useMemo(
+    () => poolArtifacts.filter((artifact) => selectedIds.has(artifact.id)),
+    [poolArtifacts, selectedIds],
+  )
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const existing = new Set(poolArtifacts.map((artifact) => artifact.id))
+      const next = new Set([...prev].filter((id) => existing.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [poolArtifacts])
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const artifact of filteredArtifacts) next.add(artifact.id)
+      return next
+    })
+  }
+
+  const deleteSelected = () => {
+    if (selectedArtifacts.length === 0) return
+    getWsClient().send({ type: 'artifact.delete', data: { ids: selectedArtifacts.map((artifact) => artifact.id) } })
+    setSelectedIds(new Set())
+    setConfirmDelete(false)
+  }
 
   if (poolArtifacts.length === 0) {
     return <p className="py-8 text-center text-sm" style={{ color: 'var(--fg-dim)' }}>产物池为空</p>
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {poolArtifacts.map((a) => (
-        <div key={a.id} className="glass-1 p-3">
-          <div className="truncate text-xs font-medium" style={{ color: 'var(--fg-strong)' }}>{a.name}</div>
-          {artifactPath(a) && <div className="mt-1 truncate text-xs" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>{artifactPath(a)}</div>}
-          {a.mime && <div className="mt-1 text-xs" style={{ color: 'var(--fg-dim)' }}>{a.mime}</div>}
-          {a.size_bytes && <div className="text-xs" style={{ color: 'var(--fg-dim)' }}>{(a.size_bytes / 1024).toFixed(1)} KB</div>}
-          {(a.upload_status ?? 'uploaded') === 'upload_failed' && (
-            <div className="mt-1 text-xs" style={{ color: '#ff6b6b' }}>
-              上传失败{a.failure_message ? `: ${a.failure_message}` : ''}
-            </div>
-          )}
-          <div className="mt-2 flex gap-1.5">
-            <ArtifactAccessButton artifact={a} mode="preview" />
-            <ArtifactAccessButton artifact={a} mode="download" />
+    <>
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索产物名称"
+          className="h-9 min-w-0 flex-1 rounded-md bg-transparent px-3 text-sm outline-none"
+          style={{ border: '1px solid var(--hairline)', color: 'var(--fg-regular)', background: 'rgba(0,0,0,.20)' }}
+        />
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={selectVisible}
+            disabled={filteredArtifacts.length === 0}
+            className="h-9 rounded-md px-3 text-xs font-medium"
+            style={{ border: '1px solid var(--hairline)', background: 'var(--glass-1)', color: filteredArtifacts.length ? 'var(--fg-regular)' : 'var(--fg-dim)' }}
+          >
+            选择当前结果
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            disabled={selectedIds.size === 0}
+            className="h-9 rounded-md px-3 text-xs font-medium"
+            style={{ border: '1px solid var(--hairline)', background: 'var(--glass-1)', color: selectedIds.size ? 'var(--fg-regular)' : 'var(--fg-dim)' }}
+          >
+            清空选择
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+            disabled={selectedArtifacts.length === 0}
+            className="h-9 rounded-md px-3 text-xs font-semibold"
+            style={{ border: '1px solid rgba(255,69,58,.34)', background: selectedArtifacts.length ? 'rgba(255,69,58,.14)' : 'var(--glass-1)', color: selectedArtifacts.length ? '#FF8B82' : 'var(--fg-dim)' }}
+          >
+            删除引用 {selectedArtifacts.length || ''}
+          </button>
+        </div>
+      </div>
+
+      {filteredArtifacts.length === 0 ? (
+        <p className="py-8 text-center text-sm" style={{ color: 'var(--fg-dim)' }}>没有匹配的产物</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {filteredArtifacts.map((a) => {
+            const checked = selectedIds.has(a.id)
+            const path = artifactPath(a, workspacePath)
+            return (
+              <div key={a.id} className="glass-1 p-3" style={{ borderColor: checked ? 'rgba(10,132,255,.44)' : undefined }}>
+                <div className="flex min-w-0 items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSelected(a.id)}
+                    className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded"
+                    style={{ border: `1px solid ${checked ? 'rgba(10,132,255,.70)' : 'var(--hairline-2)'}`, background: checked ? 'rgba(10,132,255,.18)' : 'rgba(0,0,0,.18)', color: '#7CB6FF' }}
+                    aria-label={checked ? '取消选择产物' : '选择产物'}
+                  >
+                    {checked ? '✓' : ''}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-medium" style={{ color: 'var(--fg-strong)' }}>{a.name}</div>
+                    {path && <div className="mt-1 truncate text-xs" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>{path}</div>}
+                  </div>
+                </div>
+                {a.mime && <div className="mt-1 text-xs" style={{ color: 'var(--fg-dim)' }}>{a.mime}</div>}
+                {a.size_bytes && <div className="text-xs" style={{ color: 'var(--fg-dim)' }}>{(a.size_bytes / 1024).toFixed(1)} KB</div>}
+                {(a.upload_status ?? 'uploaded') === 'upload_failed' && (
+                  <div className="mt-1 text-xs" style={{ color: '#ff6b6b' }}>
+                    上传失败{a.failure_message ? `: ${a.failure_message}` : ''}
+                  </div>
+                )}
+                <div className="mt-2 flex gap-1.5">
+                  <ArtifactAccessButton artifact={a} mode="preview" />
+                  <ArtifactAccessButton artifact={a} mode="download" />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {confirmDelete && typeof document !== 'undefined' && createPortal(
+        <ArtifactDeleteConfirmModal
+          artifacts={selectedArtifacts}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={deleteSelected}
+        />,
+        document.body,
+      )}
+    </>
+  )
+}
+
+function ArtifactDeleteConfirmModal({
+  artifacts,
+  onCancel,
+  onConfirm,
+}: {
+  artifacts: import('@agent-chat/protocol').Artifact[]
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        className="overflow-hidden"
+        style={{
+          width: 'min(460px, calc(100vw - 32px))',
+          borderRadius: 18,
+          background: 'rgba(20,22,27,0.92)',
+          border: '1px solid var(--hairline-2)',
+          boxShadow: '0 30px 80px rgba(0,0,0,.55)',
+        }}
+      >
+        <div style={{ padding: '20px 22px 12px' }}>
+          <h3 className="text-[16px] font-semibold" style={{ color: 'var(--fg-strong)' }}>删除产物引用</h3>
+          <p className="mt-2 text-[13px] leading-6" style={{ color: 'var(--fg-regular)' }}>
+            将从产物池删除 {artifacts.length} 个引用，并删除对应的 R2 云端数据；不会删除 adapter 本机文件。仍被其他话题引用的产物会被 server 拦截并保留。
+          </p>
+          <div className="mt-3 max-h-32 overflow-auto rounded-md p-2" style={{ background: 'rgba(0,0,0,.24)', border: '1px solid var(--hairline)' }}>
+            {artifacts.slice(0, 8).map((artifact) => (
+              <div key={artifact.id} className="truncate py-0.5 text-xs" style={{ color: 'var(--fg-dim)' }}>{artifact.name}</div>
+            ))}
+            {artifacts.length > 8 && (
+              <div className="pt-1 text-xs" style={{ color: 'var(--fg-dim)' }}>还有 {artifacts.length - 8} 个...</div>
+            )}
           </div>
         </div>
-      ))}
+        <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: '1px solid var(--hairline)', background: 'rgba(0,0,0,.20)' }}>
+          <button type="button" onClick={onCancel} className="h-8 rounded-md px-3 text-xs font-medium" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)', color: 'var(--fg-regular)' }}>
+            取消
+          </button>
+          <button type="button" onClick={onConfirm} className="h-8 rounded-md px-3 text-xs font-semibold" style={{ background: 'rgba(255,69,58,.18)', border: '1px solid rgba(255,69,58,.38)', color: '#FF8B82' }}>
+            删除引用
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -789,11 +955,12 @@ function describeArtifactAccessError(detail: { code?: string; message?: string }
   }
 }
 
-function artifactPath(artifact: import('@agent-chat/protocol').Artifact): string | null {
+function artifactPath(artifact: import('@agent-chat/protocol').Artifact, workspaceRoot?: string | null): string | null {
   if (!artifact.metadata_json) return null
   try {
-    const metadata = JSON.parse(artifact.metadata_json) as { path?: unknown }
-    return typeof metadata.path === 'string' ? metadata.path : null
+    const metadata = JSON.parse(artifact.metadata_json) as { path?: unknown; filePath?: unknown; file_path?: unknown }
+    const path = metadata.path ?? metadata.filePath ?? metadata.file_path
+    return typeof path === 'string' && path.trim() ? getWorkspaceScopedPathLabel(path, workspaceRoot) : null
   } catch {
     return null
   }
