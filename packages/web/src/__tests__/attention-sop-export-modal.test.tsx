@@ -109,7 +109,7 @@ describe('Attention SOP export modal', () => {
     expect(preview.map((entry) => entry.id)).toEqual(['n1', 'n2'])
   })
 
-  it('sends selected projection node ids without mutating the attention panel state', () => {
+  it('enables submit after selecting a node and sends source trace ids', () => {
     render(
       <AttentionSopExportModal
         topicId="topic-1"
@@ -121,18 +121,20 @@ describe('Attention SOP export modal', () => {
       />,
     )
 
-    fireEvent.change(screen.getByPlaceholderText('例如：AkShare 数据分析 SOP'), {
-      target: { value: 'AkShare SOP' },
-    })
+    const submitButton = screen.getByText('导出到 SOP 中心') as HTMLButtonElement
+    expect(submitButton.disabled).toBe(true)
+
     fireEvent.click(screen.getByLabelText('选择当前节点 第一步'))
-    fireEvent.click(screen.getByText('导出到 SOP 中心'))
+    expect(submitButton.disabled).toBe(false)
+
+    fireEvent.click(submitButton)
 
     expect(send).toHaveBeenCalledWith({
       type: 'sop_template.export_from_attention',
       data: {
         topicId: 'topic-1',
         goalId: 'goal-1',
-        name: 'AkShare SOP',
+        name: '导出 SOP',
         selectedNodeIds: ['user_n1'],
         selectedSourceIds: ['n1'],
       },
