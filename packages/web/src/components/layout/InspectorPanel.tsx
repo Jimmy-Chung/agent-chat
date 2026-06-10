@@ -275,7 +275,7 @@ function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'f
 }
 
 export function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents, llmUnavailableReason } = attention
+  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing, llmUnavailableReason } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [showSopExport, setShowSopExport] = useState(false)
 
@@ -313,25 +313,65 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
         pointerEvents: closing ? 'none' : 'auto',
       }}
     >
-      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setShowSopExport(true)}
-          className="inline-flex h-7 items-center rounded-md px-2.5 text-[12px] font-medium transition-opacity hover:opacity-80"
-          style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
-          title="导出 SOP"
-        >
-          导出 SOP
-        </button>
-        <button
-          onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-md transition-opacity hover:opacity-80"
-          style={{ color: 'var(--fg-dim)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--hairline)' }}
-          title="缩小"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-        </button>
-      </div>
+      {/* Title bar (S16 设计稿 52px 标题行) */}
+      <header
+        className="flex h-[52px] shrink-0 items-center gap-[11px] px-[18px]"
+        style={{
+          borderBottom: '1px solid var(--hairline)',
+          background: 'rgba(13,16,18,.6)',
+          backdropFilter: 'blur(40px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+          zIndex: 5,
+        }}
+      >
+        <div style={{
+          width: 26, height: 26, borderRadius: 7,
+          background: 'rgba(10,132,255,.16)',
+          border: '1px solid rgba(10,132,255,.32)',
+          display: 'grid', placeItems: 'center',
+          color: '#6cb1ff',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06),0 0 14px rgba(10,132,255,.20)',
+          flexShrink: 0,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
+            <circle cx="12" cy="12" r="3.4"/>
+          </svg>
+        </div>
+
+        <span className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-.01em' }}>
+          Attention
+        </span>
+
+        {isAnalyzing && (
+          <span className="text-[11px]" style={{ color: '#F7C26B' }}>分析中…</span>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSopExport(true)}
+            title="导出 SOP"
+            className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-colors"
+            style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
+          >
+            导出 SOP
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            title="收起"
+            aria-label="收起"
+            className="flex h-7 w-7 items-center justify-center rounded-[7px] transition-colors"
+            style={{ color: 'var(--fg-dim)', background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <polyline points="9 6 15 12 9 18"/>
+            </svg>
+          </button>
+        </div>
+      </header>
       <div className="min-h-0 flex-1">
         <AttentionXPanel
           topicId={topicId}
