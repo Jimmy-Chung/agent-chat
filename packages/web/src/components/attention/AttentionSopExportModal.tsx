@@ -127,6 +127,7 @@ export function AttentionSopExportModal({
         ...(activeGoalId ? { goalId: activeGoalId } : {}),
         name: name.trim(),
         selectedNodeIds: [...selectedNodeIds],
+        selectedSourceIds: previewNodes.map((node) => node.id),
       },
     })
     if (sent) onClose()
@@ -139,7 +140,7 @@ export function AttentionSopExportModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[86vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[14px]"
+        className="flex h-[86vh] max-h-[86vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[14px]"
         style={{ background: 'var(--bg-0)', border: '1px solid var(--hairline-2)', boxShadow: '0 24px 80px rgba(0,0,0,.62)' }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -159,8 +160,8 @@ export function AttentionSopExportModal({
           </button>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="min-h-0" style={{ borderRight: '1px solid var(--hairline)' }}>
+        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden md:grid-cols-[minmax(0,1fr)_380px] md:grid-rows-none">
+          <section className="min-h-0 overflow-hidden" style={{ borderRight: '1px solid var(--hairline)' }}>
             {projection.nodes.length > 0 ? (
               <MindMapGraph
                 nodes={nodes}
@@ -181,7 +182,7 @@ export function AttentionSopExportModal({
             )}
           </section>
 
-          <aside className="flex min-h-0 flex-col p-4">
+          <aside className="flex min-h-0 flex-col overflow-hidden p-4">
             <label className="text-[12px] font-medium" style={{ color: 'var(--fg-strong)' }}>
               SOP 名称
               <input

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-10 [v1.10.45] — fix: SOP 导出源节点解析与右侧滚动
+
+- SOP 导出事件新增 `selectedSourceIds`，前端在当前导出弹窗 projection 中直接解析所选节点对应的 trace source ids 并发送给服务端。
+- 服务端导出优先使用 `selectedSourceIds`，避免前端临时展开节点 id 与快照内旧 projection node id 不一致时解析不到源内容；旧客户端仍兼容 `selectedNodeIds` 兜底。
+- 导出弹窗主体改为固定 `86vh` 布局，并给 grid/aside/图区域补齐 `overflow` 与 `min-height` 约束，修复多选后右侧预览无法滚动。
+- 新增协议、前端 payload、服务端源节点解析回归测试。
+- 版本显示更新为 `v1.10.45`。
+
 ## 2026-06-10 [v1.10.44] — fix: SOP 导出选择器改为图详情布局
 
 - SOP 导出弹窗改回注意力全尺寸面板的使用心智：左侧复用节点图，右侧展示当前节点详情、源步骤预览和已选步骤预览。

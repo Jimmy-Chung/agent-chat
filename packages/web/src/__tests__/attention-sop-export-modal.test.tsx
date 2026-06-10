@@ -134,6 +134,7 @@ describe('Attention SOP export modal', () => {
         goalId: 'goal-1',
         name: 'AkShare SOP',
         selectedNodeIds: ['user_n1'],
+        selectedSourceIds: ['n1'],
       },
     })
   })
