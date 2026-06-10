@@ -55,6 +55,16 @@ export function getWorkspaceRelativePath(cwd: string, workspaceRoot?: string | n
   return normalizedCwd
 }
 
+export function getWorkspaceScopedPathLabel(path: string, workspaceRoot?: string | null): string {
+  const normalizedPath = normalizeCwd(path)
+  const root = workspaceRoot ? normalizeCwd(workspaceRoot) : ''
+  if (root && normalizedPath === root) return '${workspace}'
+  if (root && normalizedPath.startsWith(`${root}/`)) {
+    return `\${workspace}/${normalizedPath.slice(root.length + 1)}`
+  }
+  return normalizedPath
+}
+
 export function getTopicDirectoryLabel(topic: Topic, workspaceRoot?: string | null): string | null {
   const cwd = getTopicCwd(topic)
   if (!cwd || cwd === '/') return null

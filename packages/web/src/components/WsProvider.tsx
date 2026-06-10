@@ -48,6 +48,14 @@ function describeError(detail: AgentChatErrorDetail): { tone: 'error' | 'warning
     }
   }
 
+  if (detail.code === 'artifact_delete_blocked') {
+    return {
+      tone: 'warning',
+      title: '部分产物未删除',
+      description: detail.message ?? '这些产物仍被话题引用，已保留。',
+    }
+  }
+
   return null
 }
 

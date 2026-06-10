@@ -425,6 +425,9 @@ class WsClient {
           download_url: ((a as Record<string, unknown>).download_url as string) ?? undefined,
           preview_url: ((a as Record<string, unknown>).preview_url as string) ?? undefined,
           source: (a as Record<string, unknown>).source as 'generated' | 'uploaded',
+          upload_status: ((a as Record<string, unknown>).upload_status as 'uploaded' | 'upload_failed' | undefined) ?? undefined,
+          failure_code: ((a as Record<string, unknown>).failure_code as string) ?? null,
+          failure_message: ((a as Record<string, unknown>).failure_message as string) ?? null,
           created_at: (a as Record<string, unknown>).created_at as number,
           metadata_json: ((a as Record<string, unknown>).metadata_json as string) ?? null,
         }))

@@ -1,6 +1,6 @@
 import { eq, and, desc } from 'drizzle-orm'
 import type { Message, MessagePart } from '@agent-chat/protocol'
-import { messages, messageParts } from '../schema'
+import { messageArtifactRefs, messages, messageParts } from '../schema'
 import { getDb, getD1 } from '../migrate'
 import { ulid } from '../../lib/ulid'
 
@@ -65,6 +65,7 @@ export async function updateMessage(
 }
 
 export async function deleteMessage(id: string): Promise<void> {
+  await getDb().delete(messageArtifactRefs).where(eq(messageArtifactRefs.messageId, id)).run()
   await getDb().delete(messageParts).where(eq(messageParts.messageId, id)).run()
   try {
     await getD1().prepare('DELETE FROM messages_fts WHERE message_id = ?').bind(id).run()
@@ -72,6 +73,17 @@ export async function deleteMessage(id: string): Promise<void> {
     // FTS may be unavailable in some local/test environments.
   }
   await getDb().delete(messages).where(eq(messages.id, id)).run()
+}
+
+export async function recordMessageArtifactRefs(messageId: string, artifactIds: string[]): Promise<void> {
+  const uniqueIds = [...new Set(artifactIds.filter(Boolean))]
+  for (const artifactId of uniqueIds) {
+    await getDb()
+      .insert(messageArtifactRefs)
+      .values({ messageId, artifactId })
+      .onConflictDoNothing()
+      .run()
+  }
 }
 
 export async function listMessagesByTopic(

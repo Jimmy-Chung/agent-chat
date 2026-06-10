@@ -37,7 +37,7 @@ interface DeleteTopicModalProps {
 }
 
 export function DeleteTopicModal({ topicId, topicName, onClose }: DeleteTopicModalProps) {
-  const [strategy, setStrategy] = useState<'pool' | 'delete'>('pool')
+  const [strategy, setStrategy] = useState<'pool' | 'delete'>('delete')
   const topicArtifacts = useArtifactStore((s) => s.byTopic[topicId] ?? EMPTY_ARTIFACTS)
   const artifactCount = topicArtifacts.length
 
@@ -120,7 +120,7 @@ export function DeleteTopicModal({ topicId, topicName, onClose }: DeleteTopicMod
             </div>
             <div style={{ marginTop: 6, fontSize: 13.5, color: 'var(--fg-regular)', letterSpacing: '-0.005em', lineHeight: 1.5 }}>
               {artifactCount > 0 ? (
-                <>此话题包含 <b style={{ color: 'var(--fg-strong)', fontWeight: 600, fontFeatureSettings: '"tnum"' }}>{artifactCount}</b> 个产物,删除前请选择处理方式:</>
+                <>此话题包含 <b style={{ color: 'var(--fg-strong)', fontWeight: 600, fontFeatureSettings: '"tnum"' }}>{artifactCount}</b> 个产物引用，删除话题前请选择这些引用的处理方式：</>
               ) : (
                 <>删除此话题? 对话历史将被清除,无法恢复。</>
               )}
@@ -221,27 +221,10 @@ export function DeleteTopicModal({ topicId, topicName, onClose }: DeleteTopicMod
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-0.01em' }}>
-                  转入产物池(保留)
-                  <span
-                    className="inline-flex items-center gap-1"
-                    style={{
-                      height: 18,
-                      padding: '0 7px',
-                      borderRadius: 9,
-                      fontSize: 10.5,
-                      fontWeight: 600,
-                      letterSpacing: '.04em',
-                      background: 'rgba(48,209,88,.14)',
-                      color: '#6FE39A',
-                      border: '1px solid rgba(48,209,88,.30)',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    推荐
-                  </span>
+                  保留引用到产物池
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--fg-dim)', lineHeight: 1.5, letterSpacing: '-0.005em' }}>
-                  {artifactCount} 个产物会迁移到 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4 }}>系统话题 · 产物池</code>,后续在任何话题里都能用 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4 }}>@</code> 引用。话题对话历史会被删除。
+                  {artifactCount} 个产物引用会迁移到 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4 }}>系统话题 · 产物池</code>，后续在任何话题里都能用 <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, background: 'rgba(0,0,0,.32)', border: '1px solid var(--hairline)', padding: '0 5px', borderRadius: 4 }}>@</code> 引用。不会删除 adapter 本机文件。
                 </div>
               </div>
             </button>
@@ -274,11 +257,28 @@ export function DeleteTopicModal({ topicId, topicName, onClose }: DeleteTopicMod
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-0.01em' }}>
-                  跟随话题一起删除
+                <div className="flex items-center gap-2" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg-strong)', letterSpacing: '-0.01em' }}>
+                  删除这些产物引用
+                  <span
+                    className="inline-flex items-center gap-1"
+                    style={{
+                      height: 18,
+                      padding: '0 7px',
+                      borderRadius: 9,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: '.04em',
+                      background: 'rgba(48,209,88,.14)',
+                      color: '#6FE39A',
+                      border: '1px solid rgba(48,209,88,.30)',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    默认
+                  </span>
                 </div>
                 <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--fg-dim)', lineHeight: 1.5, letterSpacing: '-0.005em' }}>
-                  话题、对话历史、{artifactCount} 个产物全部一并删除,<b style={{ color: '#FFAFA8', fontWeight: 600 }}>无法恢复</b>。
+                  从 agent-chat 移除这 {artifactCount} 个引用，不进入产物池；不会删除 adapter 本机文件。话题对话历史会被删除，<b style={{ color: '#FFAFA8', fontWeight: 600 }}>无法恢复</b>。
                 </div>
               </div>
             </button>

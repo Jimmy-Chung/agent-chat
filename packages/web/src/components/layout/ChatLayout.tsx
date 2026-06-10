@@ -11,6 +11,7 @@ import { SleepReminder } from '../SleepReminder'
 
 export function ChatLayout() {
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
+  const activeTopic = useTopicStore((s) => s.topics.find((topic) => topic.id === s.activeTopicId))
   const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed)
   const inspectorCollapsed = useUiStore((s) => s.inspectorCollapsed)
   const mobileSidebarOpen = useUiStore((s) => s.mobileSidebarOpen)
@@ -20,6 +21,7 @@ export function ChatLayout() {
 
   const isMobile = useIsMobile()
   const setMobile = useUiStore((s) => s.setMobile)
+  const showInspector = activeTopic?.kind === 'normal'
 
   useEffect(() => { setMobile(isMobile) }, [isMobile, setMobile])
 
@@ -44,7 +46,7 @@ export function ChatLayout() {
         )}
 
         {/* Inspector bottom sheet */}
-        {mobileInspectorOpen && (
+        {showInspector && mobileInspectorOpen && (
           <MobileInspectorSheet
             onClose={() => setMobileInspectorOpen(false)}
           />
@@ -56,7 +58,7 @@ export function ChatLayout() {
   }
 
   // Desktop: existing 3-column grid
-  const inspectorWidth = inspectorCollapsed ? '40px' : '320px'
+  const inspectorWidth = showInspector ? (inspectorCollapsed ? '40px' : '320px') : '0px'
 
   return (
     <div
@@ -93,7 +95,7 @@ export function ChatLayout() {
 
         {/* Inspector panel */}
         <aside className="relative z-[5] hidden overflow-visible lg:block">
-          {activeTopicId && <InspectorPanel />}
+          {activeTopicId && showInspector && <InspectorPanel />}
         </aside>
       </div>
 

@@ -90,6 +90,9 @@ export async function createPendingUserMessage(input: CreateUserMessageInput): P
     contentJson: JSON.stringify({ content: input.content }),
   })
   await messageRepo.indexMessageForSearch(msg.id, input.topicId, input.content)
+  if (input.mentions?.length) {
+    await messageRepo.recordMessageArtifactRefs(msg.id, input.mentions.map((mention) => mention.id))
+  }
 
   input.broadcaster.broadcast('message.start', {
     topicId: input.topicId,
