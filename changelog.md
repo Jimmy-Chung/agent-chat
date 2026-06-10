@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-10 [v1.10.46] — fix: SOP 导出按钮可用性
+
+- SOP 导出弹窗默认填入基于当前目标的 SOP 名称，避免用户已选节点但名称为空导致导出按钮一直置灰。
+- 选择节点时同步缓存该 projection node 对应的 trace source ids，提交可用性不再依赖当前 projection 反向查找预览结果。
+- 前端回归测试覆盖“选中节点后导出按钮变为可用，并发送 source trace ids”。
+- 版本显示更新为 `v1.10.46`。
+
 ## 2026-06-10 [v1.10.45] — fix: SOP 导出源节点解析与右侧滚动
 
 - SOP 导出事件新增 `selectedSourceIds`，前端在当前导出弹窗 projection 中直接解析所选节点对应的 trace source ids 并发送给服务端。

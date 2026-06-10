@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
@@ -36,8 +36,17 @@ function titleForTraceNode(node: TraceNode): string {
   )
 }
 
+function defaultSopName(goalAnchor: GoalAnchor | null): string {
+  const base = compactText(goalAnchor?.normalized_goal || goalAnchor?.raw_query, '注意力节点')
+  return base.endsWith('SOP') ? base : `${base} SOP`
+}
+
 export function resolveAttentionSopSelectionPreview(nodes: TraceNode[], selectedMindNodes: MindMapNode[]): PreviewNode[] {
   const selectedSourceIds = new Set(selectedMindNodes.flatMap((node) => node.sourceNodeIds))
+  return resolveAttentionSopSelectionPreviewFromSourceIds(nodes, selectedSourceIds)
+}
+
+export function resolveAttentionSopSelectionPreviewFromSourceIds(nodes: TraceNode[], selectedSourceIds: ReadonlySet<string>): PreviewNode[] {
   return nodes
     .filter((node) => selectedSourceIds.has(node.id))
     .map((node) => ({
@@ -68,21 +77,26 @@ export function AttentionSopExportModal({
   planItems: PlanItem[]
   onClose: () => void
 }) {
-  const [name, setName] = useState('')
+  const initialName = useMemo(() => defaultSopName(goalAnchor), [goalAnchor])
+  const [name, setName] = useState(initialName)
   const [selectedMindId, setSelectedMindId] = useState<string | null>(null)
-  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(() => new Set())
+  const [selectedSourcesByNodeId, setSelectedSourcesByNodeId] = useState<Record<string, string[]>>(() => ({}))
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set())
   const projection = useMemo(
     () => buildMindMapProjection(nodes, goalAnchor, planItems, expandedNodeIds),
     [nodes, goalAnchor, planItems, expandedNodeIds],
   )
-  const selectedMindNodes = useMemo(
-    () => projection.nodes.filter((node) => selectedNodeIds.has(node.id)),
-    [projection.nodes, selectedNodeIds],
+  const selectedNodeIds = useMemo(
+    () => new Set(Object.keys(selectedSourcesByNodeId)),
+    [selectedSourcesByNodeId],
+  )
+  const selectedSourceIds = useMemo(
+    () => new Set(Object.values(selectedSourcesByNodeId).flat()),
+    [selectedSourcesByNodeId],
   )
   const previewNodes = useMemo(
-    () => resolveAttentionSopSelectionPreview(nodes, selectedMindNodes),
-    [nodes, selectedMindNodes],
+    () => resolveAttentionSopSelectionPreviewFromSourceIds(nodes, selectedSourceIds),
+    [nodes, selectedSourceIds],
   )
   const selectedMindNode = useMemo(
     () => projection.nodes.find((node) => node.id === selectedMindId) ?? projection.nodes.find((node) => node.kind !== 'goal') ?? projection.nodes[0] ?? null,
@@ -92,13 +106,21 @@ export function AttentionSopExportModal({
     () => sourcePreviewForMindNode(nodes, selectedMindNode),
     [nodes, selectedMindNode],
   )
-  const canSubmit = name.trim().length > 0 && selectedNodeIds.size > 0 && previewNodes.length > 0
+  const canSubmit = name.trim().length > 0 && selectedNodeIds.size > 0 && selectedSourceIds.size > 0
+
+  useEffect(() => {
+    setName((current) => current.trim() ? current : initialName)
+  }, [initialName])
 
   const toggleSelected = (id: string) => {
-    setSelectedNodeIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+    setSelectedSourcesByNodeId((prev) => {
+      const next = { ...prev }
+      if (next[id]) {
+        delete next[id]
+      } else {
+        const sourceNodeIds = projection.nodes.find((node) => node.id === id)?.sourceNodeIds ?? []
+        if (sourceNodeIds.length > 0) next[id] = sourceNodeIds
+      }
       return next
     })
   }
@@ -127,7 +149,7 @@ export function AttentionSopExportModal({
         ...(activeGoalId ? { goalId: activeGoalId } : {}),
         name: name.trim(),
         selectedNodeIds: [...selectedNodeIds],
-        selectedSourceIds: previewNodes.map((node) => node.id),
+        selectedSourceIds: [...selectedSourceIds],
       },
     })
     if (sent) onClose()
