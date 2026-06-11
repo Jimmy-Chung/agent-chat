@@ -206,6 +206,27 @@ code, pre {
   left: calc(100% + 8px);
 }
 
+.message-quote-button {
+  position: absolute;
+  top: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg-dim);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.message-quote-button:hover {
+  background: rgba(10, 132, 255, 0.16);
+  border-color: rgba(10, 132, 255, 0.36);
+  color: #7CB6FF;
+}
+
 .message-retry-dot {
   position: absolute;
   top: 50%;

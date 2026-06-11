@@ -1,4 +1,4 @@
-import type { ArtifactRef, Message, Topic } from '@agent-chat/protocol'
+import type { ArtifactRef, Message, MessageReference, Topic } from '@agent-chat/protocol'
 import type { PiClient } from '../pi/client'
 import { PiRpcError } from '../pi/client'
 import * as messageRepo from '../db/repos/message.repo'
@@ -16,6 +16,18 @@ import type { GatewayLogInput } from '../server-logs'
 
 export interface MessageDeliveryBroadcaster {
   broadcast(type: string, data: unknown): void
+}
+
+const MAX_REFERENCE_SNAPSHOT_CHARS = 6000
+
+function normalizeReferences(references?: MessageReference[]): MessageReference[] {
+  if (!references?.length) return []
+  return references
+    .filter((ref) => ref.messageId && ref.topicId && ref.contentSnapshot.trim())
+    .map((ref) => ({
+      ...ref,
+      contentSnapshot: ref.contentSnapshot.slice(0, MAX_REFERENCE_SNAPSHOT_CHARS),
+    }))
 }
 
 // Render an unknown thrown value into a useful log string. The WS layer used to
@@ -56,6 +68,7 @@ interface DeliverUserMessageInput {
   messageId: string
   content: string
   mentions?: ArtifactRef[]
+  references?: MessageReference[]
   pi: PiClient
   broadcaster: MessageDeliveryBroadcaster
   artifactAccess?: {
@@ -69,6 +82,7 @@ interface CreateUserMessageInput {
   topicId: string
   content: string
   mentions?: ArtifactRef[]
+  references?: MessageReference[]
   clientMessageId?: string
   broadcaster: MessageDeliveryBroadcaster
 }
@@ -89,6 +103,15 @@ export async function createPendingUserMessage(input: CreateUserMessageInput): P
     kind: 'text',
     contentJson: JSON.stringify({ content: input.content }),
   })
+  const references = normalizeReferences(input.references)
+  const referencePart = references.length > 0
+    ? await messageRepo.createMessagePart({
+        id: `${msg.id}:message_ref`,
+        messageId: msg.id,
+        kind: 'message_ref',
+        contentJson: JSON.stringify({ references }),
+      })
+    : null
   await messageRepo.indexMessageForSearch(msg.id, input.topicId, input.content)
   if (input.mentions?.length) {
     await messageRepo.recordMessageArtifactRefs(msg.id, input.mentions.map((mention) => mention.id))
@@ -109,6 +132,14 @@ export async function createPendingUserMessage(input: CreateUserMessageInput): P
     partId: part.id,
     part: { kind: 'text', content: input.content },
   })
+  if (referencePart) {
+    input.broadcaster.broadcast('message.delta', {
+      topicId: input.topicId,
+      messageId: msg.id,
+      partId: referencePart.id,
+      part: { kind: 'message_ref', references },
+    })
+  }
   broadcastDelivery(input.broadcaster, input.topicId, msg.id, 'pending', 0, 2)
 
   return msg
@@ -214,6 +245,10 @@ async function attemptDelivery(
 
   try {
     const mentionedArtifacts = await buildMentionedArtifactRefs(input)
+    const messageReferences = input.references?.length
+      ? normalizeReferences(input.references)
+      : await getStoredMessageReferences(msg.id)
+    const contentForPi = buildContentWithReferences(input.content, messageReferences)
 
     // session_busy: exponential backoff retry (1s → 2s → 4s, max 3 attempts)
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -227,8 +262,14 @@ async function attemptDelivery(
           attempt,
           status: 'dispatching',
           payload: {
-            contentPreview: input.content.slice(0, 400),
-            contentLength: input.content.length,
+            contentPreview: contentForPi.slice(0, 400),
+            contentLength: contentForPi.length,
+            referencedMessages: messageReferences.map((ref) => ({
+              messageId: ref.messageId,
+              topicId: ref.topicId,
+              role: ref.role,
+              createdAt: ref.createdAt,
+            })),
             mentionedArtifacts,
             manual: input.manual,
             retryCount: options.retryCount,
@@ -245,7 +286,7 @@ async function attemptDelivery(
           input.pi.rpc('sendUserMessage', {
             sessionId,
             clientMessageId: msg.client_message_id ?? msg.id,
-            content: input.content,
+            content: contentForPi,
             mentionedArtifacts,
             streamingBehavior: 'followUp',
           }, { signal: abortController.signal }),
@@ -500,6 +541,41 @@ async function buildMentionedArtifactRefs(
     })
   }
   return refs
+}
+
+async function getStoredMessageReferences(messageId: string): Promise<MessageReference[]> {
+  const parts = await messageRepo.getMessageParts(messageId)
+  const referencePart = parts.find((part) => part.kind === 'message_ref')
+  if (!referencePart) return []
+  try {
+    const parsed = JSON.parse(referencePart.content_json) as { references?: MessageReference[] }
+    return normalizeReferences(parsed.references)
+  } catch {
+    return []
+  }
+}
+
+function buildContentWithReferences(content: string, references: MessageReference[]): string {
+  if (references.length === 0) return content
+  const quoted = references.map((ref, index) => {
+    const created = new Date(ref.createdAt).toISOString()
+    return [
+      `[引用消息 ${index + 1}]`,
+      `messageId: ${ref.messageId}`,
+      `role: ${ref.role}`,
+      `createdAt: ${created}`,
+      ref.contentSnapshot,
+    ].join('\n')
+  }).join('\n\n')
+
+  return [
+    '用户引用了以下当前会话历史消息。回答时请把这些引用作为当前问题的明确上下文：',
+    '',
+    quoted,
+    '',
+    '用户当前问题：',
+    content,
+  ].join('\n')
 }
 
 export function buildSessionParams(topic: Topic): Parameters<PiClient['createSession']>[0] {

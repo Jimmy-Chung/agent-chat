@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useDeferredValue } from 'react'
-import type { Message, MessagePart } from '@agent-chat/protocol'
+import type { Message, MessagePart, MessageReference } from '@agent-chat/protocol'
 import { ThinkingBlock } from './ThinkingBlock'
 import { ToolCard, type ToolCallInfo, type ToolResultInfo } from './ToolCard'
 import { DiffCard } from './DiffCard'
@@ -12,6 +12,12 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { useMessageStore } from '@/stores/message-store'
 import { formatMessageTime } from '@/lib/message-time'
 import { getWsClient } from '@/lib/ws-client'
+import {
+  buildMessageReference,
+  parseMessageReferences,
+  referenceRoleLabel,
+  summarizeReference,
+} from '@/lib/message-references'
 
 interface MessageBubbleProps {
   message: Message
@@ -27,6 +33,7 @@ interface MessageBubbleProps {
     response?: string
   } | null
   cronTriggered?: { cronId: string; runId: string; firedAt: number } | null
+  inheritedReferences?: MessageReference[]
   isLast?: boolean
 }
 
@@ -37,6 +44,7 @@ export function MessageBubble({
   usage,
   approval,
   cronTriggered,
+  inheritedReferences = [],
   isLast,
 }: MessageBubbleProps) {
   const [hovered, setHovered] = useState(false)
@@ -71,6 +79,9 @@ export function MessageBubble({
   const showTimestamp = hasVisibleBody && (hovered || touchTimeVisible)
   const showRetryDot = isUser && message.status === 'needs_retry'
   const showRetryLoading = isUser && message.status === 'retrying'
+  const ownReferences = parseMessageReferences(parts)
+  const visibleReferences = ownReferences.length > 0 ? ownReferences : inheritedReferences
+  const quoteReference = buildMessageReference(message, parts)
 
   const handleRetry = () => {
     getWsClient().send({
@@ -80,6 +91,11 @@ export function MessageBubble({
         messageId: message.id,
       },
     })
+  }
+
+  const handleQuote = () => {
+    if (!quoteReference) return
+    useMessageStore.getState().addComposerReference(message.topic_id, quoteReference)
   }
 
   // System messages: inline purple text, no bubble
@@ -154,6 +170,20 @@ export function MessageBubble({
         {/* Bubble */}
         {hasVisibleBody && (
           <div className={`message-bubble-shell ${isUser ? 'is-user' : 'is-assistant'}`}>
+            {quoteReference && hovered && (
+              <button
+                type="button"
+                onClick={handleQuote}
+                className="message-quote-button"
+                style={{
+                  [isUser ? 'right' : 'left']: 'calc(100% + 8px)',
+                }}
+                aria-label="引用这条消息"
+                title="引用这条消息"
+              >
+                <QuoteIcon />
+              </button>
+            )}
             {showRetryDot && (
               <button
                 type="button"
@@ -171,6 +201,10 @@ export function MessageBubble({
                 background: 'rgba(255,69,58,0.08)',
               } : undefined}
             >
+              {visibleReferences.length > 0 && (
+                <MessageReferences references={visibleReferences} />
+              )}
+
               {/* Message parts */}
               {parts.map((part) => (
                 <MessagePartRenderer
@@ -210,6 +244,34 @@ export function MessageBubble({
         )}
 
       </div>
+    </div>
+  )
+}
+
+function MessageReferences({ references }: { references: MessageReference[] }) {
+  return (
+    <div className="mb-2 grid gap-1.5">
+      {references.map((ref, index) => (
+        <button
+          key={`${ref.messageId}-${index}`}
+          type="button"
+          onClick={() => useMessageStore.getState().focusMessage(ref.topicId, ref.messageId)}
+          className="grid min-w-0 cursor-pointer rounded-lg px-2.5 py-2 text-left"
+          style={{
+            background: 'rgba(10,132,255,0.10)',
+            border: '1px solid rgba(10,132,255,0.22)',
+            color: 'var(--fg-regular)',
+          }}
+          title="跳转到引用消息"
+        >
+          <span className="mb-1 text-[10px] font-semibold" style={{ color: '#7CB6FF', letterSpacing: '0.04em' }}>
+            引用 {referenceRoleLabel(ref.role)}
+          </span>
+          <span className="min-w-0 text-xs leading-5" style={{ overflowWrap: 'anywhere' }}>
+            {summarizeReference(ref)}
+          </span>
+        </button>
+      ))}
     </div>
   )
 }
@@ -293,4 +355,13 @@ function safeParseContent<T>(json: string): T | null {
   } catch {
     return null
   }
+}
+
+function QuoteIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 21c3 0 7-1 7-8V5H4v8h3c0 3-1 5-4 5v3z" />
+      <path d="M14 21c3 0 7-1 7-8V5h-6v8h3c0 3-1 5-4 5v3z" />
+    </svg>
+  )
 }

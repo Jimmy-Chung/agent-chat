@@ -5,14 +5,16 @@ import TextareaAutosize from 'react-textarea-autosize'
 import { getWsClient } from '@/lib/ws-client'
 import { buildModelOptions } from '@/lib/model-mapping'
 import { buildPastedName, extractImageFiles } from '@/lib/paste-image'
+import { referenceRoleLabel, summarizeReference } from '@/lib/message-references'
 import { useArtifactStore } from '@/stores/artifact-store'
 import { useMessageStore, type PendingMessage } from '@/stores/message-store'
 import { useTopicStore } from '@/stores/topic-store'
 import { useWsStore } from '@/stores/ws-store'
-import type { Artifact } from '@agent-chat/protocol'
+import type { Artifact, MessageReference } from '@agent-chat/protocol'
 
 const EMPTY_ARTIFACTS: Artifact[] = []
 const EMPTY_PENDING: PendingMessage[] = []
+const EMPTY_REFERENCES: MessageReference[] = []
 
 // 单条消息的「简洁回答」开关：开启时把这条指令拼到发送内容末尾，引导 agent 简短作答。
 const CONCISE_DIRECTIVE = '（请用最直接、最简洁、逻辑最清晰、术语最少的方式回答上面的问题。）'
@@ -128,6 +130,7 @@ export function MessageInput({ topicId }: MessageInputProps) {
     return last?.role === 'user' && last?.status === 'pending'
   })
   const pendingMessages = useMessageStore((s) => s.pendingMessagesByTopic[topicId] ?? EMPTY_PENDING)
+  const composerReferences = useMessageStore((s) => s.composerReferencesByTopic[topicId] ?? EMPTY_REFERENCES)
   const sessionReady = useWsStore((s) => s.sessionReadyByTopic[topicId])
   const sessionLoading = sessionReady !== true
 
@@ -210,9 +213,10 @@ export function MessageInput({ topicId }: MessageInputProps) {
     const outgoing = conciseMode ? `${trimmed}\n\n${CONCISE_DIRECTIVE}` : trimmed
 
     if (agentStatus === 'processing') {
-      useMessageStore.getState().addPendingMessage(topicId, outgoing, clientMessageId)
+      useMessageStore.getState().addPendingMessage(topicId, outgoing, clientMessageId, composerReferences)
       setTopicValue('')
       setTopicMentions([])
+      useMessageStore.getState().clearComposerReferences(topicId)
       setConciseMode(false)
       return
     }
@@ -224,13 +228,15 @@ export function MessageInput({ topicId }: MessageInputProps) {
         content: outgoing,
         clientMessageId,
         mentions: mentions.map((m) => ({ id: m.id, name: m.name })),
+        references: composerReferences,
       },
     })
     if (!sent) return
     setTopicValue('')
     setTopicMentions([])
+    useMessageStore.getState().clearComposerReferences(topicId)
     setConciseMode(false)
-  }, [value, topicId, wsClient, mentions, agentStatus, conciseMode, setConciseMode, setTopicValue, setTopicMentions])
+  }, [value, topicId, wsClient, mentions, composerReferences, agentStatus, conciseMode, setConciseMode, setTopicValue, setTopicMentions])
 
   // Append `@name ` to the current topic's draft using a functional update so
   // it stays correct even when called from an async upload callback (where the
@@ -400,6 +406,10 @@ export function MessageInput({ topicId }: MessageInputProps) {
     setTopicMentions((prev) => prev.filter((m) => m.id !== id))
   }
 
+  const removeReference = (messageId: string) => {
+    useMessageStore.getState().removeComposerReference(topicId, messageId)
+  }
+
   // Build filtered artifact list
   const filteredArtifacts = useMemo(() => {
     const source = pickerTab === 'topic' ? topicArtifacts : poolArtifacts
@@ -472,6 +482,46 @@ export function MessageInput({ topicId }: MessageInputProps) {
               @{m.name}
               <button onClick={() => removeMention(m.id)} className="ml-0.5 opacity-60 hover:opacity-100">&times;</button>
             </span>
+          ))}
+        </div>
+      )}
+
+      {/* Message reference chips */}
+      {composerReferences.length > 0 && (
+        <div className="mb-2 grid gap-1.5">
+          {composerReferences.map((ref) => (
+            <div
+              key={ref.messageId}
+              className="flex min-w-0 items-start gap-2 rounded-lg px-2.5 py-2"
+              style={{
+                background: 'rgba(10,132,255,0.10)',
+                border: '1px solid rgba(10,132,255,0.24)',
+              }}
+            >
+              <span
+                className="mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{
+                  color: '#7CB6FF',
+                  background: 'rgba(10,132,255,0.14)',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                {referenceRoleLabel(ref.role)}
+              </span>
+              <span className="min-w-0 flex-1 text-xs leading-5" style={{ color: 'var(--fg-regular)' }}>
+                {summarizeReference(ref, 220)}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeReference(ref.messageId)}
+                className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-sm leading-none"
+                style={{ color: 'var(--fg-dim)' }}
+                aria-label="移除引用"
+                title="移除引用"
+              >
+                &times;
+              </button>
+            </div>
           ))}
         </div>
       )}

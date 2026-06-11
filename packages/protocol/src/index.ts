@@ -12,6 +12,7 @@ export type {
   ProgrammingSpec,
   GeneralSpec,
   ArtifactRef,
+  MessageReference,
 } from './domain'
 
 // PI events
@@ -199,6 +200,7 @@ export {
   topicCreatedSchema,
   topicUpdatedSchema,
   topicDeletedSchema,
+  messageReferenceSchema,
   messageStartSchema,
   messageDeltaSchema,
   messageEndSchema,

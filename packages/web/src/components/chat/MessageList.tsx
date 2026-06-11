@@ -1,12 +1,13 @@
 'use client'
 
 import { useRef, useEffect, useState } from 'react'
-import type { Message, MessagePart } from '@agent-chat/protocol'
+import type { Message, MessagePart, MessageReference } from '@agent-chat/protocol'
 import type { ToolResultInfo } from './ToolCard'
 import { MessageBubble } from './MessageBubble'
 import { InteractionCard } from './InteractionCard'
 import { formatDateDivider, shouldShowDateDivider } from '@/lib/message-time'
 import { useMessageStore } from '@/stores/message-store'
+import { parseMessageReferences } from '@/lib/message-references'
 
 interface OrphanInteraction {
   interactionId: string
@@ -89,6 +90,7 @@ export function MessageList({
   }
 
   const turns = groupMessagesIntoTurns(messages, partsByMessage)
+  const inheritedReferencesByMessage = buildInheritedReferences(messages, partsByMessage)
 
   const lastAssistantStreaming = messages.some(
     (m) => m.role === 'assistant' && m.status === 'streaming',
@@ -139,6 +141,7 @@ export function MessageList({
                     usage={usageByMessage[msg.id] ?? null}
                     approval={approvalsByMessage[msg.id] ?? null}
                     cronTriggered={cronByMessage[msg.id] ?? null}
+                    inheritedReferences={inheritedReferencesByMessage[msg.id] ?? []}
                     isLast={turnIdx === turns.length - 1 && msgIdx === turn.messages.length - 1}
                   />
                 </div>
@@ -184,6 +187,30 @@ export function MessageList({
       <div ref={bottomRef} />
     </div>
   )
+}
+
+function buildInheritedReferences(
+  messages: Message[],
+  partsByMessage: Record<string, MessagePart[]>,
+): Record<string, MessageReference[]> {
+  const result: Record<string, MessageReference[]> = {}
+  let lastUserReferences: MessageReference[] = []
+
+  for (const msg of messages) {
+    const refs = parseMessageReferences(partsByMessage[msg.id] ?? [])
+    if (msg.role === 'user') {
+      lastUserReferences = refs
+      result[msg.id] = []
+      continue
+    }
+    if (msg.role === 'assistant') {
+      result[msg.id] = lastUserReferences
+      continue
+    }
+    result[msg.id] = []
+  }
+
+  return result
 }
 
 interface Turn {

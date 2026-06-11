@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import type { Message, MessagePart } from '@agent-chat/protocol'
+import type { Message, MessagePart, MessageReference } from '@agent-chat/protocol'
 
 const SINGLETON_SNAPSHOT_PART_KINDS = new Set<MessagePart['kind']>(['text', 'thinking'])
 const STALE_PENDING_USER_MESSAGE_MS = 2 * 60 * 1000
@@ -34,6 +34,7 @@ export interface FocusedMessageTarget {
 export interface PendingMessage {
   id: string
   content: string
+  references: MessageReference[]
   clientMessageId: string
   queuedAt: number
 }
@@ -56,6 +57,7 @@ interface MessageState {
   interactions: Record<string, StoredInteraction>
   focusedMessageTarget: FocusedMessageTarget | null
   pendingMessagesByTopic: Record<string, PendingMessage[]>
+  composerReferencesByTopic: Record<string, MessageReference[]>
   unreadByTopic: Record<string, number>
 }
 
@@ -86,7 +88,10 @@ interface MessageActions {
   setInteraction: (id: string, data: StoredInteraction) => void
   setInteractionsForTopic: (topicId: string, interactions: StoredInteraction[]) => void
   focusMessage: (topicId: string, messageId: string) => void
-  addPendingMessage: (topicId: string, content: string, clientMessageId: string) => void
+  addComposerReference: (topicId: string, reference: MessageReference) => void
+  removeComposerReference: (topicId: string, messageId: string) => void
+  clearComposerReferences: (topicId: string) => void
+  addPendingMessage: (topicId: string, content: string, clientMessageId: string, references?: MessageReference[]) => void
   removePendingMessage: (topicId: string, id: string) => void
   clearPendingMessages: (topicId: string) => void
   flushPendingMessages: (topicId: string) => PendingMessage[]
@@ -113,6 +118,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
     interactions: {},
     focusedMessageTarget: null,
     pendingMessagesByTopic: {},
+    composerReferencesByTopic: {},
     unreadByTopic: {},
 
     fetchMessages: (_topicId) => {
@@ -388,7 +394,37 @@ export const useMessageStore = create<MessageState & MessageActions>()(
       })
     },
 
-    addPendingMessage: (topicId, content, clientMessageId) => {
+    addComposerReference: (topicId, reference) => {
+      set((s) => {
+        if (!s.composerReferencesByTopic[topicId]) {
+          s.composerReferencesByTopic[topicId] = []
+        }
+        const existingIndex = s.composerReferencesByTopic[topicId].findIndex((entry: MessageReference) => entry.messageId === reference.messageId)
+        if (existingIndex >= 0) {
+          s.composerReferencesByTopic[topicId][existingIndex] = reference
+        } else {
+          s.composerReferencesByTopic[topicId].push(reference)
+        }
+      })
+    },
+
+    removeComposerReference: (topicId, messageId) => {
+      set((s) => {
+        if (!s.composerReferencesByTopic[topicId]) return
+        s.composerReferencesByTopic[topicId] = s.composerReferencesByTopic[topicId].filter((entry: MessageReference) => entry.messageId !== messageId)
+        if (s.composerReferencesByTopic[topicId].length === 0) {
+          delete s.composerReferencesByTopic[topicId]
+        }
+      })
+    },
+
+    clearComposerReferences: (topicId) => {
+      set((s) => {
+        delete s.composerReferencesByTopic[topicId]
+      })
+    },
+
+    addPendingMessage: (topicId, content, clientMessageId, references = []) => {
       set((s) => {
         if (!s.pendingMessagesByTopic[topicId]) {
           s.pendingMessagesByTopic[topicId] = []
@@ -396,6 +432,7 @@ export const useMessageStore = create<MessageState & MessageActions>()(
         s.pendingMessagesByTopic[topicId].push({
           id: `pm-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           content,
+          references,
           clientMessageId,
           queuedAt: Date.now(),
         })
