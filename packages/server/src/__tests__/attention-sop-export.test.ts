@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MindMapProjection } from '@agent-chat/protocol'
-import { resolveSelectedAttentionSourceIds } from '../ws/topic-do'
+import { resolveSelectedAttentionSourceIds } from '../sop/export'
 
 function projection(): MindMapProjection {
   return {

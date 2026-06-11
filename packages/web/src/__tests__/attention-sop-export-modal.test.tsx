@@ -121,7 +121,7 @@ describe('Attention SOP export modal', () => {
       />,
     )
 
-    const submitButton = screen.getByText('导出到 SOP 中心') as HTMLButtonElement
+    const submitButton = screen.getByText('生成 SOP 草稿') as HTMLButtonElement
     expect(submitButton.disabled).toBe(true)
 
     fireEvent.click(screen.getByLabelText('选择当前节点 第一步'))

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-11 [v1.10.56] — feat: 注意力节点导出 SOP 重构（AIT-249）
+
+- 注意力节点导出 SOP 改为「LLM 提炼 → 草稿预览编辑 → 确认落库」：导出只产出 `sop_template.generated` 草稿，用户在编辑器确认后才通过 `sop_template.create` 保存。
+- LLM 提炼为主力而非兜底：prompt 要求产出分步工作流（步骤名/输入/动作/产出），禁止照抄对话原文；LLM 未配置或失败时不落库，明确报错（`SOP_EXPORT_LLM_UNAVAILABLE` / `SOP_EXPORT_LLM_FAILED`）。
+- 导出 SOP 的 agent_type 默认 `any`（原硬继承源话题类型导致跨类型话题不可见），可在草稿编辑器中收窄。
+- 新增全局 SOP 草稿编辑器宿主（SopDraftEditorHost），导出与历史生成草稿统一走 SopEditorModal 编辑确认。
+- 前端补充导出相关错误码 toast（注意力快照缺失/选择为空/LLM 失败等），导出提交后提示「正在提炼」。
+- 版本显示更新为 `v1.10.56`。
+
 ## 2026-06-11 [v1.10.54] — feat: 应用内产物在线预览弹窗
 
 - 产物资源点击后优先在当前页面弹窗预览，支持 PDF、图片、Markdown、HTML 与常见文本文件。

@@ -10,6 +10,7 @@ import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './Connectio
 import { PairingRequiredScreen } from './AdapterConnectionModal'
 import { HelmLogo, HelmWordmark } from '@/components/ui/HelmLogo'
 import { loadPairedDevice, exchangeToken, buildAdapterWsUrl } from '@/lib/pairing'
+import { SopDraftEditorHost } from '@/components/sop/SopDraftEditorHost'
 
 interface AgentChatErrorDetail {
   code?: string
@@ -53,6 +54,35 @@ function describeError(detail: AgentChatErrorDetail): { tone: 'error' | 'warning
       tone: 'warning',
       title: '部分产物未删除',
       description: detail.message ?? '这些产物仍被话题引用，已保留。',
+    }
+  }
+
+  if (detail.code === 'SOP_EXPORT_LLM_UNAVAILABLE' || detail.code === 'SOP_EXPORT_LLM_FAILED') {
+    return {
+      tone: 'error',
+      title: 'SOP 草稿生成失败',
+      description: detail.message ?? '请检查 LLM 配置后重试，本次未保存任何内容。',
+    }
+  }
+
+  if (
+    detail.code === 'ATTENTION_SNAPSHOT_NOT_FOUND'
+    || detail.code === 'ATTENTION_SNAPSHOT_EMPTY'
+    || detail.code === 'ATTENTION_NODE_SELECTION_EMPTY'
+    || detail.code === 'ATTENTION_NODE_SELECTION_INVALID'
+  ) {
+    return {
+      tone: 'warning',
+      title: '无法导出 SOP',
+      description: detail.message,
+    }
+  }
+
+  if (detail.code === 'SOP_NOT_FOUND' || detail.code === 'SOP_AGENT_TYPE_MISMATCH') {
+    return {
+      tone: 'warning',
+      title: 'SOP 不可用',
+      description: detail.message,
     }
   }
 
@@ -124,6 +154,7 @@ function MainContent({
   return (
     <>
       <ErrorToastListener />
+      <SopDraftEditorHost />
       {status === 'disconnected' && <DisconnectBanner onReset={handleReset} />}
       {children}
     </>
