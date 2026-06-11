@@ -545,6 +545,7 @@ async function buildMentionedArtifactRefs(
 
 async function getStoredMessageReferences(messageId: string): Promise<MessageReference[]> {
   const parts = await messageRepo.getMessageParts(messageId)
+  if (!Array.isArray(parts)) return []
   const referencePart = parts.find((part) => part.kind === 'message_ref')
   if (!referencePart) return []
   try {
