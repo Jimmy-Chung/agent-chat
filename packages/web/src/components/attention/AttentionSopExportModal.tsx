@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import type { GoalAnchor, PlanItem, TraceNode } from '@/lib/attention'
 import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
 import { getWsClient } from '@/lib/ws-client'
+import { useToastStore } from '@/stores/toast-store'
 
 const MindMapGraph = dynamic(() => import('./MindMapGraph'), {
   ssr: false,
@@ -152,7 +153,15 @@ export function AttentionSopExportModal({
         selectedSourceIds: [...selectedSourceIds],
       },
     })
-    if (sent) onClose()
+    if (sent) {
+      useToastStore.getState().pushToast({
+        tone: 'info',
+        title: '正在提炼 SOP 草稿',
+        description: 'LLM 整理完成后会自动打开草稿编辑器，确认后才会保存。',
+        durationMs: 6000,
+      })
+      onClose()
+    }
   }
 
   return (
@@ -169,7 +178,7 @@ export function AttentionSopExportModal({
         <header className="flex h-14 shrink-0 items-center gap-3 px-5" style={{ borderBottom: '1px solid var(--hairline)' }}>
           <div className="min-w-0">
             <h3 className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)' }}>导出 SOP</h3>
-            <p className="mt-0.5 text-[11px]" style={{ color: 'var(--fg-dim)' }}>从注意力节点选择可复用步骤</p>
+            <p className="mt-0.5 text-[11px]" style={{ color: 'var(--fg-dim)' }}>选择可复用步骤，由 LLM 提炼成工作流草稿后再编辑保存</p>
           </div>
           <button
             type="button"
@@ -306,7 +315,7 @@ export function AttentionSopExportModal({
                 className="h-9 rounded-[8px] px-4 text-sm font-semibold disabled:opacity-45"
                 style={{ background: 'rgba(10,132,255,.2)', border: '1px solid rgba(10,132,255,.38)', color: '#9fd0ff' }}
               >
-                导出到 SOP 中心
+                生成 SOP 草稿
               </button>
             </div>
           </aside>

@@ -26,6 +26,8 @@ export const programmingSpecSchema = z.object({
     'bypassPermissions',
   ]),
   systemPrompt: z.string().optional(),
+  initialPlan: z.string().optional(),
+  initialTodos: z.array(todoItemSchema).optional(),
   allowedTools: z.array(z.string()).optional(),
 })
 

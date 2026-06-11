@@ -18,6 +18,7 @@ import { AttentionDrawer } from '@/components/attention/AttentionDrawer'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ArtifactAccessButton } from '@/components/artifacts/ArtifactAccess'
 import { getWsClient } from '@/lib/ws-client'
+import { resolveTopicSopNames, topicSopBadgeLabel } from '@/lib/topic-sop'
 import type { Message } from '@agent-chat/protocol'
 import type { SopTemplate } from '@/stores/sop-template-store'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
@@ -139,6 +140,8 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
 
   const projectDir = useMemo(() => getTopicCwd(activeTopic) ?? undefined, [activeTopic])
   const projectDirDisplay = useMemo(() => getTopicDirectoryLabel(activeTopic, workspacePath) ?? undefined, [activeTopic, workspacePath])
+  const topicSopNames = useMemo(() => resolveTopicSopNames(activeTopic), [activeTopic])
+  const topicSopBadge = useMemo(() => topicSopBadgeLabel(topicSopNames), [topicSopNames])
 
   const approvalsByMessage = useMemo(() => {
     const map: Record<string, { interactionId: string; interactionKind: string; prompt: string; options?: string[]; status: 'pending' | 'resolved' | 'timeout'; response?: string }> = {}
@@ -225,6 +228,21 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
                 }}
               >
                 {projectDirDisplay}
+              </span>
+            </Tooltip>
+          )}
+          {topicSopBadge && (
+            <Tooltip content={topicSopNames.join(' → ')} side="top" delayMs={200} className="hidden min-w-0 shrink sm:inline-block">
+              <span
+                className="block min-w-0 max-w-[200px] truncate rounded-md px-1.5 text-[11px] font-medium"
+                style={{
+                  background: 'rgba(10,132,255,0.10)',
+                  border: '1px solid rgba(10,132,255,0.25)',
+                  color: '#8FC6FF',
+                  lineHeight: '19px',
+                }}
+              >
+                {topicSopBadge}
               </span>
             </Tooltip>
           )}

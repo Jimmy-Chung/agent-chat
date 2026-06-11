@@ -1134,6 +1134,23 @@ describe('RPC schemas', () => {
     expect(result.programming?.allowedTools).toEqual(['Edit', 'Write'])
   })
 
+  it('parses programming spec with initialPlan and initialTodos (SOP workflow)', () => {
+    const result = createSessionParamsSchema.parse({
+      kind: 'programming',
+      programming: {
+        extension: 'codex',
+        yolo: false,
+        cwd: '/home/user/repo',
+        permissionMode: 'default',
+        systemPrompt: 'Follow the SOP',
+        initialPlan: '1. 确认输入\n2. 执行任务',
+        initialTodos: [{ id: '1', content: '确认输入', status: 'pending' }],
+      },
+    })
+    expect(result.programming?.initialPlan).toContain('确认输入')
+    expect(result.programming?.initialTodos).toHaveLength(1)
+  })
+
   it('parses createSession params with general spec', () => {
     const result = createSessionParamsSchema.parse({
       kind: 'general',

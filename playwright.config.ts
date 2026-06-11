@@ -4,8 +4,13 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   retries: 0,
+  // 所有用例共享同一个 server/DO/本地 D1，并行 worker 会互相干扰（session 建立竞争）。
+  workers: 1,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    // E2E_BASE_URL lets a run target an isolated web instance (e.g. one started
+    // with NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8787/ws) instead of the dev server
+    // on :3000, which may be configured against the production worker.
+    baseURL: process.env.E2E_BASE_URL || 'http://127.0.0.1:3000',
     headless: true,
     viewport: { width: 1440, height: 900 },
   },

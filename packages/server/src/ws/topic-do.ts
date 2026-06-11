@@ -2,8 +2,6 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   encodeFrame, decodeFrame, createFrame, type WSFrame,
   type Topic,
-  type TraceNode,
-  type MindMapProjection,
   topicCreateSchema, topicDeleteSchema, topicRenameSchema,
   topicSetModelSchema, topicSetAttentionTargetSchema, topicDetachExtensionSchema, topicSetPlanModeSchema,
   topicResumeSchema, userActionSchema,
@@ -49,7 +47,8 @@ import {
 import { abortSessionWithTimeout, finalizeTopicAbort } from './abort-control'
 import { listPendingInteractionHistory } from './interaction-history'
 import { buildConnectedSessionHealthPayload } from './session-health'
-import { buildSopDraftFromAttentionNodes, buildSopDraftFromHistory, composeSopWorkflow, type SopNode } from '../sop/workflow'
+import { buildSopDraftFromHistory, composeSopWorkflow, type SopNode } from '../sop/workflow'
+import { runSopExportFromAttention } from '../sop/export'
 
 interface DOEnv {
   DB: D1Database
@@ -727,6 +726,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               ...(sopWorkflow
                 ? {
                     systemPrompt: mergeSystemPrompt(undefined, sopWorkflow.composedInstruction),
+                    initialPlan: sopWorkflow.composedPlan,
+                    initialTodos: sopWorkflow.composedTodos,
                     sopWorkflow,
                   }
                 : {}),
@@ -857,67 +858,18 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
       case 'sop_template.export_from_attention': {
         const data = sopTemplateExportFromAttentionSchema.parse(frame.d)
-        const topic = await topicRepo.getTopic(data.topicId)
-        if (!topic) {
-          this.broadcastAll('error', { code: 'TOPIC_NOT_FOUND', message: '话题不存在' })
-          break
-        }
-
-        const snapshot = data.goalId
-          ? await attentionGoalSnapshotRepo.getAttentionGoalSnapshot(data.goalId)
-          : await attentionGoalSnapshotRepo.getActiveAttentionGoal(data.topicId)
-        if (!snapshot || snapshot.topic_id !== data.topicId) {
-          this.broadcastAll('error', { code: 'ATTENTION_SNAPSHOT_NOT_FOUND', message: '当前话题没有可导出的注意力快照' })
-          break
-        }
-
-        const traceNodes = parseJsonArray<TraceNode>(snapshot.trace_nodes_json)
-        const projection = parseJsonObject<MindMapProjection>(snapshot.mind_projection_json)
-        if (!traceNodes.length || !projection?.nodes?.length) {
-          this.broadcastAll('error', { code: 'ATTENTION_SNAPSHOT_EMPTY', message: '当前注意力快照为空，无法导出 SOP' })
-          break
-        }
-
-        const selectedSourceIds = resolveSelectedAttentionSourceIds(
-          projection,
-          data.selectedNodeIds,
-          data.selectedSourceIds,
-        )
-        if (!selectedSourceIds.length) {
-          this.broadcastAll('error', { code: 'ATTENTION_NODE_SELECTION_EMPTY', message: '所选注意力节点没有可导出的源内容' })
-          break
-        }
-
-        const selectedSourceSet = new Set(selectedSourceIds)
-        const orderedNodes = traceNodes.filter((node) => selectedSourceSet.has(node.id))
-        if (!orderedNodes.length) {
-          this.broadcastAll('error', { code: 'ATTENTION_NODE_SELECTION_INVALID', message: '所选注意力节点无法匹配到源内容' })
-          break
-        }
-
-        const draft = buildSopDraftFromAttentionNodes({
-          name: data.name,
-          topicName: topic.name,
-          goalText: snapshot.goal_text,
-          agentType: topic.agent_type,
-          nodes: orderedNodes,
-        })
         await this.restoreConfig()
-        const finalDraft = await refineSopDraftWithLlm(draft, this.config?.attentionLlm)
-        await sopRepo.createTemplate({
-          name: finalDraft.name,
-          description: finalDraft.description ?? undefined,
-          agentType: finalDraft.agent_type,
-          instruction: finalDraft.instruction,
-          inputContract: finalDraft.input_contract ?? null,
-          outputContract: finalDraft.output_contract,
-          planTemplate: finalDraft.plan_template ?? undefined,
-          todoItemsJson: finalDraft.todo_items ? JSON.stringify(finalDraft.todo_items) : null,
-          builtin: false,
+        // 导出只产出可编辑草稿（sop_template.generated）；落库由用户在草稿
+        // 编辑器确认后通过 sop_template.create 完成。
+        await runSopExportFromAttention(data, {
+          getTopic: (id) => topicRepo.getTopic(id),
+          getSnapshot: ({ topicId, goalId }) => goalId
+            ? attentionGoalSnapshotRepo.getAttentionGoalSnapshot(goalId)
+            : attentionGoalSnapshotRepo.getActiveAttentionGoal(topicId),
+          llm: this.config?.attentionLlm,
+          emitError: (code, message) => this.broadcastAll('error', { code, message }),
+          emitGenerated: (template) => this.sendTo(ws, 'sop_template.generated', { template }),
         })
-
-        const templates = await sopRepo.listTemplates()
-        this.broadcastAll('sop_template.list', { templates: templates.map(sopTemplateToPayload) })
         break
       }
 
@@ -1573,138 +1525,6 @@ function parseTextContent(contentJson: string): string {
   } catch {
     return ''
   }
-}
-
-function parseJsonArray<T>(value: string | null | undefined): T[] {
-  if (!value) return []
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return Array.isArray(parsed) ? parsed as T[] : []
-  } catch {
-    return []
-  }
-}
-
-function parseJsonObject<T extends object>(value: string | null | undefined): T | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as T : null
-  } catch {
-    return null
-  }
-}
-
-export function resolveSelectedAttentionSourceIds(
-  projection: MindMapProjection,
-  selectedNodeIds: string[],
-  selectedSourceIds?: string[],
-): string[] {
-  const sourceIds = new Set<string>()
-  for (const sourceId of selectedSourceIds ?? []) {
-    if (sourceId) sourceIds.add(sourceId)
-  }
-  if (sourceIds.size > 0) return [...sourceIds]
-
-  const selected = new Set(selectedNodeIds)
-  for (const node of projection.nodes) {
-    if (!selected.has(node.id)) continue
-    for (const sourceId of node.sourceNodeIds ?? []) {
-      if (sourceId) sourceIds.add(sourceId)
-    }
-  }
-  return [...sourceIds]
-}
-
-type SopDraft = Omit<SopNode, 'id' | 'created_at' | 'updated_at'>
-
-async function refineSopDraftWithLlm(
-  draft: SopDraft,
-  llm: AppConfig['attentionLlm'] | undefined,
-): Promise<SopDraft> {
-  if (!llm?.apiKey || !llm.baseUrl || !llm.model) return draft
-  const prompt = [
-    '你是一个 SOP 设计助手。请把下面从注意力节点导出的步骤整理为可复用 SOP。',
-    '只输出 JSON 对象，不要输出 markdown。保留用户填写的 name 和 agent_type，不要改名。',
-    'JSON 字段：description, instruction, input_contract, output_contract, plan_template, todo_items。',
-    'todo_items 必须是数组，每项包含 id, content, status，status 固定为 pending。',
-    '',
-    JSON.stringify({
-      name: draft.name,
-      agent_type: draft.agent_type,
-      description: draft.description,
-      instruction: draft.instruction,
-      input_contract: draft.input_contract,
-      output_contract: draft.output_contract,
-      plan_template: draft.plan_template,
-      todo_items: draft.todo_items,
-    }),
-  ].join('\n')
-  try {
-    const res = await fetch(`${llm.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${llm.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: llm.model,
-        max_tokens: 2400,
-        temperature: 0,
-        messages: [
-          { role: 'system', content: '你将结构化会话步骤整理为简洁、可执行、可复用的 SOP 模板，并严格输出 JSON。' },
-          { role: 'user', content: prompt },
-        ],
-        response_format: { type: 'json_object' },
-      }),
-      signal: AbortSignal.timeout(12_000),
-    })
-    if (!res.ok) return draft
-    const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> }
-    const content = data.choices?.[0]?.message?.content ?? ''
-    const parsed = parseJsonObject<Record<string, unknown>>(content)
-    if (!parsed) return draft
-    const instruction = pickNonEmptyString(parsed.instruction)
-    const outputContract = pickNonEmptyString(parsed.output_contract)
-    if (!instruction || !outputContract) return draft
-    return {
-      ...draft,
-      description: pickNonEmptyString(parsed.description) ?? draft.description,
-      instruction,
-      input_contract: pickNonEmptyString(parsed.input_contract) ?? draft.input_contract,
-      output_contract: outputContract,
-      plan_template: pickNonEmptyString(parsed.plan_template) ?? draft.plan_template,
-      todo_items: normalizeLlmTodoItems(parsed.todo_items) ?? draft.todo_items,
-    }
-  } catch {
-    return draft
-  }
-}
-
-function pickNonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
-}
-
-function normalizeLlmTodoItems(value: unknown): TodoItem[] | undefined {
-  if (!Array.isArray(value)) return undefined
-  const todos: TodoItem[] = []
-  value.forEach((item, index) => {
-    if (typeof item === 'string') {
-      const content = item.trim()
-      if (content) todos.push({ id: String(index + 1), content, status: 'pending' })
-      return
-    }
-    if (!item || typeof item !== 'object') return
-    const record = item as Record<string, unknown>
-    const content = pickNonEmptyString(record.content)
-    if (!content) return
-    todos.push({
-      id: pickNonEmptyString(record.id) ?? String(index + 1),
-      content,
-      status: 'pending',
-    })
-  })
-  return todos.length ? todos : undefined
 }
 
 function artifactPathFromMetadata(metadataJson: string | null | undefined): string | null {
