@@ -12,6 +12,7 @@ import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-m
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
 import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
 import { AttentionSopExportModal } from '@/components/attention/AttentionSopExportModal'
+import { ArtifactAccessButton } from '@/components/artifacts/ArtifactAccess'
 
 const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
@@ -655,99 +656,6 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
       ))}
     </div>
   )
-}
-
-function ArtifactAccessButton({ artifact, mode }: { artifact: import('@agent-chat/protocol').Artifact; mode: 'preview' | 'download' }) {
-  const needsUpload = artifact.source === 'generated' && !artifact.r2_key
-  const disabled = (artifact.upload_status ?? 'uploaded') === 'upload_failed' || (!artifact.r2_key && !needsUpload)
-  const requestAccess = () => {
-    if (disabled) return
-    const url = mode === 'preview' ? artifact.preview_url ?? artifact.download_url : artifact.download_url
-    if (url && !url.startsWith('/api/artifacts/')) {
-      window.open(url, '_blank', 'noopener,noreferrer')
-      return
-    }
-
-    // Pre-open window synchronously on user click so popup blockers don't interfere.
-    // The URL is filled in asynchronously once the server returns a signed URL.
-    const newWindow = window.open('about:blank', '_blank')
-
-    const cleanup = () => {
-      window.removeEventListener('agent-chat:artifact-download-ready', onReady)
-      window.removeEventListener('agent-chat:error', onError)
-    }
-    const onReady = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { artifactId: string; downloadUrl: string; previewUrl?: string }
-      if (detail.artifactId !== artifact.id) return
-      cleanup()
-      const targetUrl = mode === 'preview' ? detail.previewUrl ?? detail.downloadUrl : detail.downloadUrl
-      if (newWindow && !newWindow.closed) {
-        newWindow.location.href = targetUrl
-      } else {
-        window.open(targetUrl, '_blank', 'noopener,noreferrer')
-      }
-    }
-    const onError = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { code?: string; message?: string; details?: { artifactId?: unknown } }
-      if (!isArtifactAccessError(detail.code)) return
-      if (typeof detail.details?.artifactId === 'string' && detail.details.artifactId !== artifact.id) return
-      cleanup()
-      if (newWindow && !newWindow.closed) newWindow.close()
-      alert(describeArtifactAccessError(detail, mode))
-    }
-    window.addEventListener('agent-chat:artifact-download-ready', onReady)
-    window.addEventListener('agent-chat:error', onError)
-    getWsClient().send({ type: 'artifact.download.init', data: { artifactId: artifact.id } })
-  }
-
-  return (
-    <button
-      onClick={requestAccess}
-      disabled={disabled}
-      className="rounded px-1.5 py-0.5 text-[11px]"
-      style={{ background: 'var(--glass-1)', color: disabled ? 'var(--fg-dim)' : 'var(--fg-regular)', border: '1px solid var(--hairline)', opacity: disabled ? 0.55 : 1 }}
-    >
-      {needsUpload ? (mode === 'preview' ? '上传并预览' : '上传并下载') : (mode === 'preview' ? '预览' : '下载')}
-    </button>
-  )
-}
-
-function isArtifactAccessError(code: string | undefined): boolean {
-  return [
-    'ARTIFACT_DOWNLOAD_UNAVAILABLE',
-    'artifact_unavailable',
-    'artifact_upload_failed',
-    'download_unavailable',
-    'upload_unavailable',
-    'file_not_found',
-    'file_unreadable',
-    'size_exceeded',
-    'artifact_forbidden',
-    'topic_mismatch',
-    'session_not_found',
-  ].includes(code ?? '')
-}
-
-function describeArtifactAccessError(detail: { code?: string; message?: string }, mode: 'preview' | 'download'): string {
-  const action = mode === 'preview' ? '预览' : '下载'
-  switch (detail.code) {
-    case 'file_not_found':
-      return `无法${action}：adapter 侧文件不存在，可能已被移动或删除。`
-    case 'file_unreadable':
-      return `无法${action}：adapter 侧文件不可读。`
-    case 'size_exceeded':
-      return `无法${action}：文件超过上传大小限制。`
-    case 'artifact_forbidden':
-      return `无法${action}：产物路径不在当前会话工作目录内。`
-    case 'upload_unavailable':
-    case 'download_unavailable':
-      return `无法${action}：产物上传/下载服务当前不可用。`
-    case 'topic_mismatch':
-    case 'session_not_found':
-      return `无法${action}：产物关联的话题会话已失效。`
-    default:
-      return detail.message ? `无法${action}：${detail.message}` : `无法${action}：产物尚未上传或不可访问。`
-  }
 }
 
 function artifactSourceStyle(source: import('@agent-chat/protocol').Artifact['source']): React.CSSProperties {
