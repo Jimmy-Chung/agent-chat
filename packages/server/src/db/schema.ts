@@ -82,7 +82,7 @@ export const messageParts = sqliteTable('message_parts', {
     .references(() => messages.id, { onDelete: 'cascade' }),
   ordinal: integer('ordinal').notNull(),
   kind: text('kind', {
-    enum: ['text', 'thinking', 'tool_use', 'tool_result', 'file_diff'],
+    enum: ['text', 'thinking', 'tool_use', 'tool_result', 'file_diff', 'message_ref'],
   }).notNull(),
   contentJson: text('content_json').notNull(),
 })

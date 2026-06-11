@@ -28,6 +28,14 @@ export interface ArtifactRef {
   downloadUrl?: string
 }
 
+export interface MessageReference {
+  messageId: string
+  topicId: string
+  role: 'user' | 'assistant' | 'system' | 'cron' | 'tool'
+  contentSnapshot: string
+  createdAt: number
+}
+
 export interface Topic {
   id: string
   name: string
@@ -78,7 +86,7 @@ export interface MessagePart {
   id: string
   message_id: string
   ordinal: number
-  kind: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'file_diff'
+  kind: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'file_diff' | 'message_ref'
   content_json: string
 }
 

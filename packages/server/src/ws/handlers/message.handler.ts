@@ -96,6 +96,7 @@ export function registerMessageHandlers(
       topicId: data.topicId,
       content: data.content,
       mentions: data.mentions,
+      references: data.references,
       clientMessageId: data.clientMessageId,
       broadcaster,
     })
@@ -105,6 +106,7 @@ export function registerMessageHandlers(
       messageId: msg.id,
       content: data.content,
       mentions: data.mentions,
+      references: data.references,
       pi,
       broadcaster,
       manual: false,

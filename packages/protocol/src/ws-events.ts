@@ -45,6 +45,14 @@ const artifactSchema = z.object({
   metadata_json: z.string().nullable().optional(),
 })
 
+export const messageReferenceSchema = z.object({
+  messageId: z.string(),
+  topicId: z.string(),
+  role: z.enum(['user', 'assistant', 'system', 'cron', 'tool']),
+  contentSnapshot: z.string(),
+  createdAt: z.number(),
+})
+
 // ─── Server → Client events ───────────────────────────────────────
 
 export const topicsListSchema = z.object({
@@ -73,7 +81,13 @@ export const messageDeltaSchema = z.object({
   topicId: z.string(),
   messageId: z.string(),
   partId: z.string().optional(),
-  part: partDeltaSchema,
+  part: z.union([
+    partDeltaSchema,
+    z.object({
+      kind: z.literal('message_ref'),
+      references: z.array(messageReferenceSchema),
+    }),
+  ]),
 })
 
 export const messageEndSchema = z.object({
@@ -565,6 +579,7 @@ export const userMessageSchema = z.object({
       downloadUrl: z.string().optional(),
     }),
   ).optional().default([]),
+  references: z.array(messageReferenceSchema).optional().default([]),
 })
 
 export const userMessageRetrySchema = z.object({

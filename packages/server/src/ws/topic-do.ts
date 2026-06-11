@@ -1337,6 +1337,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           topicId: data.topicId,
           content: data.content,
           mentions: data.mentions,
+          references: data.references,
           clientMessageId: data.clientMessageId,
           broadcaster: this,
         })
@@ -1355,6 +1356,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           messageId: msg.id,
           content: data.content,
           mentions: data.mentions,
+          references: data.references,
           pi,
           broadcaster: this,
           artifactAccess: {

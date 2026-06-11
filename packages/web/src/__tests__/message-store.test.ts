@@ -51,6 +51,7 @@ describe('MessageStore', () => {
       interactions: {},
       focusedMessageTarget: null,
       pendingMessagesByTopic: {},
+      composerReferencesByTopic: {},
       unreadByTopic: {},
     })
   })
@@ -178,6 +179,25 @@ describe('MessageStore', () => {
     const msg = makeMessage({ id: 'm1' })
     useMessageStore.getState().addMessage('topic1', msg)
     expect(useMessageStore.getState().byTopic['topic1']).toEqual([msg])
+  })
+
+  it('tracks composer message references per topic', () => {
+    const store = useMessageStore.getState()
+
+    store.addComposerReference('topic1', {
+      messageId: 'm1',
+      topicId: 'topic1',
+      role: 'assistant',
+      contentSnapshot: 'Quoted content',
+      createdAt: 123,
+    })
+
+    expect(useMessageStore.getState().composerReferencesByTopic['topic1']).toEqual([
+      expect.objectContaining({ messageId: 'm1', contentSnapshot: 'Quoted content' }),
+    ])
+
+    store.removeComposerReference('topic1', 'm1')
+    expect(useMessageStore.getState().composerReferencesByTopic['topic1']).toBeUndefined()
   })
 
   it('updateMessage updates a specific message by id', () => {

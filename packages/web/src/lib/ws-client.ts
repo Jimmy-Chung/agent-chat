@@ -304,6 +304,14 @@ class WsClient {
         if (part.kind === 'tool_input') {
           messageStore.appendToolInputDelta(event.data.messageId, part.toolUseId, part.partial)
         }
+        if (part.kind === 'message_ref') {
+          messageStore.upsertSnapshotPart(
+            event.data.messageId,
+            'message_ref',
+            JSON.stringify({ references: part.references }),
+            partId ?? `${event.data.messageId}:message_ref`,
+          )
+        }
         break
       }
 
@@ -632,6 +640,7 @@ class WsClient {
                 topicId: agentTopicId,
                 content: pm.content,
                 clientMessageId: pm.clientMessageId,
+                references: pm.references,
                 mentions: [],
               },
             })
@@ -741,7 +750,7 @@ case 'usage.snapshot': {
             const r = p as Record<string, unknown>
             messageStore.upsertSnapshotPart(
               msgId,
-              r.kind as 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'file_diff',
+              r.kind as 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'file_diff' | 'message_ref',
               r.content_json as string,
               r.id as string,
             )

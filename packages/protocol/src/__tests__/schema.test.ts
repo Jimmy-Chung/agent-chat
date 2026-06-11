@@ -747,6 +747,30 @@ describe('Server event schemas', () => {
     expect(result.partId).toBe('m1:text')
   })
 
+  it('parses message.delta with message references', () => {
+    const result = wsMessageDeltaSchema.parse({
+      topicId: 't1',
+      messageId: 'm1',
+      partId: 'm1:message_ref',
+      part: {
+        kind: 'message_ref',
+        references: [
+          {
+            messageId: 'm20',
+            topicId: 't1',
+            role: 'assistant',
+            contentSnapshot: 'Previous answer',
+            createdAt: 1710000000000,
+          },
+        ],
+      },
+    })
+
+    expect(result.part.kind).toBe('message_ref')
+    if (result.part.kind !== 'message_ref') throw new Error('Expected message_ref part')
+    expect(result.part.references[0].messageId).toBe('m20')
+  })
+
   it('parses server-assigned partId on tool and file events', () => {
     const toolCall = serverEventDataSchemas['tool.call'].parse({
       topicId: 't1',
@@ -987,6 +1011,25 @@ describe('Client event schemas', () => {
       mentions: [],
     })
     expect(result.mentions).toHaveLength(0)
+  })
+
+  it('parses user.message with message references', () => {
+    const result = userMessageSchema.parse({
+      topicId: 't1',
+      content: 'Explain this',
+      references: [
+        {
+          messageId: 'm20',
+          topicId: 't1',
+          role: 'assistant',
+          contentSnapshot: 'Use streaming events for the response.',
+          createdAt: 1710000000000,
+        },
+      ],
+    })
+
+    expect(result.references).toHaveLength(1)
+    expect(result.references[0].messageId).toBe('m20')
   })
 
   it('parses user.action approve', () => {
