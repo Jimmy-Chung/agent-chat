@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-12 [v1.10.57] — fix: SOP 中心与导出弹窗 UI 修缮（AIT-251）
+
+- SOP 中心卡片新增「编辑」入口：打开 SopEditorModal 修改后走 `sop_template.update` 保存；builtin 模板不显示编辑；`SopLibraryView` 从 TopicPanel 抽为独立组件。
+- 导出 SOP 弹窗右栏重构：中间内容整体可滚动，「生成 SOP 草稿/取消」固定底栏，选多节点不再把按钮挤出可视区。
+- SOP 卡片输入/输出契约长文本截断修复（truncate 生效，hover 显示全文），描述补 break-words。
+- 注意力图与导出弹窗：目标根节点不再显示无效的折叠「-」/「展开子节点」按钮（hasChildren 对根节点表示树根而非可折叠聚合）。
+- 导出 SOP 勾选态改为按源轨迹推导（AIT-252）：勾选聚合节点后展开的子节点显示为已选，取消子节点会让父聚合退出全选态，所见与实际导出内容一致。
+- 版本显示更新为 `v1.10.57`。
+
 ## 2026-06-11 [v1.10.56] — feat: 注意力节点导出 SOP 重构（AIT-249）
 
 - 注意力节点导出 SOP 改为「LLM 提炼 → 草稿预览编辑 → 确认落库」：导出只产出 `sop_template.generated` 草稿，用户在编辑器确认后才通过 `sop_template.create` 保存。
