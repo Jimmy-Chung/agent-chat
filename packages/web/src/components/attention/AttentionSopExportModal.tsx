@@ -213,7 +213,8 @@ export function AttentionSopExportModal({
             )}
           </section>
 
-          <aside className="flex min-h-0 flex-col overflow-hidden p-4">
+          <aside className="flex min-h-0 flex-col overflow-hidden">
+            <div data-testid="sop-export-side-scroll" className="min-h-0 flex-1 overflow-y-auto p-4">
             <label className="text-[12px] font-medium" style={{ color: 'var(--fg-strong)' }}>
               SOP 名称
               <input
@@ -249,7 +250,7 @@ export function AttentionSopExportModal({
                     </div>
                   </div>
 
-                  {selectedMindNode.hasChildren && (
+                  {selectedMindNode.hasChildren && selectedMindNode.kind !== 'goal' && (
                     <button
                       type="button"
                       onClick={() => toggleExpanded(selectedMindNode.id)}
@@ -283,7 +284,7 @@ export function AttentionSopExportModal({
               <span>{previewNodes.length} 个步骤</span>
             </div>
 
-            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-[8px] p-3" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}>
+            <div className="mt-3 rounded-[8px] p-3" style={{ background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}>
               {previewNodes.length === 0 ? (
                 <p className="text-[12px]" style={{ color: 'var(--fg-dim)' }}>勾选左侧图节点或右侧当前节点后预览步骤。</p>
               ) : (
@@ -299,7 +300,9 @@ export function AttentionSopExportModal({
               )}
             </div>
 
-            <div className="mt-4 flex justify-end gap-2">
+            </div>
+
+            <div className="flex shrink-0 justify-end gap-2 p-4" style={{ borderTop: '1px solid var(--hairline)' }}>
               <button
                 type="button"
                 onClick={onClose}

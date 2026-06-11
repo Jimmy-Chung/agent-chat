@@ -207,7 +207,8 @@ function MindMapFlowNode({ data, selected }: NodeProps) {
               </button>
             </Tooltip>
           )}
-          {node.hasChildren && (
+          {/* goal 根节点的 hasChildren 表示「树根」而非可折叠聚合，展开状态对它无效，不渲染 toggle */}
+          {node.hasChildren && node.kind !== 'goal' && (
             <button
               type="button"
               className="nodrag nopan"

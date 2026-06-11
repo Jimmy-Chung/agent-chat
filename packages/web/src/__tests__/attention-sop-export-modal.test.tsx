@@ -140,4 +140,43 @@ describe('Attention SOP export modal', () => {
       },
     })
   })
+
+  // TC-251-03 — 操作按钮固定在底栏，不在右栏滚动容器内
+  it('keeps the action buttons outside the scrollable side pane', () => {
+    render(
+      <AttentionSopExportModal
+        topicId="topic-1"
+        activeGoalId="goal-1"
+        nodes={[node('n1'), node('n2')]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        onClose={() => {}}
+      />,
+    )
+
+    const scrollPane = screen.getByTestId('sop-export-side-scroll')
+    expect(scrollPane.className).toContain('overflow-y-auto')
+    const submitButton = screen.getByText('生成 SOP 草稿')
+    expect(scrollPane.contains(submitButton)).toBe(false)
+    expect(scrollPane.contains(screen.getByText('取消'))).toBe(false)
+  })
+
+  // TC-251-05 — 目标根节点不显示「展开子节点」（hasChildren 表示树根而非可折叠聚合）
+  it('does not offer child expansion for the goal root node', () => {
+    render(
+      <AttentionSopExportModal
+        topicId="topic-1"
+        activeGoalId="goal-1"
+        nodes={[node('n1', { user_summary: '第一步' })]}
+        goalAnchor={GOAL}
+        planItems={[]}
+        onClose={() => {}}
+      />,
+    )
+
+    // 选中目标根节点（标题为目标文案）
+    fireEvent.click(screen.getByText('导出 SOP', { selector: 'button' }))
+    expect(screen.getByText('goal')).toBeTruthy()
+    expect(screen.queryByText('展开子节点')).toBeNull()
+  })
 })
