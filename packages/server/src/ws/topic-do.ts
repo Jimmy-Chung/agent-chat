@@ -726,6 +726,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
               ...(sopWorkflow
                 ? {
                     systemPrompt: mergeSystemPrompt(undefined, sopWorkflow.composedInstruction),
+                    initialPlan: sopWorkflow.composedPlan,
+                    initialTodos: sopWorkflow.composedTodos,
                     sopWorkflow,
                   }
                 : {}),
