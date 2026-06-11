@@ -17,12 +17,11 @@ import {
 import type { Artifact, TodoItem } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { errorDetail } from '../error-detail'
-import { PiClient } from '../pi/client'
+import { didPiAdapterConfigChange, PiClient } from '../pi/client'
 import { routePiEvents } from '../pi/event-router'
 import { logger } from '../logger'
 import { logGatewayEvent } from '../server-logs'
 import { initDb } from '../db/migrate'
-import { issueJitJwt } from '../pairing/routes'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
 import * as sopRepo from '../db/repos/sop_template.repo'
@@ -89,8 +88,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
   // ─── Config: persist to storage so it survives hibernation ───────────────
   async setConfig(config: AppConfig, topicId: string) {
-    const piConfigChanged = this.config?.piAdapterUrl !== config.piAdapterUrl
-      || this.config?.piAdapterToken !== config.piAdapterToken
+    const piConfigChanged = didPiAdapterConfigChange(this.config, config)
     this.config = config
     await this.ctx.storage.put('config_json', JSON.stringify(config))
     await this.ctx.storage.put('topicId', topicId)
@@ -312,25 +310,6 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       const params = buildSessionParams(topic) as Parameters<typeof piForCreate.createSession>[0]
       if (providerId) {
         (params as Record<string, unknown>).providerId = providerId
-      }
-
-      // Refresh the pairing JWT before opening a new WS connection to the adapter.
-      // The piAdapterUrl carries an access_token with TTL=300s; after that window
-      // every new createSession call would fail with jwt_expired. Use the stored
-      // deviceCredential to mint a fresh JIT JWT just for this connection.
-      const cfg = this.config!
-      const prevUrl = cfg.piAdapterUrl
-      if (cfg.deviceCredential && cfg.adapterInstanceId && cfg.serverOrigin) {
-        const jwt = await issueJitJwt(
-          cfg.deviceCredential,
-          cfg.adapterInstanceId,
-          cfg.serverOrigin,
-        )
-        if (jwt) {
-          const base = prevUrl.replace(/[?&]access_token=[^&]*/, '').replace(/[?&]$/, '')
-          const sep = base.includes('?') ? '&' : '?'
-          cfg.piAdapterUrl = `${base}${sep}access_token=${encodeURIComponent(jwt)}`
-        }
       }
 
       await logGatewayEvent({

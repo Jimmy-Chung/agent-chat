@@ -48,10 +48,67 @@ const ADAPTER_READY_TIMEOUT_MS = 3_000
  * freshly-minted JWT. Preserves any other params and avoids leaving a dangling
  * separator. Exported for unit testing.
  */
+function stripQueryParams(rawUrl: string, names: Set<string>): string {
+  const hashIndex = rawUrl.indexOf('#')
+  const withoutHash = hashIndex >= 0 ? rawUrl.slice(0, hashIndex) : rawUrl
+  const hash = hashIndex >= 0 ? rawUrl.slice(hashIndex) : ''
+  const queryIndex = withoutHash.indexOf('?')
+  if (queryIndex < 0) return rawUrl
+
+  const base = withoutHash.slice(0, queryIndex)
+  const query = withoutHash.slice(queryIndex + 1)
+  const kept = query
+    .split('&')
+    .filter(Boolean)
+    .filter((part) => {
+      const rawName = part.split('=', 1)[0] ?? ''
+      let name = rawName
+      try {
+        name = decodeURIComponent(rawName.replace(/\+/g, ' '))
+      } catch {
+        // Keep the raw name when decoding fails.
+      }
+      return !names.has(name)
+    })
+
+  return `${base}${kept.length ? `?${kept.join('&')}` : ''}${hash}`
+}
+
 export function setAccessTokenParam(rawUrl: string, jwt: string): string {
-  const base = rawUrl.replace(/[?&]access_token=[^&]*/, '').replace(/[?&]$/, '')
+  const stripped = stripQueryParams(rawUrl, new Set(['access_token'])).replace(/[?&]$/, '')
+  const hashIndex = stripped.indexOf('#')
+  const base = hashIndex >= 0 ? stripped.slice(0, hashIndex) : stripped
+  const hash = hashIndex >= 0 ? stripped.slice(hashIndex) : ''
   const sep = base.includes('?') ? '&' : '?'
-  return `${base}${sep}access_token=${encodeURIComponent(jwt)}`
+  return `${base}${sep}access_token=${encodeURIComponent(jwt)}${hash}`
+}
+
+export function stripAdapterAuthParams(rawUrl: string): string {
+  return stripQueryParams(rawUrl, new Set(['access_token', 'token']))
+}
+
+function isPairedAdapterConfig(config: Pick<AppConfig, 'deviceCredential' | 'adapterInstanceId'>): boolean {
+  return Boolean(config.deviceCredential && config.adapterInstanceId)
+}
+
+export function piAdapterConfigIdentity(
+  config: Pick<AppConfig, 'piAdapterUrl' | 'piAdapterToken' | 'deviceCredential' | 'adapterInstanceId' | 'serverOrigin'>,
+): string {
+  const url = isPairedAdapterConfig(config)
+    ? stripAdapterAuthParams(config.piAdapterUrl)
+    : config.piAdapterUrl
+  return JSON.stringify({
+    url,
+    token: config.piAdapterToken,
+    deviceCredential: config.deviceCredential ?? '',
+    adapterInstanceId: config.adapterInstanceId ?? '',
+    serverOrigin: config.serverOrigin ?? '',
+  })
+}
+
+export function didPiAdapterConfigChange(prev: AppConfig | null | undefined, next: AppConfig): boolean {
+  if (!prev) return true
+  return piAdapterConfigIdentity(prev) !== piAdapterConfigIdentity(next)
 }
 
 class PiSessionConn extends EventEmitter {
@@ -60,14 +117,16 @@ class PiSessionConn extends EventEmitter {
   private pending = new Map<number, PendingRpc>()
   readonly sessionId: string
   private config: AppConfig
+  private adapterUrl: string
   private ready = false
   public lastSeq = 0
   private readyResolve: (() => void) | null = null
 
-  constructor(sessionId: string, config: AppConfig) {
+  constructor(sessionId: string, config: AppConfig, adapterUrl?: string) {
     super()
     this.sessionId = sessionId
     this.config = config
+    this.adapterUrl = adapterUrl ?? config.piAdapterUrl
   }
 
   get isConnected(): boolean {
@@ -90,7 +149,7 @@ class PiSessionConn extends EventEmitter {
 
   private attemptConnect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const url = buildPiWsUrl(this.config.piAdapterUrl, this.config.piAdapterToken)
+      const url = buildPiWsUrl(this.adapterUrl, this.config.piAdapterToken)
       const maskedUrl = url.replace(/(access_token|token)=[^&]+/g, '$1=***')
       logger.info({ url: maskedUrl, sessionId: this.sessionId }, 'PI session WS connecting')
       const ws = new WebSocket(url)
@@ -413,25 +472,25 @@ export class PiClient extends EventEmitter {
     conn.close()
   }
 
-  protected createSessionConn(sessionId: string): PiSessionConn {
-    return new PiSessionConn(sessionId, this.config)
+  protected createSessionConn(sessionId: string, adapterUrl?: string): PiSessionConn {
+    return new PiSessionConn(sessionId, this.config, adapterUrl)
   }
 
-  // Mint a fresh adapter access_token before opening a NEW WS connection.
+  // Resolve a fresh adapter access_token before opening a NEW WS connection.
   // The pairing JWT embedded in piAdapterUrl has TTL≈300s; the WS handshake only
   // checks it at connect time, so a live connection survives expiry but any
   // reconnect/recreate after an idle window reuses the now-expired token and the
   // adapter rejects it with `jwt_expired` → persistent red dots that a retry
-  // can't clear. The session gateway already refreshes before createSession, but
-  // the delivery reconnect/recreate paths did not — this closes that gap by
-  // re-signing from the long-lived deviceCredential. No-op on the unpaired/debug
-  // path (no deviceCredential), where the URL token is used as-is.
-  private async refreshAccessToken(): Promise<void> {
+  // can't clear. Keep the refreshed token as a per-connection URL so setConfig
+  // can compare stable adapter identity without being polluted by JWT rotation.
+  // No-op on the unpaired/debug path (no deviceCredential), where the URL token
+  // is used as-is.
+  private async resolveAdapterUrlForConnect(): Promise<string> {
     const cfg = this.config
-    if (!cfg.deviceCredential || !cfg.adapterInstanceId || !cfg.serverOrigin) return
+    if (!cfg.deviceCredential || !cfg.adapterInstanceId || !cfg.serverOrigin) return cfg.piAdapterUrl
     const jwt = await issueJitJwt(cfg.deviceCredential, cfg.adapterInstanceId, cfg.serverOrigin)
-    if (!jwt) return
-    cfg.piAdapterUrl = setAccessTokenParam(cfg.piAdapterUrl, jwt)
+    if (!jwt) return cfg.piAdapterUrl
+    return setAccessTokenParam(cfg.piAdapterUrl, jwt)
   }
 
   get isConnected(): boolean {
@@ -448,10 +507,10 @@ export class PiClient extends EventEmitter {
 
   async createSession(params: PiRpcMethod['createSession']['params']): Promise<PiRpcMethod['createSession']['result']> {
     const tempId = `pending-${Date.now()}`
-    const conn = this.createSessionConn(tempId)
+    const adapterUrl = await this.resolveAdapterUrlForConnect()
+    const conn = this.createSessionConn(tempId, adapterUrl)
 
     try {
-      await this.refreshAccessToken()
       await conn.connect()
       const result = await conn.rpc('createSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
@@ -475,10 +534,10 @@ export class PiClient extends EventEmitter {
       this.sessions.delete(params.sessionId)
     }
 
-    const conn = this.createSessionConn(params.sessionId)
+    const adapterUrl = await this.resolveAdapterUrlForConnect()
+    const conn = this.createSessionConn(params.sessionId, adapterUrl)
 
     try {
-      await this.refreshAccessToken()
       await conn.connect()
       const result = await conn.rpc('recreateSession', params)
       const sessionId = (result as { sessionId: string }).sessionId
@@ -515,10 +574,10 @@ export class PiClient extends EventEmitter {
       this.sessions.delete(sessionId)
     }
 
-    const conn = this.createSessionConn(sessionId)
+    const adapterUrl = await this.resolveAdapterUrlForConnect()
+    const conn = this.createSessionConn(sessionId, adapterUrl)
 
     try {
-      await this.refreshAccessToken()
       await conn.connect()
       await conn.rpc('attachSession', { sessionId, lastSeq })
       this.adoptSessionConn(conn, sessionId, 'reconnected')
@@ -576,7 +635,8 @@ export class PiClient extends EventEmitter {
     // Always use a transient connection for global (session-agnostic) RPCs.
     // Reusing an active session's WS would send the frame on the session channel,
     // where the adapter does not route global methods like updateProviderConfig.
-    const transient = this.createSessionConn(`global-${Date.now()}`)
+    const adapterUrl = await this.resolveAdapterUrlForConnect()
+    const transient = this.createSessionConn(`global-${Date.now()}`, adapterUrl)
     try {
       await transient.connect()
       return await transient.rpc(method, params)
