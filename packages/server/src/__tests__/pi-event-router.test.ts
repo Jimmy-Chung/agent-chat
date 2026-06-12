@@ -135,6 +135,65 @@ describe('Event router — artifact.created', () => {
     expect(artifact?.upload_status).toBe('uploaded')
     expect(mockHub.getBroadcastEvents().filter((event) => event.type === 'artifact.added')).toHaveLength(2)
   })
+
+  it('does not let a replayed older artifact.created clobber a newer row after reconnect', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Replay Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-replay-1' })
+
+    const emit = (seq: number, sizeBytes: number) =>
+      mockPi.emit('event', {
+        seq,
+        sessionId: 'sess-replay-1',
+        ts: Date.now(),
+        payload: {
+          kind: 'artifact.created',
+          artifactId: 'artifact-replay-1',
+          name: 'report.md',
+          mime: 'text/markdown',
+          sizeBytes,
+          metadata: { path: '/workspace/report.md', size: sizeBytes },
+        },
+      } satisfies PIEvent)
+
+    emit(1, 14026)
+    await new Promise((r) => setTimeout(r, 20))
+    emit(2, 28215)
+    await new Promise((r) => setTimeout(r, 20))
+    expect((await artifactRepo.getArtifact('artifact-replay-1'))?.size_bytes).toBe(28215)
+
+    // Reconnect resets in-memory dedup/reorder state; the adapter replays the
+    // earlier (smaller) artifact.created. The persisted cursor must reject it.
+    mockPi.emit('session.recreated', { sessionId: 'sess-replay-1' })
+    emit(1, 14026)
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect((await artifactRepo.getArtifact('artifact-replay-1'))?.size_bytes).toBe(28215)
+  })
+
+  it('applies an artifact.created from a different (later) session even with a lower seq', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Cross Session Topic', kind: 'normal', agentType: 'programming' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-A' })
+
+    mockPi.emit('event', {
+      seq: 50,
+      sessionId: 'sess-A',
+      ts: Date.now(),
+      payload: { kind: 'artifact.created', artifactId: 'artifact-x', name: 'a.md', mime: 'text/markdown', sizeBytes: 100 },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    // Later edit happens in a new session that restarts seq numbering low.
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-B' })
+    mockPi.emit('event', {
+      seq: 3,
+      sessionId: 'sess-B',
+      ts: Date.now(),
+      payload: { kind: 'artifact.created', artifactId: 'artifact-x', name: 'a.md', mime: 'text/markdown', sizeBytes: 200 },
+    } satisfies PIEvent)
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect((await artifactRepo.getArtifact('artifact-x'))?.size_bytes).toBe(200)
+  })
 })
 
 describe('Event router — session.health', () => {

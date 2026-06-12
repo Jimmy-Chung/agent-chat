@@ -17,6 +17,8 @@ export async function createArtifact(input: {
   failureCode?: string | null
   failureMessage?: string | null
   metadataJson?: string | null
+  lastEventSeq?: number | null
+  lastEventSession?: string | null
 }): Promise<Artifact> {
   const row = {
     id: input.id ?? ulid(),
@@ -32,6 +34,8 @@ export async function createArtifact(input: {
     failureMessage: input.failureMessage ?? null,
     createdAt: Date.now(),
     metadataJson: input.metadataJson ?? null,
+    lastEventSeq: input.lastEventSeq ?? null,
+    lastEventSession: input.lastEventSession ?? null,
   }
   await getDb().insert(artifacts).values(row).run()
   return toDomain(row)
@@ -44,6 +48,31 @@ export async function getArtifact(id: string): Promise<Artifact | undefined> {
     .where(eq(artifacts.id, id))
     .all()
   return rows[0] ? toDomain(rows[0]) : undefined
+}
+
+/**
+ * Read the monotonic event cursor stored on an artifact row. Used by the
+ * artifact.created handler to reject out-of-order / replayed events that would
+ * otherwise overwrite a newer row — the dedup/reorder state lives only in DO
+ * memory and is lost on reconnect, so the guard must be persisted here.
+ */
+export async function getArtifactEventCursor(
+  id: string,
+): Promise<{ lastEventSeq: number | null; lastEventSession: string | null } | undefined> {
+  const rows = await getDb()
+    .select({
+      lastEventSeq: artifacts.lastEventSeq,
+      lastEventSession: artifacts.lastEventSession,
+    })
+    .from(artifacts)
+    .where(eq(artifacts.id, id))
+    .all()
+  return rows[0]
+    ? {
+        lastEventSeq: rows[0].lastEventSeq ?? null,
+        lastEventSession: rows[0].lastEventSession ?? null,
+      }
+    : undefined
 }
 
 export async function updateArtifact(
@@ -60,6 +89,8 @@ export async function updateArtifact(
     failureCode: string | null
     failureMessage: string | null
     metadataJson: string | null
+    lastEventSeq: number | null
+    lastEventSession: string | null
   }>,
 ): Promise<Artifact | undefined> {
   const updates: Record<string, unknown> = {}
@@ -74,6 +105,8 @@ export async function updateArtifact(
   if ('failureCode' in input) updates.failureCode = input.failureCode ?? null
   if ('failureMessage' in input) updates.failureMessage = input.failureMessage ?? null
   if ('metadataJson' in input) updates.metadataJson = input.metadataJson ?? null
+  if ('lastEventSeq' in input) updates.lastEventSeq = input.lastEventSeq ?? null
+  if ('lastEventSession' in input) updates.lastEventSession = input.lastEventSession ?? null
 
   if (Object.keys(updates).length === 0) return getArtifact(id)
   await getDb()

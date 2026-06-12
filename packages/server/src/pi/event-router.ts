@@ -1040,6 +1040,26 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       )
       const existing = await artifactRepo.getArtifact(payload.artifactId)
       if (existing) {
+        // Monotonic guard: PI `seq` is monotonic within a session. The
+        // dedup/reorder state in routePiEvents lives only in DO memory and is
+        // reset on reconnect, so a replayed older artifact.created can be
+        // re-routed after a newer one and clobber the row (observed: row stuck
+        // at an earlier version than both later events and the R2 content).
+        // Reject events that are not strictly newer than the stored cursor for
+        // the same session; a different session is always a later edit and wins.
+        const cursor = await artifactRepo.getArtifactEventCursor(payload.artifactId)
+        const isStaleReplay =
+          cursor?.lastEventSession === sessionId &&
+          cursor?.lastEventSeq != null &&
+          event.seq <= cursor.lastEventSeq
+        if (isStaleReplay) {
+          logger.info(
+            { artifactId: payload.artifactId, sessionId, seq: event.seq, cursorSeq: cursor?.lastEventSeq },
+            'artifact.created ignored: stale/replayed event behind cursor',
+          )
+          break
+        }
+
         const nextMime = payload.mime ?? existing.mime
         const nextSizeBytes = payload.sizeBytes ?? existing.size_bytes
         const nextMetadataJson = payload.metadata
@@ -1065,8 +1085,17 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
             failureCode: payload.r2Key ? null : existing.failure_code,
             failureMessage: payload.r2Key ? null : existing.failure_message,
             metadataJson: nextMetadataJson,
+            lastEventSeq: event.seq,
+            lastEventSession: sessionId,
           }) ?? existing
           hub.broadcast('artifact.added', artifactToPayload(artifact))
+        } else {
+          // Content unchanged but advance the cursor so a later replay of this
+          // same seq stays cheap and the guard reflects the newest seen event.
+          await artifactRepo.updateArtifact(payload.artifactId, {
+            lastEventSeq: event.seq,
+            lastEventSession: sessionId,
+          })
         }
         break
       }
@@ -1082,6 +1111,8 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         metadataJson: payload.metadata
           ? JSON.stringify(payload.metadata)
           : undefined,
+        lastEventSeq: event.seq,
+        lastEventSession: sessionId,
       })
       hub.broadcast('artifact.added', artifactToPayload(artifact))
       break
