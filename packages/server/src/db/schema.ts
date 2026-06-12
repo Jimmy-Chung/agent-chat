@@ -112,6 +112,10 @@ export const artifacts = sqliteTable(
     failureMessage: text('failure_message'),
     createdAt: integer('created_at').notNull(),
     metadataJson: text('metadata_json'),
+    // Monotonic guard against out-of-order / replayed artifact.created events
+    // (PI seq is monotonic within a session; reset across sessions).
+    lastEventSeq: integer('last_event_seq'),
+    lastEventSession: text('last_event_session'),
   },
   (table) => [index('idx_artifacts_topic').on(table.topicId)],
 )
