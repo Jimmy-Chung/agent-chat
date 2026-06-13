@@ -1048,18 +1048,24 @@ function CreateTopicModal({
             </Field>
 
             <Field label="Agent 类型">
-              <div className="grid grid-cols-2 gap-2 rounded-2xl p-1" style={{ background: 'rgba(0,0,0,.24)', border: '1px solid var(--hairline)' }}>
-                <SegmentedOption
+              <div className="space-y-1 rounded-2xl p-1" style={{ background: 'rgba(0,0,0,.24)', border: '1px solid var(--hairline)' }}>
+                <RadioOption
                   active={agentType === 'general'}
                   title="General"
                   description="通用对话与轻任务"
                   onClick={() => onAgentTypeChange('general')}
                 />
-                <SegmentedOption
-                  active={agentType === 'programming'}
-                  title="Programming"
+                <RadioOption
+                  active={agentType === 'programming' && extension === 'claude-code'}
+                  title="Programming — Claude Code"
                   description="代码、终端与工作目录"
-                  onClick={() => onAgentTypeChange('programming')}
+                  onClick={() => { onAgentTypeChange('programming'); onExtensionChange('claude-code') }}
+                />
+                <RadioOption
+                  active={agentType === 'programming' && extension === 'codex'}
+                  title="Programming — Codex"
+                  description="代码、终端与工作目录"
+                  onClick={() => { onAgentTypeChange('programming'); onExtensionChange('codex') }}
                 />
               </div>
             </Field>
@@ -1127,32 +1133,19 @@ function CreateTopicModal({
             )}
 
             {agentType === 'programming' && (
-              <>
-                <Field label="Extension">
-                  <div className="grid grid-cols-2 gap-2">
-                    <SegmentedPill active={extension === 'claude-code'} onClick={() => onExtensionChange('claude-code')}>
-                      Claude Code
-                    </SegmentedPill>
-                    <SegmentedPill active={extension === 'codex'} onClick={() => onExtensionChange('codex')}>
-                      Codex
-                    </SegmentedPill>
-                  </div>
-                </Field>
-
-                <Field label="YOLO 模式">
-                  <div className="flex items-center gap-3 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(0,0,0,.22)', border: '1px solid var(--hairline)' }}>
-                    <Switch checked={permissionTier === 'yolo'} onChange={(checked) => onPermissionTierChange(checked ? 'yolo' : 'normal')} />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>YOLO</div>
-                      <div className="text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
-                        {permissionTier === 'yolo'
-                          ? '跳过所有权限检查，Agent 可自由操作。'
-                          : '关闭后，Agent 修改文件时需要你逐一确认。'}
-                      </div>
+              <Field label="YOLO 模式">
+                <div className="flex items-center gap-3 rounded-2xl px-3.5 py-3" style={{ background: 'rgba(0,0,0,.22)', border: '1px solid var(--hairline)' }}>
+                  <Switch checked={permissionTier === 'yolo'} onChange={(checked) => onPermissionTierChange(checked ? 'yolo' : 'normal')} />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>YOLO</div>
+                    <div className="text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+                      {permissionTier === 'yolo'
+                        ? '跳过所有权限检查，Agent 可自由操作。'
+                        : '关闭后，Agent 修改文件时需要你逐一确认。'}
                     </div>
                   </div>
-                </Field>
-              </>
+                </div>
+              </Field>
             )}
 
             <Field label="工作目录">
@@ -1285,7 +1278,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function SegmentedOption({
+function RadioOption({
   active,
   title,
   description,
@@ -1300,33 +1293,28 @@ function SegmentedOption({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[14px] px-3 py-3 text-left transition-all"
+      className="flex w-full items-start gap-3 rounded-[14px] px-3 py-3 text-left transition-all"
       style={{
         background: active ? 'linear-gradient(180deg, rgba(32,144,255,.28), rgba(10,132,255,.18))' : 'transparent',
         color: active ? 'var(--fg-strong)' : 'var(--fg-dim)',
         boxShadow: active ? 'inset 0 0 0 1px rgba(108,177,255,.38), 0 0 18px rgba(10,132,255,.18)' : 'inset 0 0 0 1px transparent',
       }}
     >
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-[12px] leading-5">{description}</div>
-    </button>
-  )
-}
-
-function SegmentedPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="h-10 rounded-xl px-3 text-sm font-medium transition-all"
-      style={{
-        background: active ? 'rgba(10,132,255,.18)' : 'rgba(0,0,0,.18)',
-        color: active ? '#8bc3ff' : 'var(--fg-dim)',
-        border: active ? '1px solid rgba(108,177,255,.34)' : '1px solid var(--hairline)',
-        boxShadow: active ? '0 0 16px rgba(10,132,255,.16)' : 'none',
-      }}
-    >
-      {children}
+      <span
+        className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-all"
+        style={{
+          border: active ? '1.5px solid rgba(108,177,255,.6)' : '1.5px solid var(--hairline-2)',
+          background: active ? 'rgba(10,132,255,.35)' : 'transparent',
+        }}
+      >
+        {active && (
+          <span className="h-2 w-2 rounded-full" style={{ background: '#8bc3ff' }} />
+        )}
+      </span>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="mt-1 text-[12px] leading-5">{description}</div>
+      </div>
     </button>
   )
 }
