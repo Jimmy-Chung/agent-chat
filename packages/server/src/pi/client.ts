@@ -4,7 +4,7 @@ import { errorDetail } from '../error-detail'
 import { logger } from '../logger'
 import { logPiEvent } from '../server-logs'
 import { issueJitJwt } from '../pairing/routes'
-import { buildPiWsUrl } from '@agent-chat/protocol'
+import { buildPiWsUrl, piWsToHttpBase } from '@agent-chat/protocol'
 import {
   encodeFrame,
   decodeFrame,
@@ -488,9 +488,30 @@ export class PiClient extends EventEmitter {
   private async resolveAdapterUrlForConnect(): Promise<string> {
     const cfg = this.config
     if (!cfg.deviceCredential || !cfg.adapterInstanceId || !cfg.serverOrigin) return cfg.piAdapterUrl
-    const jwt = await issueJitJwt(cfg.deviceCredential, cfg.adapterInstanceId, cfg.serverOrigin)
+    const liveAdapterInstanceId = await this.fetchLiveAdapterInstanceId()
+    if (liveAdapterInstanceId) cfg.adapterInstanceId = liveAdapterInstanceId
+    const jwt = await issueJitJwt(cfg.deviceCredential, cfg.adapterInstanceId, cfg.serverOrigin, {
+      allowAdapterRebind: Boolean(liveAdapterInstanceId),
+    })
     if (!jwt) return cfg.piAdapterUrl
     return setAccessTokenParam(cfg.piAdapterUrl, jwt)
+  }
+
+  private async fetchLiveAdapterInstanceId(): Promise<string | null> {
+    try {
+      const res = await fetch(`${piWsToHttpBase(this.config.piAdapterUrl)}/adapter-status`, {
+        signal: AbortSignal.timeout(5_000),
+      })
+      if (!res.ok) return null
+      const data = await res.json() as { adapterInstanceId?: unknown; instanceId?: unknown }
+      return typeof data.adapterInstanceId === 'string'
+        ? data.adapterInstanceId
+        : typeof data.instanceId === 'string'
+          ? data.instanceId
+          : null
+    } catch {
+      return null
+    }
   }
 
   get isConnected(): boolean {

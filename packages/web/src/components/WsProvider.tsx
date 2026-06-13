@@ -189,7 +189,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
         const paired = loadPairedDevice()
         if (paired) {
           try {
-            const freshJwt = await exchangeToken(paired.deviceCredential, paired.adapterInstanceId)
+            const freshJwt = await exchangeToken(paired.deviceCredential, paired.adapterInstanceId, paired.adapterWssUrl)
             const freshUrl = buildAdapterWsUrl(paired.adapterWssUrl, freshJwt)
             localStorage.setItem(PI_WSS_URL_KEY, freshUrl)
             setPiConfig({ wssUrl: freshUrl, piToken: '' })

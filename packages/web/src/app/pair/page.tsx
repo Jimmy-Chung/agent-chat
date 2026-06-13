@@ -44,7 +44,7 @@ function PairInner() {
     setRemaining(null)
     try {
       const v = await verifyCode(pairing.session, code.trim())
-      const accessToken = await exchangeToken(v.deviceCredential, v.adapterInstanceId)
+      const accessToken = await exchangeToken(v.deviceCredential, v.adapterInstanceId, v.adapterWssUrl)
       savePairedDevice({
         deviceId: v.pairedDevice.id,
         deviceCredential: v.deviceCredential,

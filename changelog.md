@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-13 [v1.10.59] — fix: 配对通信链路 JWT 重绑与 provider 选择
+
+- AIT-255：配对设备的 JIT JWT TTL 从 60s 调整为 300s，降低 `jwt_expired` 重连风暴风险。
+- AIT-255：`devices/token`、server provider/workspace proxy、DO 侧新建 WS 连接都会基于 adapter 当前 `adapter-status` 的 instanceId 重新签发 JWT；adapter 重启换 instanceId 后可在确认 live id 后更新设备绑定，避免旧 aud 导致 `jwt_invalid_audience`。
+- 前端配对与冷启动 token refresh、WS/proxy URL 构造都会携带已配对 adapter WSS URL，让 server 能找到当前 adapter instanceId 并完成安全重绑。
+- provider 选择：当 Codex 归一化分组内存在多个 active provider 时优先使用自定义 provider；切换 provider 后用 `activateProviderInGroup` 修正本地激活态。
+- provider 选择：官方 Codex 默认 provider 不再因为 models 为空阻断话题创建，自定义 Codex-compatible provider 仍要求配置 model。
+- 版本显示更新为 `v1.10.59`。
+
 ## 2026-06-12 [v1.10.57] — fix: SOP 中心与导出弹窗 UI 修缮（AIT-251）
 
 - SOP 中心卡片新增「编辑」入口：打开 SopEditorModal 修改后走 `sop_template.update` 保存；builtin 模板不显示编辑；`SopLibraryView` 从 TopicPanel 抽为独立组件。

@@ -121,12 +121,19 @@ app.post('/server-logs/clear', async (c) => {
 app.get('/api/agent-chat/v1/adapter-status', async (c) => {
   const wssUrl = c.req.query('wssUrl')
   const piToken = c.req.query('piToken') || ''
+  const deviceCredential = c.req.query('deviceCredential') || ''
+  const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ version: 'not_configured', reachable: false, lastError: 'not_configured' })
 
   try {
     const url = `${piWsToHttpBase(wssUrl)}/adapter-status`
-    const headers: Record<string, string> = {}
-    if (piToken) headers['Authorization'] = `Bearer ${piToken}`
+    const headers = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+      fetchLiveAdapterInstanceId: false,
+      allowAdapterRebind: true,
+      adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+    })
+    if (!headers) return c.json({ version: 'unauthorized', reachable: false, lastError: 'Unauthorized' }, 401)
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5_000) })
     if (!res.ok) return c.json({ version: 'unknown', reachable: false, lastError: `HTTP ${res.status}` })
     const data = await res.json() as Record<string, unknown>
@@ -164,10 +171,34 @@ function piAdapterHeadersFromConfig(wssUrl: string, piToken: string): Record<str
   return piAdapterHeaders(piAdapterAuthToken(wssUrl, piToken))
 }
 
+async function fetchAdapterInstanceId(wssUrl: string, headers: Record<string, string>): Promise<string | null> {
+  const statusUrl = `${piWsToHttpBase(wssUrl)}/adapter-status`
+  const attempts = Object.keys(headers).length > 0 ? [{}, headers] : [{}]
+  try {
+    for (const attemptHeaders of attempts) {
+      const res = await fetch(statusUrl, {
+        headers: attemptHeaders,
+        signal: AbortSignal.timeout(5_000),
+      })
+      if (!res.ok) continue
+      const data = await res.json() as { adapterInstanceId?: unknown; instanceId?: unknown }
+      const id = typeof data.adapterInstanceId === 'string'
+        ? data.adapterInstanceId
+        : typeof data.instanceId === 'string'
+          ? data.instanceId
+          : null
+      if (id) return id
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Get Authorization headers for an HTTP proxy call to the adapter.
  * If deviceCredential + adapterInstanceId are provided (paired path), signs a
- * fresh JIT JWT (TTL=60s) so HTTP calls never use an expired pairing-time JWT.
+ * fresh JIT JWT so HTTP calls never use an expired pairing-time JWT.
  * Returns null when the credential is invalid — caller should respond 401.
  * Falls back to the legacy piToken / access_token-in-URL path otherwise.
  */
@@ -177,9 +208,22 @@ async function getAdapterHttpHeaders(
   deviceCredential: string,
   adapterInstanceId: string,
   iss: string,
+  options?: {
+    fetchLiveAdapterInstanceId?: boolean
+    allowAdapterRebind?: boolean
+    adapterStatusWssUrl?: string
+  },
 ): Promise<Record<string, string> | null> {
   if (deviceCredential && adapterInstanceId) {
-    const jwt = await issueJitJwt(deviceCredential, adapterInstanceId, iss)
+    let jwtAudience = adapterInstanceId
+    if (options?.fetchLiveAdapterInstanceId !== false && options?.allowAdapterRebind) {
+      const fallbackHeaders = piAdapterHeadersFromConfig(wssUrl, piToken)
+      const liveAdapterInstanceId = await fetchAdapterInstanceId(options?.adapterStatusWssUrl ?? wssUrl, fallbackHeaders)
+      if (liveAdapterInstanceId) jwtAudience = liveAdapterInstanceId
+    }
+    const jwt = await issueJitJwt(deviceCredential, jwtAudience, iss, {
+      allowAdapterRebind: jwtAudience !== adapterInstanceId,
+    })
     if (!jwt) return null
     return { Authorization: `Bearer ${jwt}` }
   }
@@ -210,8 +254,12 @@ app.get('/api/agent-chat/v1/providers', async (c) => {
   const piToken = c.req.query('piToken') || ''
   const deviceCredential = c.req.query('deviceCredential') || ''
   const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
-  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin)
+  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+    allowAdapterRebind: Boolean(pairedAdapterWssUrl),
+    adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+  })
   if (!adapterHeaders) return c.json({ error: 'Unauthorized' }, 401)
   const qs = new URLSearchParams()
   const group = c.req.query('group')
@@ -229,8 +277,12 @@ app.get('/api/agent-chat/v1/workspace', async (c) => {
   const piToken = c.req.query('piToken') || ''
   const deviceCredential = c.req.query('deviceCredential') || ''
   const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
-  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin)
+  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+    allowAdapterRebind: Boolean(pairedAdapterWssUrl),
+    adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+  })
   if (!adapterHeaders) return c.json({ error: 'Unauthorized' }, 401)
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/workspace`, {
     headers: adapterHeaders,
@@ -245,8 +297,12 @@ app.post('/api/agent-chat/v1/providers', async (c) => {
   const piToken = c.req.query('piToken') || ''
   const deviceCredential = c.req.query('deviceCredential') || ''
   const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
-  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin)
+  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+    allowAdapterRebind: Boolean(pairedAdapterWssUrl),
+    adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+  })
   if (!adapterHeaders) return c.json({ error: 'Unauthorized' }, 401)
   const body = await c.req.json()
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers`, {
@@ -264,8 +320,12 @@ app.patch('/api/agent-chat/v1/providers/:id', async (c) => {
   const piToken = c.req.query('piToken') || ''
   const deviceCredential = c.req.query('deviceCredential') || ''
   const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
-  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin)
+  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+    allowAdapterRebind: Boolean(pairedAdapterWssUrl),
+    adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+  })
   if (!adapterHeaders) return c.json({ error: 'Unauthorized' }, 401)
   const id = c.req.param('id')
   const body = await c.req.json()
@@ -284,8 +344,12 @@ app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
   const piToken = c.req.query('piToken') || ''
   const deviceCredential = c.req.query('deviceCredential') || ''
   const adapterInstanceId = c.req.query('adapterInstanceId') || ''
+  const pairedAdapterWssUrl = c.req.query('pairedAdapterWssUrl') || ''
   if (!wssUrl) return c.json({ error: 'wssUrl required' }, 400)
-  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin)
+  const adapterHeaders = await getAdapterHttpHeaders(wssUrl, piToken, deviceCredential, adapterInstanceId, new URL(c.req.url).origin, {
+    allowAdapterRebind: Boolean(pairedAdapterWssUrl),
+    adapterStatusWssUrl: pairedAdapterWssUrl || wssUrl,
+  })
   if (!adapterHeaders) return c.json({ error: 'Unauthorized' }, 401)
   const id = c.req.param('id')
   const res = await fetch(`${piWsToHttpBase(wssUrl)}/providers/${id}`, {

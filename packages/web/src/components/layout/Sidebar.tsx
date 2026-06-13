@@ -21,7 +21,7 @@ import { ProviderConfigModal } from '@/components/ProviderConfigModal'
 import { sendProviderRpc } from '@/lib/ws-client'
 import { getServerBase } from '@/lib/server-url'
 import { getTopicCwd, getTopicDirectoryLabel, getWorkspaceDirMatches, getWorkspaceRelativePath, joinWorkspacePath, normalizeCwd, resolveWorkspaceCwd, type WorkspaceBrowseResponse } from '@/lib/workspace-path'
-import { getActiveProviderForGroup, getActiveProviderIdForExtension, getActiveProviderIdForGroup, getProviderGroup, type ProviderGroup } from '@/lib/provider-selection'
+import { activateProviderInGroup, getActiveProviderForGroup, getActiveProviderIdForExtension, getActiveProviderIdForGroup, getProviderGroup, shouldBlockCodexTopicForMissingModel, type ProviderGroup } from '@/lib/provider-selection'
 import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
 import type { SopTemplate } from '@/stores/sop-template-store'
@@ -431,6 +431,19 @@ export function Sidebar() {
       const params = new URLSearchParams()
       if (wssUrl) params.set('wssUrl', wssUrl)
       if (piToken) params.set('piToken', piToken)
+      try {
+        const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
+        if (paired) {
+          const { deviceCredential, adapterInstanceId, adapterWssUrl } = JSON.parse(paired) as {
+            deviceCredential?: string
+            adapterInstanceId?: string
+            adapterWssUrl?: string
+          }
+          if (deviceCredential) params.set('deviceCredential', deviceCredential)
+          if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
+          if (adapterWssUrl) params.set('pairedAdapterWssUrl', adapterWssUrl)
+        }
+      } catch { /* ignore */ }
       const res = await fetch(`${serverUrl}/api/agent-chat/v1/adapter-status?${params}`, { signal: AbortSignal.timeout(5_000) })
       const data = await res.json()
       setAdapterVersion(data.version ?? 'unknown')
@@ -487,7 +500,7 @@ export function Sidebar() {
         ...(target?.group ? { group: target.group } : {}),
       })
       const result = await sendProviderRpc('listProviderConfigs', {}) as ProviderConfig[]
-      useWsStore.getState().setProviderConfigs(result ?? [])
+      useWsStore.getState().setProviderConfigs(activateProviderInGroup(result ?? [], providerId))
       useToastStore.getState().pushToast({
         tone: 'success',
         title: `已切换至 ${targetName}`,
@@ -592,7 +605,7 @@ export function Sidebar() {
       ? providerConfigs.find((provider) => provider.id === activeProviderId)
       : undefined
     const initialModel = activeProvider?.models?.[0]
-    if (newTopicAgent === 'programming' && extension === 'codex' && activeProviderId && !initialModel) {
+    if (newTopicAgent === 'programming' && extension === 'codex' && shouldBlockCodexTopicForMissingModel(activeProvider)) {
       pushToast({
         tone: 'warning',
         title: 'Provider 缺少模型',
@@ -839,14 +852,14 @@ export function Sidebar() {
                 side="top"
                 content={
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-                    <div>helm: <span style={{ color: '#fff' }}>v1.10.58</span></div>
+                    <div>helm: <span style={{ color: '#fff' }}>v1.10.59</span></div>
                     <div>agent-adapter: <span style={{ color: '#fff' }}>{adapterVersion ?? '…'}</span></div>
                   </div>
                 }
                 delayMs={200}
                 onShow={fetchAdapterVersion}
               >
-                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.58</span>
+                <span className="text-[11px] cursor-default" style={{ fontFeatureSettings: '"tnum"' }}>v1.10.59</span>
               </Tooltip>
             </div>
           </div>

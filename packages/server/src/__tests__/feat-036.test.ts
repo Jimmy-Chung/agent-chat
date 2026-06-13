@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import worker from '../worker'
 import { setupTestDb } from './db-helper'
-import { createDevice, setDeviceRevoked } from '../pairing/store'
+import { createDevice, getDeviceByCredentialHash, setDeviceRevoked } from '../pairing/store'
 import { sha256Hex, randomToken, decodeJwt } from '../pairing/crypto'
 import { JIT_JWT_TTL_SECONDS } from '../pairing/routes'
 
@@ -263,8 +263,62 @@ describe('FEAT-036: provider proxy endpoint', () => {
     expect(payload.scope).toContain('agent:control')
     expect(typeof payload.exp).toBe('number')
     expect(payload.exp as number - (payload.iat as number)).toBe(JIT_JWT_TTL_SECONDS)
+    expect(payload.exp as number - (payload.iat as number)).toBe(300)
 
     restore()
+  })
+
+  it('rebinds JIT JWT audience to the live adapter instance id from adapter-status', async () => {
+    const credential = randomToken(24)
+    const oldAdapterId = 'adapter_jit_old'
+    const liveAdapterId = 'adapter_jit_live'
+    await createDevice({
+      adapterInstanceId: oldAdapterId,
+      name: 'Test Device',
+      platform: 'web',
+      credentialHash: await sha256Hex(credential),
+      scopes: ['agent:control', 'workspace:preview'],
+      pairingSessionId: 'ps_test_jit_rebind',
+    })
+
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = vi.fn(async (url: Parameters<typeof globalThis.fetch>[0]) => {
+        if (String(url).endsWith('/adapter-status')) {
+          return new Response(JSON.stringify({ adapterInstanceId: liveAdapterId }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        return new Response(JSON.stringify([{ id: 'provider-1' }]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as typeof globalThis.fetch
+
+      const qs = new URLSearchParams({
+        wssUrl: 'wss://pi.example.com/api/agent-chat/v1/socket?access_token=old-jwt',
+        pairedAdapterWssUrl: 'wss://pi.example.com/api/agent-chat/v1/socket',
+        deviceCredential: credential,
+        adapterInstanceId: oldAdapterId,
+        group: 'universal',
+      })
+      const res = await fetch(`/api/agent-chat/v1/providers?${qs}`, {
+        headers: { Authorization: 'Bearer test-token' },
+      })
+
+      expect(res.status).toBe(200)
+      const providerCall = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([url]) => String(url).includes('/providers?'),
+      )
+      const authHeader = ((providerCall?.[1] as RequestInit).headers as Record<string, string>)['Authorization']
+      const { payload } = decodeJwt(authHeader.slice(7))
+      expect(payload.aud).toBe(liveAdapterId)
+      const updatedDevice = await getDeviceByCredentialHash(await sha256Hex(credential))
+      expect(updatedDevice?.adapter_instance_id).toBe(liveAdapterId)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('returns 401 when deviceCredential is invalid', async () => {
