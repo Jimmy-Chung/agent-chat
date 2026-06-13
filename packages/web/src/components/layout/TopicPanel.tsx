@@ -296,7 +296,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
             </button>
             {menuOpen && (
               <div
-                className="absolute right-0 top-full z-35 mt-1 w-40 overflow-hidden rounded-xl"
+                className="absolute right-0 top-full z-[35] mt-1 w-40 overflow-hidden rounded-xl"
                 style={{
                   background: 'var(--glass-modal)',
                   WebkitBackdropFilter: 'blur(60px) saturate(200%)',
@@ -1158,7 +1158,7 @@ function ToolsMenu({ planMode, onTogglePlan, onOpenMcp }: { planMode: boolean; o
   }, [open])
 
   return (
-    <div className="relative z-35 shrink-0" ref={ref}>
+    <div className="relative z-[35] shrink-0" ref={ref}>
       <button
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-all"
@@ -1176,7 +1176,7 @@ function ToolsMenu({ planMode, onTogglePlan, onOpenMcp }: { planMode: boolean; o
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-35 mt-1 w-44 overflow-hidden rounded-xl"
+          className="absolute left-0 top-full z-[35] mt-1 w-44 overflow-hidden rounded-xl"
           style={{
             background: 'var(--glass-modal)',
             WebkitBackdropFilter: 'blur(60px) saturate(200%)',
