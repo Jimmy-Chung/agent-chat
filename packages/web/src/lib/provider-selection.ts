@@ -20,7 +20,9 @@ export function getActiveProviderForGroup(
   providers: ProviderConfig[],
   group: ProviderGroup,
 ): ProviderConfig | undefined {
-  return providers.find((provider) => provider.isActive && getProviderGroup(provider) === group)
+  const activeProviders = providers.filter((provider) => provider.isActive && getProviderGroup(provider) === group)
+  if (activeProviders.length <= 1) return activeProviders[0]
+  return activeProviders.find((provider) => !isBuiltinProvider(provider)) ?? activeProviders[0]
 }
 
 export function getActiveProviderIdForGroup(
@@ -50,4 +52,12 @@ export function activateProviderInGroup(
       ? { ...provider, isActive: provider.id === providerId }
       : provider
   ))
+}
+
+export function isBuiltinProvider(provider: ProviderConfig | undefined): boolean {
+  return !!provider?.isDefault || !!provider?.builtin
+}
+
+export function shouldBlockCodexTopicForMissingModel(provider: ProviderConfig | undefined): boolean {
+  return !!provider && getProviderGroup(provider) === 'codex' && !isBuiltinProvider(provider) && !provider.models?.[0]
 }

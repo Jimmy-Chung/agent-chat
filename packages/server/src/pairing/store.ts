@@ -140,6 +140,13 @@ export async function getDeviceByCredentialHash(hash: string): Promise<PairedDev
   return row ?? null
 }
 
+export async function updateDeviceAdapterInstanceId(deviceId: string, adapterInstanceId: string): Promise<void> {
+  await getD1()
+    .prepare(`UPDATE devices SET adapter_instance_id = ? WHERE id = ?`)
+    .bind(adapterInstanceId, deviceId)
+    .run()
+}
+
 export async function setDeviceRevoked(deviceId: string, revoked: boolean): Promise<void> {
   await getD1().prepare(`UPDATE devices SET revoked = ? WHERE id = ?`).bind(revoked ? 1 : 0, deviceId).run()
 }

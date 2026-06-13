@@ -95,9 +95,14 @@ class WsClient {
     try {
       const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
       if (paired) {
-        const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
+        const { deviceCredential, adapterInstanceId, adapterWssUrl } = JSON.parse(paired) as {
+          deviceCredential?: string
+          adapterInstanceId?: string
+          adapterWssUrl?: string
+        }
         if (deviceCredential) params.set('deviceCredential', deviceCredential)
         if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
+        if (adapterWssUrl) params.set('pairedAdapterWssUrl', adapterWssUrl)
       }
     } catch { /* ignore */ }
     const url = params.toString() ? `${wsUrl}?${params}` : wsUrl
@@ -916,9 +921,14 @@ function getAdapterQs(): string {
   try {
     const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
     if (paired) {
-      const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
+      const { deviceCredential, adapterInstanceId, adapterWssUrl } = JSON.parse(paired) as {
+        deviceCredential?: string
+        adapterInstanceId?: string
+        adapterWssUrl?: string
+      }
       if (deviceCredential) qs.set('deviceCredential', deviceCredential)
       if (adapterInstanceId) qs.set('adapterInstanceId', adapterInstanceId)
+      if (adapterWssUrl) qs.set('pairedAdapterWssUrl', adapterWssUrl)
     }
   } catch { /* ignore */ }
   return qs.toString()

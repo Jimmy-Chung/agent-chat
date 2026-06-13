@@ -35,6 +35,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 describe('PiClient', () => {
   beforeEach(() => {
     vi.mocked(issueJitJwt).mockReset()
+    vi.restoreAllMocks()
   })
 
   it('adds PI_ADAPTER_TOKEN as token query param for Worker WebSocket auth', () => {
@@ -124,6 +125,7 @@ describe('PiClient', () => {
       serverOrigin: 'https://agent-chat.example.com',
     })
     const client = new PiClient(config)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
     const conn = {
       connect: vi.fn().mockResolvedValue(undefined),
       rpc: vi.fn().mockResolvedValue({ sessionId: 'sess-created' }),
@@ -138,7 +140,9 @@ describe('PiClient', () => {
 
     await client.createSession({ kind: 'general', general: {} })
 
-    expect(issueJitJwt).toHaveBeenCalledWith('dc_123', 'adapter_123', 'https://agent-chat.example.com')
+    expect(issueJitJwt).toHaveBeenCalledWith('dc_123', 'adapter_123', 'https://agent-chat.example.com', {
+      allowAdapterRebind: false,
+    })
     expect(createSessionConn).toHaveBeenCalledWith(
       expect.any(String),
       'wss://pi-adapter.example.com/api/agent-chat/v1/socket?access_token=JWT_FRESH',
@@ -157,6 +161,7 @@ describe('PiClient', () => {
       serverOrigin: 'https://agent-chat.example.com',
     })
     const client = new PiClient(config)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
     const conn = {
       connect: vi.fn().mockResolvedValue(undefined),
       rpc: vi.fn().mockResolvedValue([{ id: 'provider-1' }]),
@@ -176,6 +181,9 @@ describe('PiClient', () => {
       expect.stringMatching(/^global-/),
       'wss://pi-adapter.example.com/api/agent-chat/v1/socket?access_token=JWT_GLOBAL',
     )
+    expect(issueJitJwt).toHaveBeenCalledWith('dc_123', 'adapter_123', 'https://agent-chat.example.com', {
+      allowAdapterRebind: false,
+    })
     expect(conn.connect).toHaveBeenCalled()
     expect(conn.rpc).toHaveBeenCalledWith('listProviderConfigs', {})
     expect(conn.close).toHaveBeenCalled()

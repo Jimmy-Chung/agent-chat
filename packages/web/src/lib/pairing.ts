@@ -101,8 +101,16 @@ export async function verifyCode(session: string, code: string): Promise<VerifyR
   return data as VerifyResult
 }
 
-export async function exchangeToken(deviceCredential: string, adapterInstanceId: string): Promise<string> {
-  const { res, data } = await postJson('/api/agent-chat/v1/devices/token', { deviceCredential, adapterInstanceId })
+export async function exchangeToken(
+  deviceCredential: string,
+  adapterInstanceId: string,
+  adapterWssUrl?: string,
+): Promise<string> {
+  const { res, data } = await postJson('/api/agent-chat/v1/devices/token', {
+    deviceCredential,
+    adapterInstanceId,
+    ...(adapterWssUrl ? { adapterWssUrl } : {}),
+  })
   if (!res.ok) throw new PairingError(data.error ?? 'token_failed', res.status)
   return data.accessToken as string
 }

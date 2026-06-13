@@ -19,6 +19,7 @@ import {
   updatePairingSession,
   createDevice,
   getDeviceByCredentialHash,
+  updateDeviceAdapterInstanceId,
   getActiveSigningKey,
   listActiveSigningKeys,
   type PairingSession,
@@ -30,7 +31,7 @@ const SESSION_TTL_MAX_MS = 10 * 60 * 1000
 const CODE_TTL_MS = 3 * 60 * 1000
 const MAX_CODE_ATTEMPTS = 5
 const JWT_TTL_SECONDS = 300
-export const JIT_JWT_TTL_SECONDS = 60
+export const JIT_JWT_TTL_SECONDS = 300
 const DEFAULT_SCOPES = ['agent:control', 'workspace:preview']
 
 /**
@@ -42,9 +43,14 @@ export async function issueJitJwt(
   deviceCredential: string,
   adapterInstanceId: string,
   iss: string,
+  options?: { allowAdapterRebind?: boolean },
 ): Promise<string | null> {
   const device = await getDeviceByCredentialHash(await sha256Hex(deviceCredential))
-  if (!device || device.revoked || device.adapter_instance_id !== adapterInstanceId) return null
+  if (!device || device.revoked) return null
+  if (device.adapter_instance_id !== adapterInstanceId) {
+    if (!options?.allowAdapterRebind) return null
+    await updateDeviceAdapterInstanceId(device.id, adapterInstanceId)
+  }
   const key = await getActiveSigningKey()
   const now = Math.floor(Date.now() / 1000)
   return signJwt(key.privateJwk, key.kid, {
@@ -259,18 +265,25 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
     try { body = await c.req.json() } catch { return c.json({ error: 'invalid_json' }, 400) }
     const deviceCredential = typeof body.deviceCredential === 'string' ? body.deviceCredential : ''
     const adapterInstanceId = typeof body.adapterInstanceId === 'string' ? body.adapterInstanceId : ''
+    const adapterWssUrl = typeof body.adapterWssUrl === 'string' ? body.adapterWssUrl : ''
     if (!deviceCredential || !adapterInstanceId) return c.json({ error: 'missing_params' }, 400)
 
     const device = await getDeviceByCredentialHash(await sha256Hex(deviceCredential))
     if (!device) return c.json({ error: 'invalid_credential' }, 401)
     if (device.revoked) return c.json({ error: 'revoked' }, 403)
-    if (device.adapter_instance_id !== adapterInstanceId) return c.json({ error: 'adapter_mismatch' }, 403)
+    let jwtAudience = adapterInstanceId
+    const currentAdapterInstanceId = adapterWssUrl ? await resolveAdapterInstanceId(adapterWssUrl) : null
+    if (currentAdapterInstanceId) jwtAudience = currentAdapterInstanceId
+    if (device.adapter_instance_id !== jwtAudience) {
+      if (!currentAdapterInstanceId) return c.json({ error: 'adapter_mismatch' }, 403)
+      await updateDeviceAdapterInstanceId(device.id, currentAdapterInstanceId)
+    }
 
     const key = await getActiveSigningKey()
     const now = Math.floor(Date.now() / 1000)
     const accessToken = await signJwt(key.privateJwk, key.kid, {
       iss: new URL(c.req.url).origin,
-      aud: adapterInstanceId,
+      aud: jwtAudience,
       sub: device.id,
       sid: device.pairing_session_id,
       scope: (device.scopes ? JSON.parse(device.scopes) : DEFAULT_SCOPES).join(' '),
@@ -294,4 +307,22 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
   })
 
   return app
+}
+
+async function resolveAdapterInstanceId(adapterWssUrl: string): Promise<string | null> {
+  try {
+    const url = new URL(adapterWssUrl)
+    const protocol = url.protocol === 'wss:' ? 'https:' : url.protocol === 'ws:' ? 'http:' : url.protocol
+    const httpUrl = `${protocol}//${url.host}${url.pathname.replace(/\/socket\/?$/, '')}/adapter-status`
+    const res = await fetch(httpUrl, { signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return null
+    const data = await res.json() as { adapterInstanceId?: unknown; instanceId?: unknown }
+    return typeof data.adapterInstanceId === 'string'
+      ? data.adapterInstanceId
+      : typeof data.instanceId === 'string'
+        ? data.instanceId
+        : null
+  } catch {
+    return null
+  }
 }

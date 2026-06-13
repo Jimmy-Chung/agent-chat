@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { activateProviderInGroup, getActiveProviderIdForExtension, getActiveProviderIdForGroup } from '@/lib/provider-selection'
+import {
+  activateProviderInGroup,
+  getActiveProviderIdForExtension,
+  getActiveProviderIdForGroup,
+  shouldBlockCodexTopicForMissingModel,
+} from '@/lib/provider-selection'
 import type { ProviderConfig } from '@/stores/ws-store'
 
 describe('getActiveProviderIdForExtension', () => {
@@ -18,6 +23,13 @@ describe('getActiveProviderIdForExtension', () => {
     expect(getActiveProviderIdForExtension([
       { id: 'claude-active', name: 'Claude', provider: 'anthropic', group: 'claude-code', isActive: true },
       { id: 'apipass-active', name: 'API Pass', provider: 'openai', group: 'apipass', isActive: true },
+    ], 'codex')).toBe('apipass-active')
+  })
+
+  it('prefers a custom Codex-compatible provider if adapter returns multiple active providers in the normalized Codex group', () => {
+    expect(getActiveProviderIdForExtension([
+      { id: 'codex-default', name: 'Codex Official', provider: 'codex', group: 'codex', isActive: true, isDefault: true },
+      { id: 'apipass-active', name: 'API Pass', provider: 'openai', group: 'apipass', isActive: true, models: ['gpt-4.1'] },
     ], 'codex')).toBe('apipass-active')
   })
 
@@ -45,5 +57,26 @@ describe('getActiveProviderIdForExtension', () => {
     expect(next.find((provider) => provider.id === 'claude-active')?.isActive).toBe(true)
     expect(next.find((provider) => provider.id === 'codex-active')?.isActive).toBe(false)
     expect(next.find((provider) => provider.id === 'apipass-inactive')?.isActive).toBe(true)
+  })
+
+  it('does not block official Codex default provider creation just because models are empty', () => {
+    expect(shouldBlockCodexTopicForMissingModel({
+      id: 'codex-default',
+      name: 'Codex Official',
+      provider: 'codex',
+      group: 'codex',
+      isDefault: true,
+      models: [],
+    })).toBe(false)
+  })
+
+  it('blocks custom Codex-compatible providers without models', () => {
+    expect(shouldBlockCodexTopicForMissingModel({
+      id: 'custom-codex',
+      name: 'Custom Codex',
+      provider: 'openai',
+      group: 'codex',
+      models: [],
+    })).toBe(true)
   })
 })

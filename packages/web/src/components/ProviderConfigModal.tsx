@@ -229,7 +229,8 @@ export function ProviderConfigModal({
         isActive: true,
         ...(target?.group ? { group: target.group } : {}),
       })
-      await fetchConfigs()
+      const result = await sendProviderRpc('listProviderConfigs', {}) as ProviderConfig[]
+      useWsStore.getState().setProviderConfigs(activateProviderInGroup(result ?? [], id))
       useToastStore.getState().pushToast({
         tone: 'success',
         title: `已切换至 ${name}`,

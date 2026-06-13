@@ -2,8 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { env } from 'cloudflare:test'
 import worker from '../worker'
 import { setupTestDb } from './db-helper'
-import { decodeJwt } from '../pairing/crypto'
-import { getDeviceByCredentialHash, setDeviceRevoked } from '../pairing/store'
+import { decodeJwt, randomToken } from '../pairing/crypto'
+import { createDevice, getDeviceByCredentialHash, setDeviceRevoked } from '../pairing/store'
 import { sha256Hex } from '../pairing/crypto'
 
 const TOKEN = env.AGENT_CHAT_TOKEN || 'test-token'
@@ -139,6 +139,43 @@ describe('AIT-216 device pairing API', () => {
     await setDeviceRevoked(device!.id, true)
     const revoked = await call('/api/agent-chat/v1/devices/token', json({ deviceCredential: cred, adapterInstanceId: ADAPTER }))
     expect(revoked.status).toBe(403)
+  })
+
+  it('AIT-255: devices/token can rebind aud when adapter-status confirms a new instance id', async () => {
+    const originalFetch = globalThis.fetch
+    const credential = randomToken(24)
+    const oldAdapterId = 'adapter_old_pairing'
+    const liveAdapterId = 'adapter_live_pairing'
+    await createDevice({
+      adapterInstanceId: oldAdapterId,
+      name: 'iPhone',
+      platform: 'ios',
+      credentialHash: await sha256Hex(credential),
+      scopes: ['agent:control', 'workspace:preview'],
+      pairingSessionId: 'ps_rebind_pairing',
+    })
+    try {
+      globalThis.fetch = (async () => new Response(JSON.stringify({ adapterInstanceId: liveAdapterId }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch
+
+      const res = await call('/api/agent-chat/v1/devices/token', json({
+        deviceCredential: credential,
+        adapterInstanceId: oldAdapterId,
+        adapterWssUrl: WSS,
+      }))
+      const tok = await res.json() as any
+
+      expect(res.status).toBe(200)
+      const { payload } = decodeJwt(tok.accessToken)
+      expect(payload.aud).toBe(liveAdapterId)
+      expect((payload.exp as number) - (payload.iat as number)).toBe(300)
+      const updatedDevice = await getDeviceByCredentialHash(await sha256Hex(credential))
+      expect(updatedDevice?.adapter_instance_id).toBe(liveAdapterId)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('TC-07: cancel → cancelled; expired session reports expired', async () => {
