@@ -110,6 +110,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     if (this.piClient) return this.piClient
 
     this.piClient = new PiClient(this.config)
+    this.piClient.restoreAdapterInstanceId(await this.ctx.storage.get<string>('adapterInstanceId'))
     // Route ALL PI events through the event-router (handles DB writes + broadcast)
     routePiEvents(this.piClient, this, this.config, {
       waitUntil: (promise) => this.ctx.waitUntil(promise),
@@ -126,6 +127,13 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     // correct sequence number instead of 0, preventing context loss (BUG-052).
     this.piClient.onLastSeqUpdate = (sessionId, seq) => {
       void this.ctx.storage.put(`pi_last_seq:${sessionId}`, seq)
+    }
+    this.piClient.onAdapterInstanceIdUpdate = (adapterInstanceId) => {
+      void this.ctx.storage.put('adapterInstanceId', adapterInstanceId)
+      if (this.config) {
+        this.config.adapterInstanceId = adapterInstanceId
+        void this.ctx.storage.put('config_json', JSON.stringify(this.config))
+      }
     }
     return this.piClient
   }
@@ -237,11 +245,26 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
   // ─── Session background helpers ─────────────────────────────────────────
 
   private async restoreSessionInBackground(topicId: string, pi: PiClient): Promise<void> {
+    const topic = await topicRepo.getTopic(topicId)
+    const piSessionId = topic?.pi_session_id ?? undefined
     try {
-      await restoreExistingTopicSession(topicId, pi)
-      logger.info({ topicId }, 'Background session restoration succeeded')
+      const restored = await restoreExistingTopicSession(topicId, pi)
+      this.broadcastAll('session.status', { topicId, ready: restored })
+      if (!restored && piSessionId) {
+        this.broadcastAll('session.health', { topicId, state: 'disconnected', piSessionId })
+      }
+      logger.info({ topicId, restored }, 'Background session restoration completed')
     } catch (err) {
       logger.warn({ err, topicId }, 'Background session restoration failed')
+      this.broadcastAll('session.status', { topicId, ready: false })
+      if (piSessionId) {
+        this.broadcastAll('session.health', {
+          topicId,
+          state: 'disconnected',
+          piSessionId,
+          lastError: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 
@@ -597,27 +620,34 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         }
 
         // Session gateway for topic.select:
-        // - Existing topics (pi_session_id exists): ready:true immediately, restore in background.
-        //   Delivery logic handles reconnection if session not in memory.
-        // - New topics (pi_session_id is NULL): ready:false — createSession still in-flight,
-        //   topic.create handler will send ready:true when it completes.
+        // - Existing topics are ready only when the PI WS is actually attached.
+        //   If DB has pi_session_id but the DO lost in-memory state, restore in
+        //   background and keep input disabled until attach succeeds.
+        // - New topics (pi_session_id is NULL): ready:false — createSession still
+        //   in-flight, topic.create handler will send ready:true when it completes.
         const isSystemTopic = d.topicId.startsWith('system_')
         if (!isSystemTopic) {
           const pi = await this.ensurePiClient()
           const topic = await topicRepo.getTopic(d.topicId)
           const hasSession = !!topic?.pi_session_id
-          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: hasSession })
+          const attached = !!(pi && topic?.pi_session_id && pi.hasSession(topic.pi_session_id))
+          this.sendTo(ws, 'session.status', { topicId: d.topicId, ready: attached })
 
           const connectedHealth = buildConnectedSessionHealthPayload({
             topicId: d.topicId,
             piSessionId: topic?.pi_session_id,
-            isAttached: !!(pi && topic?.pi_session_id && pi.hasSession(topic.pi_session_id)),
+            isAttached: attached,
           })
           if (connectedHealth) {
             this.sendTo(ws, 'session.health', connectedHealth)
           }
 
-          if (hasSession && pi && !pi.hasSession(topic!.pi_session_id!)) {
+          if (hasSession && pi && !attached) {
+            this.sendTo(ws, 'session.health', {
+              topicId: d.topicId,
+              state: 'reconnecting',
+              piSessionId: topic!.pi_session_id!,
+            })
             this.ctx.waitUntil(this.restoreSessionInBackground(d.topicId, pi))
           } else if (topic && topic.kind === 'normal' && !hasSession) {
             this.ctx.waitUntil(this.establishTopicSession({

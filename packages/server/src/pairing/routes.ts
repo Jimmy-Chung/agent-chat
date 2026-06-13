@@ -274,9 +274,10 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
     let jwtAudience = adapterInstanceId
     const currentAdapterInstanceId = adapterWssUrl ? await resolveAdapterInstanceId(adapterWssUrl) : null
     if (currentAdapterInstanceId) jwtAudience = currentAdapterInstanceId
+    const allowAdapterRebind = Boolean(body.allowAdapterRebind)
     if (device.adapter_instance_id !== jwtAudience) {
-      if (!currentAdapterInstanceId) return c.json({ error: 'adapter_mismatch' }, 403)
-      await updateDeviceAdapterInstanceId(device.id, currentAdapterInstanceId)
+      if (!currentAdapterInstanceId && !allowAdapterRebind) return c.json({ error: 'adapter_mismatch' }, 403)
+      await updateDeviceAdapterInstanceId(device.id, jwtAudience)
     }
 
     const key = await getActiveSigningKey()
