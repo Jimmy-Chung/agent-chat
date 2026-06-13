@@ -198,7 +198,7 @@ function TopicPanelContent({ activeTopic, toggleSidebar, toggleMobileInspector, 
   return (
     <div className="relative flex h-full flex-col">
       <header
-        className="flex h-14 shrink-0 items-center gap-2.5 px-4 md:px-6"
+        className="relative z-[31] flex h-14 shrink-0 items-center gap-2.5 px-4 md:px-6"
         style={{
           background: 'rgba(11,12,15,0.45)',
           WebkitBackdropFilter: 'blur(40px) saturate(180%)',
