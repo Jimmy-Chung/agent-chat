@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 [v1.10.60] — fix: 下拉菜单层级修复 & 创建话题单选化
+
+- 修复 ToolsMenu（Plan 模式）和三点菜单（重命名/删除）的 z-index 层级：从 50/120 降至 35，确保在状态栏之上、全局弹窗和侧边栏弹出之下。
+- 创建话题 Agent 类型选择改为单级 RadioOption：General / Programming — Claude Code / Programming — Codex，移除 Extension 二级选择。
+- 版本显示更新为 `v1.10.60`。
+
 ## 2026-06-13 [v1.10.59] — fix: 配对通信链路 JWT 重绑与 provider 选择
 
 - AIT-255：配对设备的 JIT JWT TTL 从 60s 调整为 300s，降低 `jwt_expired` 重连风暴风险。
