@@ -26,6 +26,7 @@ import type { AdapterLinkState, ProviderConfig } from '@/stores/ws-store'
 import { resolvePiBadgeState } from '@/lib/connection-status'
 import type { SopTemplate } from '@/stores/sop-template-store'
 import webPackage from '../../../package.json'
+import { buildAdapterQueryParams } from '@/lib/adapter-query'
 
 const HELM_VERSION = `v${webPackage.version}`
 
@@ -88,20 +89,7 @@ async function fetchWorkspaceBrowse(): Promise<WorkspaceBrowseResponse> {
   const serverUrl = getServerBase()
   const wssUrl = localStorage.getItem(PI_WSS_URL_KEY) || ''
   const piToken = localStorage.getItem(PI_TOKEN_KEY) || ''
-  const params = new URLSearchParams()
-  if (wssUrl) params.set('wssUrl', wssUrl)
-  if (piToken) params.set('piToken', piToken)
-  // Include paired device credential so server can sign a JIT JWT for the
-  // HTTP proxy call — without this, /workspace fails on the paired path
-  // once the pairing-time JWT (TTL=300s) expires.
-  try {
-    const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
-    if (paired) {
-      const { deviceCredential, adapterInstanceId } = JSON.parse(paired) as { deviceCredential?: string; adapterInstanceId?: string }
-      if (deviceCredential) params.set('deviceCredential', deviceCredential)
-      if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
-    }
-  } catch { /* ignore */ }
+  const params = buildAdapterQueryParams({ wssUrl, piToken })
 
   const agentChatToken = localStorage.getItem('AGENT_CHAT_TOKEN') || ''
   const headers: Record<string, string> = {}
@@ -431,22 +419,7 @@ export function Sidebar() {
       // PI adapter config comes from frontend localStorage (same source as WsProvider)
       const wssUrl = localStorage.getItem(PI_WSS_URL_KEY) || ''
       const piToken = localStorage.getItem(PI_TOKEN_KEY) || ''
-      const params = new URLSearchParams()
-      if (wssUrl) params.set('wssUrl', wssUrl)
-      if (piToken) params.set('piToken', piToken)
-      try {
-        const paired = localStorage.getItem('AGENT_CHAT_PAIRED_DEVICE')
-        if (paired) {
-          const { deviceCredential, adapterInstanceId, adapterWssUrl } = JSON.parse(paired) as {
-            deviceCredential?: string
-            adapterInstanceId?: string
-            adapterWssUrl?: string
-          }
-          if (deviceCredential) params.set('deviceCredential', deviceCredential)
-          if (adapterInstanceId) params.set('adapterInstanceId', adapterInstanceId)
-          if (adapterWssUrl) params.set('pairedAdapterWssUrl', adapterWssUrl)
-        }
-      } catch { /* ignore */ }
+      const params = buildAdapterQueryParams({ wssUrl, piToken })
       const res = await fetch(`${serverUrl}/api/agent-chat/v1/adapter-status?${params}`, { signal: AbortSignal.timeout(5_000) })
       const data = await res.json()
       setAdapterVersion(data.version ?? 'unknown')

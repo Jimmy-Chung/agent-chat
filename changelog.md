@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-14 [v1.10.64] — fix: paired workspace browse rebind
+
+- 修复 Sidebar 工作区目录请求未携带 `pairedAdapterWssUrl` 的问题；paired adapter HTTP proxy 现在与 adapter-status/provider 路径共用参数构造，能走 live adapter rebind/JIT JWT audience 修正。
+- 新增 adapter query params 单测，覆盖 paired workspace/status HTTP proxy 必须带 `deviceCredential`、`adapterInstanceId`、`pairedAdapterWssUrl`。
+
 ## 2026-06-14 [v1.10.63] — chore: 统一 package 版本源
 
 - 将 workspace packages 版本更新为 `1.10.63`。
