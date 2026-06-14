@@ -1,6 +1,6 @@
 {
   "name": "@agent-chat/protocol",
-  "version": "1.10.65",
+  "version": "1.10.66",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",

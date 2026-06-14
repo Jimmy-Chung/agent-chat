@@ -103,7 +103,7 @@ export function piAdapterConfigIdentity(
     url,
     token: config.piAdapterToken,
     deviceCredential: config.deviceCredential ?? '',
-    adapterInstanceId: paired ? '' : config.adapterInstanceId ?? '',
+    adapterInstanceId: config.adapterInstanceId ?? '',
     serverOrigin: config.serverOrigin ?? '',
   })
 }
@@ -438,6 +438,14 @@ export class PiClient extends EventEmitter {
   constructor(config: AppConfig) {
     super()
     this.config = config
+  }
+
+  updateConfig(config: AppConfig): void {
+    const previousAdapterInstanceId = this.config.adapterInstanceId
+    this.config = config
+    if (config.adapterInstanceId && config.adapterInstanceId !== previousAdapterInstanceId) {
+      this.liveAdapterInstanceId = config.adapterInstanceId
+    }
   }
 
   /** Restore a persisted lastSeq (e.g. from DO storage after hibernation). */

@@ -94,6 +94,8 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     if (piConfigChanged && this.piClient) {
       this.piClient.disconnect()
       this.piClient = null
+    } else if (this.piClient) {
+      this.piClient.updateConfig(config)
     }
     await this.ensurePiClient()
   }

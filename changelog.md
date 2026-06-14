@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-14 [v1.10.66] — fix: DO paired instance config refresh
+
+- paired adapter 的 `adapterInstanceId` 变化现在会被视为 PI config change，触发 DO 内 PiClient 重建，避免已有 DO 继续沿用旧 live id 签发 WS createSession JWT。
+- PiClient 支持在 config 未重建时同步新 config；配合 topic DO setConfig 避免旧配对状态把主话题链路卡在错误 audience。
+- 修正对应 JWT identity 回归测试，明确 JWT token 轮换可忽略，但 adapter instance 变化不能忽略。
+
 ## 2026-06-14 [v1.10.65] — fix: paired workspace instance drift guard
 
 - `/devices/token` 返回实际签发 JWT 使用的 live `adapterInstanceId`，前端冷启动刷新 token 后同步更新 `AGENT_CHAT_PAIRED_DEVICE`，避免 HTTP proxy 后续继续用旧 instance id 触发 workspace/provider 鉴权失败。

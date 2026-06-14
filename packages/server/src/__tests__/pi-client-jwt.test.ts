@@ -107,7 +107,7 @@ describe('didPiAdapterConfigChange — JWT rotation identity', () => {
     expect(didPiAdapterConfigChange(prev, next)).toBe(true)
   })
 
-  it('does not treat paired live adapterInstanceId rebind as PI config change', () => {
+  it('treats paired adapterInstanceId changes as PI config changes', () => {
     const prev = makeConfig({
       piAdapterUrl: 'wss://adapter.example.com/api/socket?access_token=OLD',
       deviceCredential: 'dc_1',
@@ -119,7 +119,7 @@ describe('didPiAdapterConfigChange — JWT rotation identity', () => {
       adapterInstanceId: 'adapter_old',
     })
 
-    expect(didPiAdapterConfigChange(prev, next)).toBe(false)
+    expect(didPiAdapterConfigChange(prev, next)).toBe(true)
   })
 
   it('still detects manual debug token changes', () => {
