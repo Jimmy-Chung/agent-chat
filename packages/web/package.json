@@ -1,6 +1,6 @@
 {
   "name": "@agent-chat/web",
-  "version": "0.0.0",
+  "version": "1.10.63",
   "private": true,
   "scripts": {
     "dev": "next dev",

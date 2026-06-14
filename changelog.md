@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-14 [v1.10.63] — chore: 统一 package 版本源
+
+- 将 workspace packages 版本更新为 `1.10.63`。
+- Sidebar 版本显示改为读取 `packages/web/package.json`，避免发版时手改硬编码版本。
+
 ## 2026-06-14 [v1.10.62] — test: PI 通信链路故障注入验证
 
 - AIT-258：新增真机 adapter fault injection smoke，覆盖 JIT JWT auth fault、adapter instanceId drift、session disconnect 与 90s grace reconnect/attach。
