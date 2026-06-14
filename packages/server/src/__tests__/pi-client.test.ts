@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../pairing/routes', () => ({
@@ -30,6 +31,19 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     attentionLlm: { apiKey: '', baseUrl: '', model: '' },
     ...overrides,
   }
+}
+
+function makeFakeConn() {
+  const emitter = new EventEmitter()
+  let connected = false
+  const conn = Object.assign(emitter, {
+    connect: vi.fn(async () => { connected = true }),
+    rpc: vi.fn().mockResolvedValue({}),
+    close: vi.fn(() => { connected = false }),
+    lastSeq: 0,
+  })
+  Object.defineProperty(conn, 'isConnected', { get: () => connected })
+  return conn
 }
 
 describe('PiClient', () => {
@@ -285,5 +299,84 @@ describe('PiClient', () => {
 
     expect(connect).toHaveBeenCalledTimes(1)
     expect(attach).toHaveBeenCalledTimes(1)
+  })
+
+  it('auto reconnects a paired session after a short adapter disconnect (TC-AIT-258-04)', async () => {
+    vi.useFakeTimers()
+    vi.mocked(issueJitJwt).mockResolvedValue('JWT_AUTO')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+    const client = new PiClient(makeConfig({
+      piAdapterToken: '',
+      piAdapterUrl: 'wss://pi-adapter.example.com/api/agent-chat/v1/socket?access_token=OLD',
+      deviceCredential: 'dc_123',
+      adapterInstanceId: 'adapter_123',
+      serverOrigin: 'https://agent-chat.example.com',
+    }))
+    const events: unknown[] = []
+    client.on('event', (event) => events.push(event))
+
+    const firstConn = makeFakeConn()
+    const reconnectConn = makeFakeConn()
+    const createSessionConn = vi.spyOn(
+      client as unknown as { createSessionConn: (sessionId: string, adapterUrl?: string) => unknown },
+      'createSessionConn',
+    )
+      .mockReturnValueOnce(firstConn)
+      .mockReturnValueOnce(reconnectConn)
+
+    await client.reconnectSession('sess-auto')
+    expect(client.hasSession('sess-auto')).toBe(true)
+
+    firstConn.emit('close')
+    expect(client.hasSession('sess-auto')).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({
+      sessionId: 'sess-auto',
+      payload: expect.objectContaining({ kind: 'session.health', state: 'reconnecting' }),
+    }))
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(createSessionConn).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+
+    expect(createSessionConn).toHaveBeenCalledTimes(2)
+    expect(reconnectConn.connect).toHaveBeenCalledTimes(1)
+    expect(reconnectConn.rpc).toHaveBeenCalledWith('attachSession', { sessionId: 'sess-auto', lastSeq: 0 })
+    expect(client.hasSession('sess-auto')).toBe(true)
+    vi.useRealTimers()
+  })
+
+  it('manual reconnect cancels a pending auto reconnect timer for the same session (TC-AIT-258-04)', async () => {
+    vi.useFakeTimers()
+    vi.mocked(issueJitJwt).mockResolvedValue('JWT_MANUAL')
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+    const client = new PiClient(makeConfig({
+      piAdapterToken: '',
+      piAdapterUrl: 'wss://pi-adapter.example.com/api/agent-chat/v1/socket?access_token=OLD',
+      deviceCredential: 'dc_123',
+      adapterInstanceId: 'adapter_123',
+      serverOrigin: 'https://agent-chat.example.com',
+    }))
+
+    const firstConn = makeFakeConn()
+    const manualReconnectConn = makeFakeConn()
+    const createSessionConn = vi.spyOn(
+      client as unknown as { createSessionConn: (sessionId: string, adapterUrl?: string) => unknown },
+      'createSessionConn',
+    )
+      .mockReturnValueOnce(firstConn)
+      .mockReturnValueOnce(manualReconnectConn)
+
+    await client.reconnectSession('sess-manual')
+    firstConn.emit('close')
+
+    await client.reconnectSession('sess-manual')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(createSessionConn).toHaveBeenCalledTimes(2)
+    expect(manualReconnectConn.connect).toHaveBeenCalledTimes(1)
+    expect(manualReconnectConn.rpc).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
   })
 })

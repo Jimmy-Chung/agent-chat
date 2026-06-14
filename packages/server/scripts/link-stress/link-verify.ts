@@ -7,21 +7,28 @@
  * L1-2: 双话题并发 — 话题 A 发话 → 切话题 B 发话 → 两边都收到回复
  * L2: 多轮简单对话 — 10 轮纯文本对话
  * L3: 压力测试 — 10 轮复杂对话，涉及规划、tool use
+ * Fault: 真机 adapter test hooks 故障注入 — auth fault / instance drift / disconnect + grace reconnect
  *
- * 用法: npx tsx scripts/link-stress/link-verify.ts [l0|l1-1|l1-2|l2|l3|all]
+ * 用法: npx tsx scripts/link-stress/link-verify.ts [l0|l1-1|l1-2|l2|l3|fault|all|all-with-fault]
  */
 
+import { spawn } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import WebSocket from 'ws'
 import { encodeFrame, decodeFrame, createFrame, type WSFrame, DEFAULT_PI_ADAPTER_URL } from '@agent-chat/protocol'
 
 const PI_ADAPTER_URL = process.env.PI_ADAPTER_URL || DEFAULT_PI_ADAPTER_URL
-const PI_ADAPTER_TOKEN = process.env.PI_ADAPTER_TOKEN || '1234'
+const PI_ADAPTER_TOKEN = process.env.PI_ADAPTER_TOKEN ?? '1234'
 const SERVER_WS_URL = process.env.SERVER_WS_URL || 'ws://127.0.0.1:8787/ws'
+const SERVER_WS_HOST_HEADER = process.env.SERVER_WS_HOST_HEADER || ''
 const AUTH_TOKEN = process.env.AGENT_CHAT_TOKEN || 'test-token'
 const TARGET_HEARTBEATS = parseInt(process.env.TARGET_HEARTBEATS || '20', 10)
 const HEARTBEAT_TIMEOUT_MS = parseInt(process.env.HEARTBEAT_TIMEOUT_MS || '120000', 10)
 const RPC_TIMEOUT_MS = parseInt(process.env.RPC_TIMEOUT_MS || '30000', 10)
 const TURN_TIMEOUT_MS = parseInt(process.env.TURN_TIMEOUT_MS || '120000', 10)
+const L3_TURN_TIMEOUT_MS = parseInt(process.env.L3_TURN_TIMEOUT_MS || '180000', 10)
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 
 function fmtErr(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -34,7 +41,7 @@ function parseMsg(raw: WebSocket.Data): string {
 
 function buildAdapterUrl(): string {
   const url = new URL(PI_ADAPTER_URL)
-  if (PI_ADAPTER_TOKEN) url.searchParams.set('token', PI_ADAPTER_TOKEN)
+  if (PI_ADAPTER_TOKEN && !url.searchParams.has('access_token')) url.searchParams.set('token', PI_ADAPTER_TOKEN)
   return url.toString()
 }
 
@@ -44,8 +51,49 @@ function buildServerUrl(): string {
   return url.toString()
 }
 
+function openServerWs(wsUrl: string): WebSocket {
+  return SERVER_WS_HOST_HEADER
+    ? new WebSocket(wsUrl, { headers: { Host: SERVER_WS_HOST_HEADER } })
+    : new WebSocket(wsUrl)
+}
+
+function logServerUrl(wsUrl: string): string {
+  return wsUrl
+    .replace(/([?&]token=)[^&]+/g, '$1***')
+    .replace(/([?&]deviceCredential=)[^&]+/g, '$1***')
+    .replace(/([?&]access_token=)[^&]+/g, '$1***')
+}
+
 function ssend(ws: WebSocket, t: string, d: unknown, id?: string): void {
   ws.send(encodeFrame(createFrame(t, d, id)))
+}
+
+async function runFaultInjection(): Promise<{ passed: boolean }> {
+  console.log('\n── Fault: 真机故障注入 (adapter test hooks) ──')
+  if (!process.env.AGENT_CHAT_TEST_TOKEN && !process.env.TEST_HOOK_TOKEN) {
+    console.log('  ✗ 缺少 AGENT_CHAT_TEST_TOKEN 或 TEST_HOOK_TOKEN')
+    console.log('    需要先以 AGENT_CHAT_TEST_HOOKS=1 + 独立 test token 启动 adapter')
+    return { passed: false }
+  }
+
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', join(SCRIPT_DIR, 'fault-injection.ts')],
+      {
+        cwd: join(SCRIPT_DIR, '../..'),
+        env: process.env,
+        stdio: 'inherit',
+      },
+    )
+    child.on('error', (err) => {
+      console.log(`  ✗ 故障注入脚本启动失败: ${fmtErr(err)}`)
+      resolve({ passed: false })
+    })
+    child.on('close', (code) => {
+      resolve({ passed: code === 0 })
+    })
+  })
 }
 
 // ─── L0: 心跳保活 ─────────────────────────────────────────────────────
@@ -323,7 +371,7 @@ async function runL12(): Promise<L12Result> {
       }
     }, TURN_TIMEOUT_MS * 2) // 双话题需要更长超时
 
-    ws = new WebSocket(wsUrl)
+    ws = openServerWs(wsUrl)
 
     ws.on('open', async () => {
       console.log('  ✓ WS 连接成功')
@@ -454,12 +502,13 @@ async function createTopic(ws: WebSocket, label: string, options?: { agentType?:
 
     ws.on('message', onMsg)
 
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const createPayload: Record<string, unknown> = {
-      name: `l12-${label}-${Date.now()}`,
+      name: `l12-${label}-${runId}`,
       agentType,
     }
     if (agentType === 'programming') {
-      createPayload.programming = { extension: 'claude-code', yolo: true, cwd: `/tmp/l12-${label}`, permissionMode: 'bypassPermissions' }
+      createPayload.programming = { extension: 'claude-code', yolo: true, cwd: `/tmp/l12-${label}-${runId}`, permissionMode: 'bypassPermissions' }
     }
     ssend(ws, 'topic.create', createPayload)
   })
@@ -619,12 +668,7 @@ async function runL2(): Promise<L2Result> {
       // 检测消息结束
       if (f.t === 'message.end' && waitingForReply) {
         turnStopReason = (d as { stopReason?: string })?.stopReason ?? null
-        finishTurnLog(receivedTextDelta)
-
-        if (!receivedTextDelta) {
-          // 没收到 text delta，等待后续消息
-          return
-        }
+        finishTurnLog(receivedTextDelta || turnText.trim().length > 0)
         receivedTextDelta = false  // 重置
         waitingForReply = false
         currentTurn++
@@ -791,7 +835,7 @@ async function runL3(): Promise<L3Result> {
         console.log(`    Tool calls: ${toolCalls}`)
         resolve({ passed: false, turns: currentTurn, toolCalls, durationMs: Date.now() - t0, error: 'timeout', logs })
       }
-    }, 180000) // 3 分钟每轮上限，5 轮最多 15 分钟
+    }, L3_TURN_TIMEOUT_MS * TARGET_TURN) // 3 分钟每轮上限，5 轮最多 15 分钟
 
     // 5 轮渐进式 Web 开发: 番茄钟 (Pomodoro Timer) 应用
     const tasks = [
@@ -958,19 +1002,20 @@ async function runL3(): Promise<L3Result> {
 
 async function main() {
   const arg = process.argv[2] || 'l0'
+  const runAllSmoke = arg === 'all' || arg === 'all-with-fault'
 
   console.log('╔══════════════════════════════════╗')
   console.log('║  LINK VERIFY (分层验证)           ║')
   console.log('╚══════════════════════════════════╝')
-  if (arg === 'l0' || arg.startsWith('l1')) {
+  if (arg === 'l0' || arg === 'l1-1' || arg === 'fault') {
     console.log(`  Adapter: ${PI_ADAPTER_URL.replace(/token=[^&]+/, 'token=***')}`)
   } else {
-    console.log(`  Server: ${SERVER_WS_URL}`)
+    console.log(`  Server: ${logServerUrl(SERVER_WS_URL)}`)
   }
 
   let results: { layer: string; passed: boolean }[] = []
 
-  if (arg === 'l0' || arg === 'all') {
+  if (arg === 'l0' || runAllSmoke) {
     const r = await runL0()
     results.push({ layer: 'L0', passed: r.passed })
     if (!r.passed) {
@@ -980,7 +1025,7 @@ async function main() {
     }
   }
 
-  if (arg === 'l1-1' || arg === 'all') {
+  if (arg === 'l1-1' || runAllSmoke) {
     const r = await runL11()
     results.push({ layer: 'L1-1', passed: r.passed })
     if (!r.passed) {
@@ -990,7 +1035,7 @@ async function main() {
     }
   }
 
-  if (arg === 'l1-2' || arg === 'all') {
+  if (arg === 'l1-2' || runAllSmoke) {
     const r = await runL12()
     results.push({ layer: 'L1-2', passed: r.passed })
     if (!r.passed) {
@@ -1000,7 +1045,7 @@ async function main() {
     }
   }
 
-  if (arg === 'l2' || arg === 'all') {
+  if (arg === 'l2' || runAllSmoke) {
     const r = await runL2()
     results.push({ layer: 'L2', passed: r.passed })
 
@@ -1027,7 +1072,7 @@ async function main() {
     }
   }
 
-  if (arg === 'l3' || arg === 'all') {
+  if (arg === 'l3' || runAllSmoke) {
     const r = await runL3()
     results.push({ layer: 'L3', passed: r.passed })
 
@@ -1035,7 +1080,7 @@ async function main() {
     if (r.logs && r.logs.length > 0) {
       console.log('\n── L3 对话记录 ──')
       for (const log of r.logs) {
-        console.log(`\n  【第 ${log.turn} 轮】${log.receivedText ? '✓ 有正文' : '✗ 无正文'} (${log.durationMs}ms)`)
+        console.log(`\n  【第 ${log.turn} 轮】${log.hasText ? '✓ 有正文' : '✗ 无正文'} (${log.durationMs}ms)`)
         console.log(`  用户: ${log.userMessage.slice(0, 60)}${log.userMessage.length > 60 ? '...' : ''}`)
         if (log.thinkingContent) {
           console.log(`  思考: ${log.thinkingContent.slice(0, 120)}${log.thinkingContent.length > 120 ? '...' : ''}`)
@@ -1055,6 +1100,16 @@ async function main() {
 
     if (!r.passed) {
       console.log('\n  L3 失败，后续测试中止')
+      process.exitCode = 1
+      return
+    }
+  }
+
+  if (arg === 'fault' || arg === 'all-with-fault') {
+    const r = await runFaultInjection()
+    results.push({ layer: 'Fault', passed: r.passed })
+    if (!r.passed) {
+      console.log('\n  Fault 失败')
       process.exitCode = 1
       return
     }
