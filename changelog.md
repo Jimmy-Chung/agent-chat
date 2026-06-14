@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-06-14 [v1.10.62] — test: PI 通信链路故障注入验证
+
+- AIT-258：新增真机 adapter fault injection smoke，覆盖 JIT JWT auth fault、adapter instanceId drift、session disconnect 与 90s grace reconnect/attach。
+- AIT-258：`link-verify` 增加 `fault` 与 `all-with-fault` 分层入口；普通 `all` 保持 L0/L1/L2/L3 非破坏性链路验证。
+- AIT-258：新增 `test:link-verify`、`test:link-fault`、`test:link-comm` 脚本；故障注入需 adapter 以 `AGENT_CHAT_TEST_HOOKS=1` 和独立 test token 启动。
+- 版本显示更新为 `v1.10.62`。
+
+## 2026-06-14 [v1.10.61] — fix: PI session 断链自愈与 live adapter aud
+
+- AIT-255：JIT JWT 使用 live `adapter.ready.adapterInstanceId` 作为后续连接 aud，并在确认 live id 后持久化设备 rebind；避免 adapter instance 变化后旧 aud 持续触发 `jwt_invalid_audience`。
+- AIT-255：保留 adapter-status fallback 与 300s JIT TTL，降低跨境慢链路下 `jwt_expired` 重连失败概率。
+- AIT-256：PI session WS close 后启动 bounded backoff reconnect/re-attach，并复用同一 session 的 in-flight reconnect promise，减少发送链路与后台 restore 竞争。
+- AIT-256：`topic.select` 只在 PI WS 实际 attach 时返回 `ready:true`；恢复中明确广播 `reconnecting`，失败时广播 `ready:false/disconnected`。
+- 版本显示更新为 `v1.10.61`。
+
 ## 2026-06-13 [v1.10.60] — fix: 下拉菜单层级修复 & 创建话题单选化
 
 - 修复 ToolsMenu（Plan 模式）和三点菜单（重命名/删除）的 z-index 层级：从 50/120 降至 35，确保在状态栏之上、全局弹窗和侧边栏弹出之下。

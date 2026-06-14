@@ -9,6 +9,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:link-stress": "tsx scripts/link-stress.ts",
+    "test:link-verify": "tsx scripts/link-stress/link-verify.ts",
+    "test:link-fault": "tsx scripts/link-stress/link-verify.ts fault",
+    "test:link-comm": "tsx scripts/link-stress/link-verify.ts all-with-fault",
     "build": "tsc",
     "deploy": "wrangler deploy"
   },

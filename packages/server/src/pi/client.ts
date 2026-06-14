@@ -42,6 +42,7 @@ export interface AdapterRpcRequest {
 }
 
 const ADAPTER_READY_TIMEOUT_MS = 3_000
+const SESSION_RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000]
 
 /**
  * Replace (or append) the `access_token` query param in an adapter WS URL with a
@@ -94,14 +95,15 @@ function isPairedAdapterConfig(config: Pick<AppConfig, 'deviceCredential' | 'ada
 export function piAdapterConfigIdentity(
   config: Pick<AppConfig, 'piAdapterUrl' | 'piAdapterToken' | 'deviceCredential' | 'adapterInstanceId' | 'serverOrigin'>,
 ): string {
-  const url = isPairedAdapterConfig(config)
+  const paired = isPairedAdapterConfig(config)
+  const url = paired
     ? stripAdapterAuthParams(config.piAdapterUrl)
     : config.piAdapterUrl
   return JSON.stringify({
     url,
     token: config.piAdapterToken,
     deviceCredential: config.deviceCredential ?? '',
-    adapterInstanceId: config.adapterInstanceId ?? '',
+    adapterInstanceId: paired ? '' : config.adapterInstanceId ?? '',
     serverOrigin: config.serverOrigin ?? '',
   })
 }
@@ -268,7 +270,9 @@ class PiSessionConn extends EventEmitter {
         // Log PI event for debugging (BUG-044) with cross-hop correlation (BUG-046).
         void logPiEvent(this.sessionId, event)
         if (event.payload?.kind === 'adapter.ready') {
-          logger.info({ sessionId: this.sessionId, adapterInstanceId: (event.payload as { adapterInstanceId?: string }).adapterInstanceId }, 'adapter.ready received')
+          const adapterInstanceId = (event.payload as { adapterInstanceId?: string }).adapterInstanceId
+          logger.info({ sessionId: this.sessionId, adapterInstanceId }, 'adapter.ready received')
+          this.emit('adapter.ready', { adapterInstanceId })
           this.ready = true
           this.readyResolve?.()
           this.readyResolve = null
@@ -421,11 +425,15 @@ export function buildPiAdapterUrl(rawUrl: string, token: string): string {
 export class PiClient extends EventEmitter {
   private sessions = new Map<string, PiSessionConn>()
   private lastSeqBySession = new Map<string, number>()
+  private reconnectingBySession = new Map<string, Promise<void>>()
+  private autoReconnectTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private liveAdapterInstanceId: string | null = null
   private config: AppConfig
   /** Optional hook: called whenever a session's routed lastSeq advances. Used by
    *  the Durable Object to persist the value across hibernation so reconnects
    *  after wake-up resume from events that are already written/broadcast. */
   onLastSeqUpdate?: (sessionId: string, seq: number) => void
+  onAdapterInstanceIdUpdate?: (adapterInstanceId: string) => void
 
   constructor(config: AppConfig) {
     super()
@@ -445,16 +453,32 @@ export class PiClient extends EventEmitter {
     this.onLastSeqUpdate?.(sessionId, seq)
   }
 
+  restoreAdapterInstanceId(adapterInstanceId: string | null | undefined): void {
+    if (adapterInstanceId) this.liveAdapterInstanceId = adapterInstanceId
+  }
+
+  private rememberAdapterInstanceId(adapterInstanceId: string | null | undefined): void {
+    if (!adapterInstanceId || adapterInstanceId === this.liveAdapterInstanceId) return
+    this.liveAdapterInstanceId = adapterInstanceId
+    this.config.adapterInstanceId = adapterInstanceId
+    this.onAdapterInstanceIdUpdate?.(adapterInstanceId)
+  }
+
   private adoptSessionConn(conn: PiSessionConn, sessionId: string, action: 'created' | 'recreated' | 'reconnected'): void {
     conn.on('event', (event: PIEvent) => {
       this.emit('event', event)
+    })
+    conn.on('adapter.ready', ({ adapterInstanceId }: { adapterInstanceId?: string }) => {
+      this.rememberAdapterInstanceId(adapterInstanceId)
     })
     conn.on('rpc', (request: AdapterRpcRequest) => {
       this.emit('rpc', request)
     })
     conn.on('close', () => {
+      if (this.sessions.get(sessionId) !== conn) return
       this.sessions.delete(sessionId)
       logger.info({ sessionId }, 'PI session removed from pool')
+      this.scheduleAutoReconnect(sessionId)
     })
 
     this.sessions.set(sessionId, conn)
@@ -488,10 +512,12 @@ export class PiClient extends EventEmitter {
   private async resolveAdapterUrlForConnect(): Promise<string> {
     const cfg = this.config
     if (!cfg.deviceCredential || !cfg.adapterInstanceId || !cfg.serverOrigin) return cfg.piAdapterUrl
-    const liveAdapterInstanceId = await this.fetchLiveAdapterInstanceId()
-    if (liveAdapterInstanceId) cfg.adapterInstanceId = liveAdapterInstanceId
-    const jwt = await issueJitJwt(cfg.deviceCredential, cfg.adapterInstanceId, cfg.serverOrigin, {
-      allowAdapterRebind: Boolean(liveAdapterInstanceId),
+    const storedAdapterInstanceId = cfg.adapterInstanceId
+    const liveAdapterInstanceId = this.liveAdapterInstanceId ?? await this.fetchLiveAdapterInstanceId()
+    if (liveAdapterInstanceId) this.rememberAdapterInstanceId(liveAdapterInstanceId)
+    const adapterInstanceId = this.liveAdapterInstanceId ?? storedAdapterInstanceId
+    const jwt = await issueJitJwt(cfg.deviceCredential, adapterInstanceId, cfg.serverOrigin, {
+      allowAdapterRebind: adapterInstanceId !== storedAdapterInstanceId,
     })
     if (!jwt) return cfg.piAdapterUrl
     return setAccessTokenParam(cfg.piAdapterUrl, jwt)
@@ -512,6 +538,33 @@ export class PiClient extends EventEmitter {
     } catch {
       return null
     }
+  }
+
+  private scheduleAutoReconnect(sessionId: string): void {
+    if (!this.config.deviceCredential) return
+    if (this.autoReconnectTimers.has(sessionId) || this.reconnectingBySession.has(sessionId)) return
+    this.emit('event', {
+      seq: 0,
+      sessionId,
+      ts: Date.now(),
+      payload: { kind: 'session.health' as const, state: 'reconnecting' as const, piSessionId: sessionId },
+    })
+    this.runAutoReconnect(sessionId, 0)
+  }
+
+  private runAutoReconnect(sessionId: string, attempt: number): void {
+    const delay = SESSION_RECONNECT_DELAYS_MS[Math.min(attempt, SESSION_RECONNECT_DELAYS_MS.length - 1)] ?? 30_000
+    const timer = setTimeout(() => {
+      this.autoReconnectTimers.delete(sessionId)
+      this.reconnectSession(sessionId)
+        .catch((err) => {
+          logger.warn({ err, sessionId, attempt }, 'PI session auto reconnect failed')
+          if (attempt < SESSION_RECONNECT_DELAYS_MS.length - 1) {
+            this.runAutoReconnect(sessionId, attempt + 1)
+          }
+        })
+    }, delay)
+    this.autoReconnectTimers.set(sessionId, timer)
   }
 
   get isConnected(): boolean {
@@ -582,6 +635,22 @@ export class PiClient extends EventEmitter {
   }
 
   async reconnectSession(sessionId: string): Promise<void> {
+    const inFlight = this.reconnectingBySession.get(sessionId)
+    if (inFlight) return inFlight
+    const promise = this.reconnectSessionOnce(sessionId)
+      .finally(() => {
+        this.reconnectingBySession.delete(sessionId)
+      })
+    this.reconnectingBySession.set(sessionId, promise)
+    return promise
+  }
+
+  private async reconnectSessionOnce(sessionId: string): Promise<void> {
+    const pendingTimer = this.autoReconnectTimers.get(sessionId)
+    if (pendingTimer) {
+      clearTimeout(pendingTimer)
+      this.autoReconnectTimers.delete(sessionId)
+    }
     const existing = this.sessions.get(sessionId)
     const lastSeq = this.getLastSeq(sessionId)
     if (existing?.isConnected) {
@@ -679,5 +748,10 @@ export class PiClient extends EventEmitter {
       conn.close()
     }
     this.sessions.clear()
+    for (const [, timer] of this.autoReconnectTimers) {
+      clearTimeout(timer)
+    }
+    this.autoReconnectTimers.clear()
+    this.reconnectingBySession.clear()
   }
 }

@@ -154,6 +154,13 @@ describe('AIT-216 device pairing API', () => {
       scopes: ['agent:control', 'workspace:preview'],
       pairingSessionId: 'ps_rebind_pairing',
     })
+
+    const rejected = await call('/api/agent-chat/v1/devices/token', json({
+      deviceCredential: credential,
+      adapterInstanceId: liveAdapterId,
+    }))
+    expect(rejected.status).toBe(403)
+
     try {
       globalThis.fetch = (async () => new Response(JSON.stringify({ adapterInstanceId: liveAdapterId }), {
         status: 200,

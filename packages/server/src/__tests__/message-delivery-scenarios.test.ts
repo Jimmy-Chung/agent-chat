@@ -276,6 +276,91 @@ describe('Scenario B — existing topic, message after DO hibernation (reconnect
     expect(updateMessage).toHaveBeenCalledWith('msg-1', expect.objectContaining({ status: 'done' }))
   })
 
+  it('recovers from a short disconnected session without needs_retry or duplicate clientMessageId (TC-AIT-258-01)', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-existing' })
+    const msg = makeMessage({ client_message_id: 'cm-stable' })
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(false),
+      reconnectSession: vi.fn().mockResolvedValue(undefined),
+      rpc: vi.fn().mockResolvedValue({}),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Follow-up after a short disconnect',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
+    expect(result).toBe('delivered')
+    expect(pi.reconnectSession).toHaveBeenCalledTimes(1)
+    expect(pi.reconnectSession).toHaveBeenCalledWith('sess-existing')
+    expect(pi.rpc).toHaveBeenCalledTimes(1)
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({
+      sessionId: 'sess-existing',
+      clientMessageId: 'cm-stable',
+    }), expect.anything())
+    expect(broadcaster.events.some((event) =>
+      event.type === 'message.delivery' &&
+      (event.data as Record<string, unknown>)?.status === 'needs_retry',
+    )).toBe(false)
+    expect(broadcaster.events).toContainEqual(expect.objectContaining({
+      type: 'message.delivery',
+      data: expect.objectContaining({ status: 'done', retryCount: 0 }),
+    }))
+  })
+
+  it('retries send once after reconnect using the same clientMessageId (TC-AIT-258-01)', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-existing' })
+    const msg = makeMessage({ client_message_id: 'cm-same-on-retry' })
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    let rpcCalls = 0
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(true),
+      reconnectSession: vi.fn().mockResolvedValue(undefined),
+      rpc: vi.fn().mockImplementation(() => {
+        rpcCalls++
+        if (rpcCalls === 1) return Promise.reject(new Error('transient ws close'))
+        return Promise.resolve({})
+      }),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Retry once after reconnect',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
+    expect(result).toBe('delivered')
+    expect(pi.reconnectSession).toHaveBeenCalledTimes(1)
+    const sentClientMessageIds = pi.rpc.mock.calls.map((call) =>
+      ((call[1] as Record<string, unknown>)?.clientMessageId),
+    )
+    expect(sentClientMessageIds).toEqual(['cm-same-on-retry', 'cm-same-on-retry'])
+    expect(broadcaster.events.some((event) =>
+      event.type === 'message.delivery' &&
+      (event.data as Record<string, unknown>)?.status === 'needs_retry',
+    )).toBe(false)
+  })
+
   it('uses session directly if still alive in piClient (no reconnect needed)', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-existing' })
     const msg = makeMessage()
@@ -525,5 +610,49 @@ describe('Error code handling — session_busy', () => {
     vi.useRealTimers()
 
     expect(result).toBe('retryable')
+  })
+})
+
+describe('AIT-258 auth retry boundaries', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    updateTopic.mockResolvedValue(makeTopic({ pi_session_id: 'sess-auth' }))
+    updateMessage.mockResolvedValue(undefined)
+    createMessagePart.mockResolvedValue(undefined)
+  })
+
+  it('does not auth retry beyond the initial reconnect path for invalid credentials (TC-AIT-258-03)', async () => {
+    const topic = makeTopic({ pi_session_id: 'sess-auth' })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(true),
+      reconnectSession: vi.fn().mockRejectedValue(new PiRpcError('auth_invalid', 'invalid credential')),
+      rpc: vi.fn().mockRejectedValue(new PiRpcError('auth_invalid', 'invalid credential')),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Auth failure should not storm',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
+    expect(result).toBe('retryable')
+    expect(pi.rpc).toHaveBeenCalledTimes(2)
+    expect(pi.reconnectSession).toHaveBeenCalledTimes(1)
+    expect(broadcaster.events).toContainEqual(expect.objectContaining({
+      type: 'message.delivery',
+      data: expect.objectContaining({ status: 'needs_retry' }),
+    }))
   })
 })
