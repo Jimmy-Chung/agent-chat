@@ -292,7 +292,7 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
       exp: now + JWT_TTL_SECONDS,
       jti: randomToken(12),
     })
-    return c.json({ accessToken, tokenType: 'Bearer', expiresInSeconds: JWT_TTL_SECONDS })
+    return c.json({ accessToken, tokenType: 'Bearer', expiresInSeconds: JWT_TTL_SECONDS, adapterInstanceId: jwtAudience })
   })
 
   // ── adapter offline verification: JWKS ──────────────────────────────

@@ -44,16 +44,16 @@ function PairInner() {
     setRemaining(null)
     try {
       const v = await verifyCode(pairing.session, code.trim())
-      const accessToken = await exchangeToken(v.deviceCredential, v.adapterInstanceId, v.adapterWssUrl)
+      const token = await exchangeToken(v.deviceCredential, v.adapterInstanceId, v.adapterWssUrl)
       savePairedDevice({
         deviceId: v.pairedDevice.id,
         deviceCredential: v.deviceCredential,
-        adapterInstanceId: v.adapterInstanceId,
+        adapterInstanceId: token.adapterInstanceId,
         adapterWssUrl: v.adapterWssUrl,
         pairedAt: v.pairedDevice.pairedAt,
       })
       // Point the app at the paired adapter (JWT as ?access_token=, server connects through).
-      applyPairedConnection(v.adapterWssUrl, accessToken)
+      applyPairedConnection(v.adapterWssUrl, token.accessToken)
       setPhase('success')
     } catch (e: unknown) {
       if (e instanceof PairingError && e.code === 'invalid_code') {

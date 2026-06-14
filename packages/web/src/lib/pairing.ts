@@ -105,14 +105,23 @@ export async function exchangeToken(
   deviceCredential: string,
   adapterInstanceId: string,
   adapterWssUrl?: string,
-): Promise<string> {
+): Promise<{ accessToken: string; adapterInstanceId: string }> {
   const { res, data } = await postJson('/api/agent-chat/v1/devices/token', {
     deviceCredential,
     adapterInstanceId,
     ...(adapterWssUrl ? { adapterWssUrl } : {}),
   })
   if (!res.ok) throw new PairingError(data.error ?? 'token_failed', res.status)
-  return data.accessToken as string
+  return {
+    accessToken: data.accessToken as string,
+    adapterInstanceId: typeof data.adapterInstanceId === 'string' ? data.adapterInstanceId : adapterInstanceId,
+  }
+}
+
+export function updatePairedDeviceAdapterInstanceId(adapterInstanceId: string): void {
+  const paired = loadPairedDevice()
+  if (!paired || paired.adapterInstanceId === adapterInstanceId) return
+  savePairedDevice({ ...paired, adapterInstanceId })
 }
 
 export function savePairedDevice(d: PairedDevice): void {

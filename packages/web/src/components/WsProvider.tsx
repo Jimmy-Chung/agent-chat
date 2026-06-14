@@ -9,7 +9,8 @@ import { useToastStore } from '@/stores/toast-store'
 import { ConnectionConfigModal, PI_WSS_URL_KEY, PI_TOKEN_KEY } from './ConnectionConfigModal'
 import { PairingRequiredScreen } from './AdapterConnectionModal'
 import { HelmLogo, HelmWordmark } from '@/components/ui/HelmLogo'
-import { loadPairedDevice, exchangeToken, buildAdapterWsUrl } from '@/lib/pairing'
+import { loadPairedDevice, exchangeToken, buildAdapterWsUrl, updatePairedDeviceAdapterInstanceId } from '@/lib/pairing'
+import { buildAdapterQueryParams } from '@/lib/adapter-query'
 import { SopDraftEditorHost } from '@/components/sop/SopDraftEditorHost'
 
 interface AgentChatErrorDetail {
@@ -189,8 +190,9 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
         const paired = loadPairedDevice()
         if (paired) {
           try {
-            const freshJwt = await exchangeToken(paired.deviceCredential, paired.adapterInstanceId, paired.adapterWssUrl)
-            const freshUrl = buildAdapterWsUrl(paired.adapterWssUrl, freshJwt)
+            const tokenResult = await exchangeToken(paired.deviceCredential, paired.adapterInstanceId, paired.adapterWssUrl)
+            updatePairedDeviceAdapterInstanceId(tokenResult.adapterInstanceId)
+            const freshUrl = buildAdapterWsUrl(paired.adapterWssUrl, tokenResult.accessToken)
             localStorage.setItem(PI_WSS_URL_KEY, freshUrl)
             setPiConfig({ wssUrl: freshUrl, piToken: '' })
             setStep('main')
@@ -248,9 +250,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false
 
     const probe = async () => {
-      const params = new URLSearchParams()
-      if (piConfig.wssUrl) params.set('wssUrl', piConfig.wssUrl)
-      if (piConfig.piToken) params.set('piToken', piConfig.piToken)
+      const params = buildAdapterQueryParams({ wssUrl: piConfig.wssUrl, piToken: piConfig.piToken })
 
       try {
         const res = await fetch(

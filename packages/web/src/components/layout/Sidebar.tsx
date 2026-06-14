@@ -927,7 +927,9 @@ function CreateTopicModal({
 }) {
   const trimmedName = name.trim()
   const nameStartsWithSlash = trimmedName.startsWith('/')
-  const canSubmit = Boolean(trimmedName) && !nameStartsWithSlash
+  const needsWorkspace = agentType === 'programming' && cwd.trim().startsWith('/')
+  const workspaceUnavailable = needsWorkspace && (!workspace || workspaceLoading || Boolean(workspaceError))
+  const canSubmit = Boolean(trimmedName) && !nameStartsWithSlash && !workspaceUnavailable
   const [draggedSopId, setDraggedSopId] = useState<string | null>(null)
   const selectedSops = useMemo(
     () => selectedSopIds
@@ -1146,7 +1148,9 @@ function CreateTopicModal({
                 />
                 <p className="text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
                   {cwd.trim()
-                    ? `将使用「${cwdPreview}」作为工作目录`
+                    ? workspaceUnavailable
+                      ? '需要先读取工作区目录，才能创建编程话题'
+                      : `将使用「${cwdPreview}」作为工作目录`
                     : '留空则自动创建以话题名命名的独立工作目录'}
                 </p>
                 {showWorkspacePicker && (

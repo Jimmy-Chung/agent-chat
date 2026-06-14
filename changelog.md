@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-14 [v1.10.65] — fix: paired workspace instance drift guard
+
+- `/devices/token` 返回实际签发 JWT 使用的 live `adapterInstanceId`，前端冷启动刷新 token 后同步更新 `AGENT_CHAT_PAIRED_DEVICE`，避免 HTTP proxy 后续继续用旧 instance id 触发 workspace/provider 鉴权失败。
+- Adapter status 轮询改为复用 paired adapter query params，和 workspace/provider/WS 连接保持同一套 paired 参数。
+- 创建编程话题时，如果用户输入 workspace-relative cwd（`/...`）但工作区目录未读取成功，禁用提交并提示先读取工作区，避免创建出 cwd 未解析、session 不可用的话题。
+
 ## 2026-06-14 [v1.10.64] — fix: paired workspace browse rebind
 
 - 修复 Sidebar 工作区目录请求未携带 `pairedAdapterWssUrl` 的问题；paired adapter HTTP proxy 现在与 adapter-status/provider 路径共用参数构造，能走 live adapter rebind/JIT JWT audience 修正。

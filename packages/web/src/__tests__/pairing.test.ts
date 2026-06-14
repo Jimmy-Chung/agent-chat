@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { parsePairingParams, parsePairingUrl, buildAdapterWsUrl, applyPairedConnection } from '../lib/pairing'
+import { parsePairingParams, parsePairingUrl, buildAdapterWsUrl, applyPairedConnection, savePairedDevice, updatePairedDeviceAdapterInstanceId, loadPairedDevice } from '../lib/pairing'
 
 const WS = 'wss://adapter.example.com/api/agent-chat/v1/socket'
 
@@ -48,5 +48,19 @@ describe('AIT-216 pairing client helpers', () => {
     applyPairedConnection(WS, 'jwt.xyz')
     expect(localStorage.getItem('PI_ADAPTER_WSS_URL')).toBe(`${WS}?access_token=jwt.xyz`)
     expect(localStorage.getItem('PI_ADAPTER_TOKEN')).toBe('')
+  })
+
+  it('updates persisted paired adapterInstanceId after token exchange rebind', () => {
+    savePairedDevice({
+      deviceId: 'dev_1',
+      deviceCredential: 'dc_1',
+      adapterInstanceId: 'old_instance',
+      adapterWssUrl: WS,
+      pairedAt: '2026-06-14T00:00:00.000Z',
+    })
+
+    updatePairedDeviceAdapterInstanceId('new_instance')
+
+    expect(loadPairedDevice()?.adapterInstanceId).toBe('new_instance')
   })
 })

@@ -39,4 +39,15 @@ describe('adapter query params', () => {
     expect(params.get('piToken')).toBe('legacy-token')
     expect(params.has('pairedAdapterWssUrl')).toBe(false)
   })
+
+  it('ignores corrupt paired device storage instead of dropping legacy params', () => {
+    const params = buildAdapterQueryParams({
+      wssUrl: 'wss://adapter.example.com/api/agent-chat/v1/socket',
+      piToken: 'legacy-token',
+    }, makeStorage('{bad json'))
+
+    expect(params.get('wssUrl')).toBe('wss://adapter.example.com/api/agent-chat/v1/socket')
+    expect(params.get('piToken')).toBe('legacy-token')
+    expect(params.has('deviceCredential')).toBe(false)
+  })
 })
