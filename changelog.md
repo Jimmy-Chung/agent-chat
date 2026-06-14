@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-14 [v1.10.62] — test: PI 通信链路故障注入验证
+
+- AIT-258：新增真机 adapter fault injection smoke，覆盖 JIT JWT auth fault、adapter instanceId drift、session disconnect 与 90s grace reconnect/attach。
+- AIT-258：`link-verify` 增加 `fault` 与 `all-with-fault` 分层入口；普通 `all` 保持 L0/L1/L2/L3 非破坏性链路验证。
+- AIT-258：新增 `test:link-verify`、`test:link-fault`、`test:link-comm` 脚本；故障注入需 adapter 以 `AGENT_CHAT_TEST_HOOKS=1` 和独立 test token 启动。
+- 版本显示更新为 `v1.10.62`。
+
 ## 2026-06-14 [v1.10.61] — fix: PI session 断链自愈与 live adapter aud
 
 - AIT-255：JIT JWT 使用 live `adapter.ready.adapterInstanceId` 作为后续连接 aud，并在确认 live id 后持久化设备 rebind；避免 adapter instance 变化后旧 aud 持续触发 `jwt_invalid_audience`。
