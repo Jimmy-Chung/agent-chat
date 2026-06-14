@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-14 [v1.10.70] — fix: Codex stale thread session recovery
+
+- 修复旧话题恢复时 Codex thread 已失效导致 `[codex_error] thread not found` 后仍继续使用旧 `pi_session_id` 的问题。
+- topic 打开/恢复与消息发送链路在 recreate 出新 session 后会回写并广播新的 `pi_session_id`，旧话题不再长期停留在「正在连接 Agent」。
+- 补充 session restore / delivery / PiClient 回归测试，覆盖 stale Codex thread 替换为新 session 的路径。
+
 ## 2026-06-14 [v1.10.69] — fix: iOS home screen icon asset
 
 - 新增 `apple-touch-icon.png`，iOS 添加到桌面时使用与左上角 Helm 标识一致的 PNG 图标。

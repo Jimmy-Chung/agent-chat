@@ -195,22 +195,34 @@ export async function restoreExistingTopicSession(
   topicId: string,
   pi: PiClient,
 ): Promise<boolean> {
+  return (await restoreExistingTopicSessionDetailed(topicId, pi)).restored
+}
+
+export interface TopicSessionRestoreResult {
+  restored: boolean
+  sessionId: string | null
+}
+
+export async function restoreExistingTopicSessionDetailed(
+  topicId: string,
+  pi: PiClient,
+): Promise<TopicSessionRestoreResult> {
   const topic = await topicRepo.getTopic(topicId)
-  if (!topic?.pi_session_id) return false
+  if (!topic?.pi_session_id) return { restored: false, sessionId: null }
   return enterTopicSession(topic, pi)
 }
 
-export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boolean> {
-  if (!topic.pi_session_id) return false
+export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<TopicSessionRestoreResult> {
+  if (!topic.pi_session_id) return { restored: false, sessionId: null }
   try {
     await pi.reconnectSession(topic.pi_session_id)
-    return true
+    return { restored: true, sessionId: topic.pi_session_id }
   } catch (err) {
     logger.warn({ err, topicId: topic.id, sessionId: topic.pi_session_id }, 'reconnect failed in enterTopicSession')
   }
   try {
-    await pi.recreateSession({ ...buildSessionParams(topic), sessionId: topic.pi_session_id })
-    return true
+    const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId: topic.pi_session_id })
+    return { restored: true, sessionId: result.sessionId }
   } catch (err) {
     // session_exists means the session was actually created by the failed reconnect attempt
     const code = (err as { code?: string })?.code
@@ -218,14 +230,14 @@ export async function enterTopicSession(topic: Topic, pi: PiClient): Promise<boo
       logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'session_exists, retrying reconnect')
       try {
         await pi.reconnectSession(topic.pi_session_id)
-        return true
+        return { restored: true, sessionId: topic.pi_session_id }
       } catch (retryErr) {
         logger.warn({ err: retryErr, topicId: topic.id }, 'reconnect after session_exists also failed')
-        return false
+        return { restored: false, sessionId: null }
       }
     }
     logger.warn({ err, topicId: topic.id, sessionId: topic.pi_session_id }, 'recreate failed in enterTopicSession')
-    return false
+    return { restored: false, sessionId: null }
   }
 }
 
@@ -422,14 +434,18 @@ async function ensureDeliverableSession(
   try {
     logger.info({ topicId: topic.id, sessionId }, 'attempting recreateSession after reconnect failure')
     const result = await pi.recreateSession({ ...buildSessionParams(topic), sessionId })
+    const newSessionId = (result as { sessionId: string }).sessionId
+    if (newSessionId && newSessionId !== sessionId) {
+      await topicRepo.updateTopic(topic.id, { pi_session_id: newSessionId })
+    }
     await writeGatewayLog({
       eventKind: 'session.recreate',
       topicId: topic.id,
-      sessionId,
+      sessionId: newSessionId,
       status: 'recreated',
-      payload: { path: 'ensureDeliverableSession.recreate' },
+      payload: { path: 'ensureDeliverableSession.recreate', previousSessionId: sessionId },
     })
-    return (result as { sessionId: string }).sessionId
+    return newSessionId
   } catch (recreateErr) {
     const recreateCode = recreateErr instanceof PiRpcError ? recreateErr.code : undefined
     // session_exists means adapter still has the session — retry reconnect (WS was temporarily down)

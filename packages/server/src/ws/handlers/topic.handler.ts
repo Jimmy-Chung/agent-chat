@@ -7,7 +7,7 @@ import * as artifactRepo from '../../db/repos/artifact.repo'
 import * as sopRepo from '../../db/repos/sop_template.repo'
 import { logger } from '../../logger'
 import type { EventBroadcaster } from '../../pi/event-router'
-import { restoreExistingTopicSession } from '../message-delivery'
+import { restoreExistingTopicSessionDetailed } from '../message-delivery'
 import { composeSopWorkflow, type SopNode } from '../../sop/workflow'
 
 export function registerTopicHandlers(
@@ -279,8 +279,16 @@ export function registerTopicHandlers(
   hub.on('client:topic.resume', async (...args: unknown[]) => {
     const frame = args[1] as WSFrame
     const data = topicResumeSchema.parse(frame.d)
-    const restored = await restoreExistingTopicSession(data.topicId, pi)
-    if (!restored) {
+    const result = await restoreExistingTopicSessionDetailed(data.topicId, pi)
+    if (result.restored && result.sessionId) {
+      const topic = await topicRepo.getTopic(data.topicId)
+      if (topic?.pi_session_id && topic.pi_session_id !== result.sessionId) {
+        const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+        if (updated) broadcaster.broadcast('topic.updated', updated)
+      }
+      return
+    }
+    if (!result.restored) {
       const topic = await topicRepo.getTopic(data.topicId)
       if (topic?.pi_session_id) {
         logger.error({ topicId: topic.id, sessionId: topic.pi_session_id }, 'Failed to restore PI session')
