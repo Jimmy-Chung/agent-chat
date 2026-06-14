@@ -1,18 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { getTopic } = vi.hoisted(() => ({
+const { getTopic, updateTopic } = vi.hoisted(() => ({
   getTopic: vi.fn(),
+  updateTopic: vi.fn(),
 }))
 
 vi.mock('../db/repos/topic.repo', () => ({
   getTopic,
+  updateTopic,
 }))
 
-import { buildSessionParams, restoreExistingTopicSession } from '../ws/message-delivery'
+import { buildSessionParams, restoreExistingTopicSession, restoreExistingTopicSessionDetailed } from '../ws/message-delivery'
 
 describe('message-delivery session restore', () => {
   beforeEach(() => {
     getTopic.mockReset()
+    updateTopic.mockReset()
   })
 
   it('reconnects a stored session when topic.select restores an old topic', async () => {
@@ -76,6 +79,41 @@ describe('message-delivery session restore', () => {
       kind: 'general',
       topicId: 'topic-1',
       providerId: 'pi-deepseek',
+    }))
+  })
+
+  it('reports the replacement session when recreate returns a new session id', async () => {
+    getTopic.mockResolvedValue({
+      id: 'topic-1',
+      pi_session_id: 'old-thread',
+      agent_type: 'programming',
+      programming_spec_json: JSON.stringify({
+        extension: 'codex',
+        cwd: '/tmp/project',
+        yolo: false,
+        permissionMode: 'default',
+      }),
+      general_spec_json: null,
+      current_provider_id: null,
+      current_model: null,
+    })
+
+    const pi = {
+      hasSession: vi.fn().mockReturnValue(false),
+      reconnectSession: vi.fn().mockRejectedValue(new Error('thread not found: old-thread')),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'new-thread' }),
+      disconnectSession: vi.fn(),
+    }
+
+    await expect(restoreExistingTopicSessionDetailed('topic-1', pi as never)).resolves.toEqual({
+      restored: true,
+      sessionId: 'new-thread',
+    })
+    expect(pi.reconnectSession).toHaveBeenCalledWith('old-thread')
+    expect(pi.recreateSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'old-thread',
+      kind: 'programming',
+      topicId: 'topic-1',
     }))
   })
 

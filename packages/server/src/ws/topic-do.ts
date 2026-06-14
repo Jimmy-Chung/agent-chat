@@ -28,7 +28,7 @@ import * as cronRepo from '../db/repos/cron.repo'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as interactionRepo from '../db/repos/interaction.repo'
 import * as runtimeEventRepo from '../db/repos/topic_runtime_event.repo'
-import { buildSessionParams, createPendingUserMessage, deliverUserMessage, restoreExistingTopicSession, startAutoDelivery } from './message-delivery'
+import { buildSessionParams, createPendingUserMessage, deliverUserMessage, restoreExistingTopicSessionDetailed, startAutoDelivery } from './message-delivery'
 import { ARTIFACT_UPLOAD_MAX_BYTES } from '../r2/artifact-access'
 import {
   artifactToPayload,
@@ -250,9 +250,16 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     const topic = await topicRepo.getTopic(topicId)
     const piSessionId = topic?.pi_session_id ?? undefined
     try {
-      const restored = await restoreExistingTopicSession(topicId, pi)
+      const result = await restoreExistingTopicSessionDetailed(topicId, pi)
+      if (result.restored && result.sessionId && result.sessionId !== piSessionId) {
+        const updated = await topicRepo.updateTopic(topicId, { pi_session_id: result.sessionId })
+        if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+      }
+      const restored = result.restored
       this.broadcastAll('session.status', { topicId, ready: restored })
-      if (!restored && piSessionId) {
+      if (restored && result.sessionId) {
+        this.broadcastAll('session.health', { topicId, state: 'connected', piSessionId: result.sessionId })
+      } else if (piSessionId) {
         this.broadcastAll('session.health', { topicId, state: 'disconnected', piSessionId })
       }
       logger.info({ topicId, restored }, 'Background session restoration completed')
@@ -1186,8 +1193,13 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         const pi = await this.ensurePiClient()
         if (!pi) break
         try {
-          await restoreExistingTopicSession(data.topicId, pi)
-          logger.info({ topicId: topic.id, sessionId: topic.pi_session_id }, 'PI session resumed')
+          const result = await restoreExistingTopicSessionDetailed(data.topicId, pi)
+          if (result.restored && result.sessionId && result.sessionId !== topic.pi_session_id) {
+            const updated = await topicRepo.updateTopic(topic.id, { pi_session_id: result.sessionId })
+            if (updated) this.broadcastAll('topic.updated', updated as unknown as Record<string, unknown>)
+          }
+          this.broadcastAll('session.status', { topicId: data.topicId, ready: result.restored })
+          logger.info({ topicId: topic.id, sessionId: result.sessionId ?? topic.pi_session_id }, 'PI session resumed')
         } catch (err) {
           logger.error({ err, topicId: topic.id }, 'Failed to resume PI session')
           this.broadcastAll('error', { code: 'PI_RESUME_FAILED', message: 'Failed to resume agent session' })

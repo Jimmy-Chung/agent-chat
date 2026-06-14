@@ -495,6 +495,50 @@ describe('Error code handling — session_not_found', () => {
     expect(pi.recreateSession).toHaveBeenCalled()
   })
 
+  it('updates the topic session id when stale Codex thread is recreated', async () => {
+    const topic = makeTopic({
+      pi_session_id: 'old-thread',
+      agent_type: 'programming',
+      programming_spec_json: JSON.stringify({
+        extension: 'codex',
+        cwd: '/tmp/project',
+        yolo: false,
+        permissionMode: 'default',
+      }),
+    })
+    const msg = makeMessage()
+
+    getTopic.mockResolvedValue(topic)
+    getMessage.mockResolvedValue(msg)
+
+    const { PiRpcError } = await import('../pi/client')
+    const pi = makePi({
+      hasSession: vi.fn().mockReturnValue(false),
+      reconnectSession: vi.fn().mockRejectedValue(new PiRpcError('session_not_found', 'thread not found: old-thread')),
+      recreateSession: vi.fn().mockResolvedValue({ sessionId: 'new-thread' }),
+      rpc: vi.fn().mockResolvedValue({}),
+    })
+    const broadcaster = makeBroadcaster()
+
+    const { deliverUserMessage } = await import('../ws/message-delivery')
+
+    const result = await deliverUserMessage({
+      topicId: 'topic-1',
+      messageId: 'msg-1',
+      content: 'Continue this topic',
+      pi: pi as never,
+      broadcaster,
+      manual: false,
+    })
+
+    expect(result).toBe('delivered')
+    expect(updateTopic).toHaveBeenCalledWith('topic-1', { pi_session_id: 'new-thread' })
+    expect(pi.rpc).toHaveBeenCalledWith('sendUserMessage', expect.objectContaining({
+      sessionId: 'new-thread',
+      content: 'Continue this topic',
+    }), expect.anything())
+  })
+
   it('ensureDeliverableSession tries recreate on unknown error code', async () => {
     const topic = makeTopic({ pi_session_id: 'sess-stale' })
     const msg = makeMessage()
