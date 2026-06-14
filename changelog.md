@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-14 [v1.10.69] — fix: iOS home screen icon asset
+
+- 新增 `apple-touch-icon.png`，iOS 添加到桌面时使用与左上角 Helm 标识一致的 PNG 图标。
+- 补齐 manifest 中引用的 `icon-192.png` 与 `icon-512.png`，让 PWA 图标资源真实存在。
+
 ## 2026-06-14 [v1.10.68] — fix: create topic modal workspace picker polish
 
 - 移除创建话题弹窗中 Agent 类型选项的说明文字，保留原有选择逻辑不变。
