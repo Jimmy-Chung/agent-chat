@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-14 [v1.10.68] — fix: create topic modal workspace picker polish
+
+- 移除创建话题弹窗中 Agent 类型选项的说明文字，保留原有选择逻辑不变。
+- 工作目录候选列表改为贴在输入框下方的浮层，选中候选后会回填目录并自动关闭候选列表。
+- 新增回归测试覆盖上述两个交互。
+
 ## 2026-06-14 [v1.10.67] — fix: expose JWKS at issuer root
 
 - 新增 `/.well-known/jwks.json`，与既有 `/api/agent-chat/v1/.well-known/jwks.json` 返回同一份 active signing keys，匹配 JWT `iss` 为 Worker origin 时 adapter 的标准 JWKS 发现路径。

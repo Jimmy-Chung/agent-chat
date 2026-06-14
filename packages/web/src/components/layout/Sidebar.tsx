@@ -884,7 +884,7 @@ export function Sidebar() {
   )
 }
 
-function CreateTopicModal({
+export function CreateTopicModal({
   name,
   agentType,
   extension,
@@ -931,6 +931,7 @@ function CreateTopicModal({
   const workspaceUnavailable = needsWorkspace && (!workspace || workspaceLoading || Boolean(workspaceError))
   const canSubmit = Boolean(trimmedName) && !nameStartsWithSlash && !workspaceUnavailable
   const [draggedSopId, setDraggedSopId] = useState<string | null>(null)
+  const [cwdPickerOpen, setCwdPickerOpen] = useState(false)
   const selectedSops = useMemo(
     () => selectedSopIds
       .map((id) => templates.find((template) => template.id === id))
@@ -955,7 +956,7 @@ function CreateTopicModal({
     () => workspace ? getWorkspaceDirMatches(cwd, workspace.subDirList).slice(0, 8) : [],
     [cwd, workspace],
   )
-  const showWorkspacePicker = workspace && cwd.trim().startsWith('/')
+  const showWorkspacePicker = Boolean(workspace && cwd.trim().startsWith('/') && cwdPickerOpen)
   const cwdPreview = useMemo(() => {
     const trimmed = cwd.trim()
     if (!trimmed) return ''
@@ -1030,19 +1031,16 @@ function CreateTopicModal({
                 <RadioOption
                   active={agentType === 'general'}
                   title="General"
-                  description="通用对话与轻任务"
                   onClick={() => onAgentTypeChange('general')}
                 />
                 <RadioOption
                   active={agentType === 'programming' && extension === 'claude-code'}
                   title="Programming — Claude Code"
-                  description="代码、终端与工作目录"
                   onClick={() => { onAgentTypeChange('programming'); onExtensionChange('claude-code') }}
                 />
                 <RadioOption
                   active={agentType === 'programming' && extension === 'codex'}
                   title="Programming — Codex"
-                  description="代码、终端与工作目录"
                   onClick={() => { onAgentTypeChange('programming'); onExtensionChange('codex') }}
                 />
               </div>
@@ -1128,24 +1126,85 @@ function CreateTopicModal({
 
             <Field label="工作目录">
               <div className="space-y-2">
-                <input
-                  type="text"
-                  value={cwd}
-                  onFocus={() => {
-                    if (!workspace) onLoadWorkspace()
-                  }}
-                  onChange={(e) => {
-                    onCwdChange(e.target.value)
-                    if (!workspace) onLoadWorkspace()
-                  }}
-                  placeholder="/path/to/project"
-                  className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
-                  style={{
-                    background: 'rgba(0,0,0,.20)',
-                    color: 'var(--fg-regular)',
-                    border: '1px solid var(--hairline-2)',
-                  }}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={cwd}
+                    onFocus={() => {
+                      setCwdPickerOpen(true)
+                      if (!workspace) onLoadWorkspace()
+                    }}
+                    onChange={(e) => {
+                      setCwdPickerOpen(true)
+                      onCwdChange(e.target.value)
+                      if (!workspace) onLoadWorkspace()
+                    }}
+                    placeholder="/path/to/project"
+                    className="h-11 w-full rounded-xl px-3.5 text-sm outline-none"
+                    style={{
+                      background: 'rgba(0,0,0,.20)',
+                      color: 'var(--fg-regular)',
+                      border: '1px solid var(--hairline-2)',
+                    }}
+                  />
+                  {showWorkspacePicker && (
+                    <div
+                      className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-hidden rounded-xl"
+                      style={{
+                        background: 'rgba(12,14,18,.96)',
+                        border: '1px solid var(--hairline)',
+                        boxShadow: '0 14px 36px rgba(0,0,0,.38)',
+                      }}
+                    >
+                      <div
+                        className="flex items-center justify-between px-3 py-2 text-[11.5px]"
+                        style={{ color: 'var(--fg-dim)', borderBottom: '1px solid var(--hairline)' }}
+                      >
+                        <span className="truncate">
+                          {workspace?.workspacePath ?? (workspaceLoading ? '正在读取工作区...' : '工作区目录')}
+                        </span>
+                        {workspaceError && (
+                          <button
+                            type="button"
+                            onClick={onLoadWorkspace}
+                            className="shrink-0"
+                            style={{ color: '#ff9f7a' }}
+                          >
+                            重试
+                          </button>
+                        )}
+                      </div>
+                      {cwdMatches.length > 0 ? (
+                        <div className="max-h-44 overflow-y-auto py-1">
+                          {cwdMatches.map((dir) => (
+                            <button
+                              key={dir}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                onCwdChange(`/${dir}`)
+                                setCwdPickerOpen(false)
+                              }}
+                              className="flex h-8 w-full items-center gap-2 px-3 text-left text-[13px]"
+                              style={{ color: 'var(--fg-regular)' }}
+                            >
+                              <span style={{ color: 'var(--fg-dim)' }}>/</span>
+                              <span className="truncate">{dir}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+                          {workspaceLoading
+                            ? '读取中...'
+                            : workspaceError
+                              ? '无法读取工作区目录，请重试后再创建。'
+                              : '没有匹配目录，创建时会按输入在工作区下使用新目录。'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <p className="text-[11.5px]" style={{ color: 'var(--fg-dim)' }}>
                   {cwd.trim()
                     ? workspaceUnavailable
@@ -1153,58 +1212,6 @@ function CreateTopicModal({
                       : `将使用「${cwdPreview}」作为工作目录`
                     : '留空则自动创建以话题名命名的独立工作目录'}
                 </p>
-                {showWorkspacePicker && (
-                  <div
-                    className="overflow-hidden rounded-xl"
-                    style={{
-                      background: 'rgba(0,0,0,.22)',
-                      border: '1px solid var(--hairline)',
-                    }}
-                  >
-                    <div
-                      className="flex items-center justify-between px-3 py-2 text-[11.5px]"
-                      style={{ color: 'var(--fg-dim)', borderBottom: '1px solid var(--hairline)' }}
-                    >
-                      <span className="truncate">
-                        {workspace?.workspacePath ?? (workspaceLoading ? '正在读取工作区...' : '工作区目录')}
-                      </span>
-                      {workspaceError && (
-                        <button
-                          type="button"
-                          onClick={onLoadWorkspace}
-                          className="shrink-0"
-                          style={{ color: '#ff9f7a' }}
-                        >
-                          重试
-                        </button>
-                      )}
-                    </div>
-                    {cwdMatches.length > 0 ? (
-                      <div className="max-h-44 overflow-y-auto py-1">
-                        {cwdMatches.map((dir) => (
-                          <button
-                            key={dir}
-                            type="button"
-                            onClick={() => onCwdChange(`/${dir}`)}
-                            className="flex h-8 w-full items-center gap-2 px-3 text-left text-[13px]"
-                            style={{ color: 'var(--fg-regular)' }}
-                          >
-                            <span style={{ color: 'var(--fg-dim)' }}>/</span>
-                            <span className="truncate">{dir}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="px-3 py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
-                        {workspaceLoading
-                          ? '读取中...'
-                          : workspaceError
-                            ? '无法读取工作区目录，请重试后再创建。'
-                            : '没有匹配目录，创建时会按输入在工作区下使用新目录。'}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </Field>
           </div>
@@ -1261,12 +1268,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function RadioOption({
   active,
   title,
-  description,
   onClick,
 }: {
   active: boolean
   title: string
-  description: string
   onClick: () => void
 }) {
   return (
@@ -1293,7 +1298,6 @@ function RadioOption({
       </span>
       <div className="min-w-0">
         <div className="text-sm font-semibold">{title}</div>
-        <div className="mt-1 text-[12px] leading-5">{description}</div>
       </div>
     </button>
   )
