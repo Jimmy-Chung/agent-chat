@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-14 [v1.10.67] — fix: expose JWKS at issuer root
+
+- 新增 `/.well-known/jwks.json`，与既有 `/api/agent-chat/v1/.well-known/jwks.json` 返回同一份 active signing keys，匹配 JWT `iss` 为 Worker origin 时 adapter 的标准 JWKS 发现路径。
+- 补充 pairing 回归测试，确保 `/devices/token` 签出的 JWT `kid` 同时能在 API path 和 issuer-root JWKS 中查到，避免 adapter 报 `jwt_unknown_key` 导致 agent session create 失败。
+
 ## 2026-06-14 [v1.10.66] — fix: DO paired instance config refresh
 
 - paired adapter 的 `adapterInstanceId` 变化现在会被视为 PI config change，触发 DO 内 PiClient 重建，避免已有 DO 继续沿用旧 live id 签发 WS createSession JWT。

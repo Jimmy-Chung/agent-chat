@@ -4,6 +4,7 @@
 // with a short-lived RS256 JWT minted by /devices/token and verified offline by
 // the adapter via /.well-known/jwks.json. See AIT-208 「讨论结论」.
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import type { AppConfig } from '../config'
 import { logger } from '../logger'
 import {
@@ -295,12 +296,17 @@ export function createPairingRoutes(getConfig: () => AppConfig | null): Hono {
     return c.json({ accessToken, tokenType: 'Bearer', expiresInSeconds: JWT_TTL_SECONDS, adapterInstanceId: jwtAudience })
   })
 
-  // ── adapter offline verification: JWKS ──────────────────────────────
-  app.get('/api/agent-chat/v1/.well-known/jwks.json', async (c) => {
+  const jwksHandler = async (c: Context) => {
     await getActiveSigningKey() // ensure at least one key exists
     const keys = await listActiveSigningKeys()
     return c.json({ keys: keys.map((k) => publicJwkEntry(k.publicJwk, k.kid)) })
-  })
+  }
+
+  // ── adapter offline verification: JWKS ──────────────────────────────
+  app.get('/api/agent-chat/v1/.well-known/jwks.json', jwksHandler)
+  // JWT `iss` is the Worker origin, so verifiers that resolve JWKS from
+  // `${iss}/.well-known/jwks.json` need the root well-known alias too.
+  app.get('/.well-known/jwks.json', jwksHandler)
 
   app.onError((err, c) => {
     logger.error({ err }, 'pairing route error')

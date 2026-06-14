@@ -130,9 +130,13 @@ describe('AIT-216 device pairing API', () => {
     expect(payload.sub).toBe(verified.pairedDevice.id)
     expect((payload.exp as number) - (payload.iat as number)).toBe(300)
 
-    // JWKS contains the kid that signed the JWT
+    // JWKS contains the kid that signed the JWT. The canonical API path is kept
+    // for compatibility, and the issuer-root alias supports verifiers that
+    // resolve keys from `${iss}/.well-known/jwks.json`.
     const jwks = await (await call('/api/agent-chat/v1/.well-known/jwks.json')).json() as any
     expect(jwks.keys.some((k: any) => k.kid === header.kid && k.kty === 'RSA' && k.alg === 'RS256')).toBe(true)
+    const rootJwks = await (await call('/.well-known/jwks.json')).json() as any
+    expect(rootJwks.keys.some((k: any) => k.kid === header.kid && k.kty === 'RSA' && k.alg === 'RS256')).toBe(true)
 
     // revoke → mint rejected
     const device = await getDeviceByCredentialHash(await sha256Hex(cred))
