@@ -132,7 +132,7 @@ export async function createCronRun(input: {
 export async function updateCronRun(
   id: string,
   data: Partial<
-    Pick<CronRun, 'status' | 'finished_at' | 'result_message_id'>
+    Pick<CronRun, 'status' | 'finished_at' | 'result_message_id' | 'summary' | 'duration_ms'>
   >,
 ): Promise<void> {
   const updates: Record<string, unknown> = {}
@@ -140,6 +140,8 @@ export async function updateCronRun(
   if (data.finished_at !== undefined) updates.finishedAt = data.finished_at
   if (data.result_message_id !== undefined)
     updates.resultMessageId = data.result_message_id
+  if (data.summary !== undefined) updates.summary = data.summary
+  if (data.duration_ms !== undefined) updates.durationMs = data.duration_ms
 
   if (Object.keys(updates).length > 0) {
     await getDb()
@@ -148,6 +150,15 @@ export async function updateCronRun(
       .where(eq(cronRuns.id, id))
       .run()
   }
+}
+
+export async function getCronRun(id: string): Promise<CronRun | undefined> {
+  const rows = await getDb()
+    .select()
+    .from(cronRuns)
+    .where(eq(cronRuns.id, id))
+    .all()
+  return rows[0] ? toRunDomain(rows[0]) : undefined
 }
 
 export async function listCronRuns(cronId: string): Promise<CronRun[]> {
@@ -194,5 +205,7 @@ function toRunDomain(row: Record<string, unknown>): CronRun {
     finished_at: (row.finishedAt as number) || null,
     status: row.status as CronRun['status'],
     result_message_id: (row.resultMessageId as string) || null,
+    summary: (row.summary as string) || null,
+    duration_ms: (row.durationMs as number) || null,
   }
 }

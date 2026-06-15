@@ -172,6 +172,18 @@ export const agentProgressSchema = z.object({
 
 const cronTagsSchema = z.array(z.string())
 
+const cronRunHistorySchema = z.object({
+  id: z.string(),
+  cronId: z.string(),
+  localCronId: z.string().optional(),
+  triggeredAt: z.number(),
+  firedAt: z.number(),
+  status: z.enum(['running', 'success', 'failed', 'timeout']),
+  summary: z.string().nullable().optional(),
+  duration: z.number().nullable().optional(),
+  completedAt: z.number().optional(),
+})
+
 export const cronListSchema = z.object({
   crons: z.array(
     z.object({
@@ -192,6 +204,7 @@ export const cronListSchema = z.object({
       updatedAt: z.number().optional(),
     }),
   ),
+  runs: z.array(cronRunHistorySchema).optional(),
 })
 
 export const cronUpsertedSchema = z.object({

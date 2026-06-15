@@ -474,6 +474,25 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
     }
   }
 
+  private async cronRunsPayload() {
+    const jobs = await cronRepo.listCronJobs()
+    const runs = await Promise.all(jobs.map(async (job) => {
+      const jobRuns = await cronRepo.listCronRuns(job.id)
+      return jobRuns.map((run) => ({
+        id: run.id,
+        cronId: job.pi_cron_id,
+        localCronId: job.id,
+        triggeredAt: run.triggered_at,
+        firedAt: run.triggered_at,
+        status: run.status,
+        summary: run.summary,
+        duration: run.duration_ms,
+        completedAt: run.finished_at ?? undefined,
+      }))
+    }))
+    return runs.flat()
+  }
+
   private async syncCronsFromPi(pi: PiClient): Promise<void> {
     try {
       const result = await pi.rpcGlobal('listCrons', {}) as Array<{
@@ -622,7 +641,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
           if (pi) await this.syncCronsFromPi(pi)
           try {
             const jobs = await cronRepo.listCronJobs()
-            this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
+            this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)), runs: await this.cronRunsPayload() })
           } catch (err) {
             logger.warn({ err }, 'Failed to load cron jobs')
           }
@@ -1212,7 +1231,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         if (pi) await this.syncCronsFromPi(pi)
         try {
           const jobs = await cronRepo.listCronJobs()
-          this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
+          this.sendTo(ws, 'cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)), runs: await this.cronRunsPayload() })
         } catch (err) {
           logger.warn({ err }, 'Failed to load cron jobs')
         }
@@ -1268,7 +1287,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
         }
         await cronRepo.deleteCronJob(job.id)
         const jobs = await cronRepo.listCronJobs()
-        this.broadcastAll('cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)) })
+        this.broadcastAll('cron.list', { crons: jobs.map(j => this.cronJobToPayload(j)), runs: await this.cronRunsPayload() })
         break
       }
 

@@ -35,10 +35,11 @@ interface CronState {
   crons: CronJob[]
   runs: CronRun[]
   setCrons: (crons: CronJob[]) => void
+  setRuns: (runs: CronRun[]) => void
   upsertCron: (cron: CronJob) => void
   removeCron: (cronId: string) => void
   addRun: (run: CronRun) => void
-  completeRun: (runId: string, data: { status: string; summary: string | null; duration: number | null; completedAt: number }) => void
+  completeRun: (runId: string, data: { cronId: string; localCronId?: string; triggeredAt?: number; firedAt?: number; status: string; summary: string | null; duration: number | null; completedAt: number }) => void
 }
 
 export const useCronStore = create<CronState>()(
@@ -49,6 +50,12 @@ export const useCronStore = create<CronState>()(
     setCrons: (crons) => {
       set((s) => {
         s.crons = crons
+      })
+    },
+
+    setRuns: (runs) => {
+      set((s) => {
+        s.runs = runs
       })
     },
 
@@ -71,7 +78,12 @@ export const useCronStore = create<CronState>()(
 
     addRun: (run) => {
       set((s) => {
-        s.runs.push(run)
+        const idx = s.runs.findIndex((r) => r.id === run.id)
+        if (idx >= 0) {
+          s.runs[idx] = { ...s.runs[idx], ...run }
+        } else {
+          s.runs.push(run)
+        }
       })
     },
 
@@ -83,6 +95,18 @@ export const useCronStore = create<CronState>()(
           run.summary = data.summary
           run.duration = data.duration
           run.completedAt = data.completedAt
+        } else {
+          s.runs.push({
+            id: runId,
+            cronId: data.cronId,
+            localCronId: data.localCronId,
+            triggeredAt: data.triggeredAt ?? data.firedAt ?? data.completedAt,
+            firedAt: data.firedAt ?? data.triggeredAt ?? data.completedAt,
+            status: data.status as CronRun['status'],
+            summary: data.summary,
+            duration: data.duration,
+            completedAt: data.completedAt,
+          })
         }
       })
     },

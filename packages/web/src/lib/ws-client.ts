@@ -470,7 +470,8 @@ class WsClient {
         break
 
       case 'cron.list': {
-        const crons = (event.data as { crons: unknown[] }).crons.map((c) => {
+        const payload = event.data as { crons: unknown[]; runs?: unknown[] }
+        const crons = payload.crons.map((c) => {
           const r = c as Record<string, unknown>
           return {
             cronId: r.cronId as string,
@@ -491,6 +492,22 @@ class WsClient {
           }
         })
         useCronStore.getState().setCrons(crons)
+        if (Array.isArray(payload.runs)) {
+          useCronStore.getState().setRuns(payload.runs.map((run) => {
+            const r = run as Record<string, unknown>
+            return {
+              id: r.id as string,
+              cronId: r.cronId as string,
+              localCronId: r.localCronId as string | undefined,
+              triggeredAt: (r.triggeredAt as number | undefined) ?? (r.firedAt as number | undefined) ?? Date.now(),
+              firedAt: (r.firedAt as number | undefined) ?? (r.triggeredAt as number | undefined) ?? Date.now(),
+              status: r.status as 'running' | 'success' | 'failed' | 'timeout',
+              summary: (r.summary as string | null | undefined) ?? null,
+              duration: (r.duration as number | null | undefined) ?? null,
+              completedAt: r.completedAt as number | undefined,
+            }
+          }))
+        }
         break
       }
 
@@ -691,6 +708,10 @@ case 'usage.snapshot': {
         const originTopicId = (d.originTopicId as string | null) ?? null
         const originTopicAvailable = d.originTopicAvailable !== false && Boolean(originTopicId)
         useCronStore.getState().completeRun(d.runId as string, {
+          cronId: d.cronId as string,
+          localCronId: d.localCronId as string | undefined,
+          triggeredAt: d.firedAt as number | undefined,
+          firedAt: d.firedAt as number | undefined,
           status: d.status as string,
           summary: (d.summary as string | null) ?? null,
           duration: ((d.durationMs as number | null | undefined) ?? (d.duration as number | null | undefined)) ?? null,

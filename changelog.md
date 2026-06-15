@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-15 [v1.10.73] — fix: cron 无主结果认领与执行历史
+
+- `cron.run.completed` 即使没有对应 `cron.triggered` 预记录，也会补建 run history，并持久化 summary / duration，避免 adapter 直接投结果时丢失执行记录。
+- `cron.list` 下发执行历史，定时任务管理页展示最近运行记录；前端 store 支持 completion-only run 认领。
+- 移除 server 侧代执行 cron prompt 的旧 fallback，明确由 adapter 执行 cron，agent-chat 只负责接收、落库、通知与展示。
+- topic 已删除/归档或当前不在原话题时，cron 完成结果走全局 toast 提示。
+
 ## 2026-06-15 [v1.10.72] — fix: 消除空 assistant 气泡 + 注意力工具片段污染
 
 - 修复聊天里偶发的空 assistant 气泡：未完成的 `tool_input` 流式片段被持久化成无 `name` 的 `tool_use` part，`hasVisibleContent` 误判为可见、渲染器却返回 null，留下空壳气泡。现 `MessageBubble.hasVisibleContent` 对 `tool_use`（要求 `toolUseId`+`name`）/`file_diff`（要求 `path`）的可见性判定与 `MessagePartRenderer` 对齐。

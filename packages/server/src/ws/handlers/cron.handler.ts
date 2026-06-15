@@ -47,6 +47,25 @@ function cronJobToPayload(job: {
   }
 }
 
+async function cronRunsPayload() {
+  const jobs = await cronRepo.listCronJobs()
+  const runs = await Promise.all(jobs.map(async (job) => {
+    const jobRuns = await cronRepo.listCronRuns(job.id)
+    return jobRuns.map((run) => ({
+      id: run.id,
+      cronId: job.pi_cron_id,
+      localCronId: job.id,
+      triggeredAt: run.triggered_at,
+      firedAt: run.triggered_at,
+      status: run.status,
+      summary: run.summary,
+      duration: run.duration_ms,
+      completedAt: run.finished_at ?? undefined,
+    }))
+  }))
+  return runs.flat()
+}
+
 async function syncCronsFromPi(pi: PiClient): Promise<void> {
   const result = (await pi.rpcGlobal('listCrons', {})) as Array<{
     cronId: string
@@ -115,7 +134,7 @@ export function registerCronHandlers(
     if (hub.sendToClient) {
       hub.sendToClient(conn, {
         type: 'cron.list',
-        data: { crons: jobs.map((j) => cronJobToPayload(j)) },
+        data: { crons: jobs.map((j) => cronJobToPayload(j)), runs: await cronRunsPayload() },
       })
     }
   })
@@ -135,7 +154,7 @@ export function registerCronHandlers(
     if (hub.sendToClient) {
       hub.sendToClient(conn, {
         type: 'cron.list',
-        data: { crons: jobs.map((j) => cronJobToPayload(j)) },
+        data: { crons: jobs.map((j) => cronJobToPayload(j)), runs: await cronRunsPayload() },
       })
     }
   })
@@ -174,6 +193,7 @@ export function registerCronHandlers(
     const jobs = await cronRepo.listCronJobs()
     broadcaster.broadcast('cron.list', {
       crons: jobs.map((j) => cronJobToPayload(j)),
+      runs: await cronRunsPayload(),
     })
   })
 

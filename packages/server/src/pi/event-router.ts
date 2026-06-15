@@ -189,10 +189,6 @@ const sessionQueues = new Map<string, Promise<void>>()
 const sessionReorderBuffers = new Map<string, SessionReorderBuffer>()
 let piEventReorderWindowMs = 150
 
-// AIT-194 — module-level PiClient reference so routeEvent can trigger session
-// creation for cron execution when cron.triggered arrives without active session.
-let currentPiClient: PiClient | null = null
-
 interface SessionReorderBuffer {
   pending: Map<number, PIEvent>
   nextSeq: number | null
@@ -396,8 +392,6 @@ export function routePiEvents(
   config?: AppConfig,
   options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
-  currentPiClient = pi
-
   pi.on('session.recreated', ({ sessionId }: { sessionId: string }) => {
     seenSeqBySession.delete(sessionId)
     const buffer = sessionReorderBuffers.get(sessionId)
@@ -602,64 +596,6 @@ function cronJobToPayload(job: {
     nextRunAt: job.next_run_at ?? undefined,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
-  }
-}
-
-// AIT-194 — try to execute cron prompt when cron.triggered arrives without an
-// active session. Returns the new sessionId if successful, null otherwise.
-async function tryExecuteCronPrompt(
-  topicId: string,
-  prompt: string,
-  cronId: string,
-  runId: string,
-): Promise<string | null> {
-  const pi = currentPiClient
-  if (!pi) {
-    logger.warn({ cronId, topicId }, 'cron.triggered: no PI client available, cannot execute prompt')
-    return null
-  }
-  try {
-    const topic = await topicRepo.getTopic(topicId)
-    if (!topic || topic.archived) {
-      logger.warn({ cronId, topicId }, 'cron.triggered: topic gone or archived, cannot execute prompt')
-      return null
-    }
-    // Build session params from topic
-    const params: Record<string, unknown> = {
-      kind: topic.agent_type === 'programming' ? 'programming' : 'general',
-      topicId: topic.id,
-    }
-    if (topic.agent_type === 'programming' && topic.programming_spec_json) {
-      try {
-        const spec = JSON.parse(topic.programming_spec_json)
-        Object.assign(params, spec)
-      } catch { /* ignore parse errors */ }
-    }
-    if (topic.general_spec_json) {
-      try {
-        const spec = JSON.parse(topic.general_spec_json)
-        Object.assign(params, spec)
-      } catch { /* ignore parse errors */ }
-    }
-
-    logger.info({ cronId, topicId, runId }, 'cron.triggered: creating session for cron prompt')
-    const result = await pi.createSession(params as Parameters<typeof pi.createSession>[0])
-    const sessionId = result.sessionId
-    logger.info({ cronId, topicId, sessionId }, 'cron.triggered: session created, sending prompt')
-
-    await pi.rpc('sendUserMessage', {
-      sessionId,
-      content: prompt,
-      streamingBehavior: 'followUp' as const,
-    })
-    logger.info({ cronId, topicId, sessionId, runId }, 'cron.triggered: prompt sent')
-
-    // Update topic's pi_session_id
-    await topicRepo.updateTopic(topicId, { pi_session_id: sessionId })
-    return sessionId
-  } catch (err) {
-    logger.error({ err, cronId, topicId, runId }, 'cron.triggered: failed to execute prompt')
-    return null
   }
 }
 
@@ -999,20 +935,6 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         logger.warn({ cronId: payload.cronId }, 'cron.triggered: cron job or run not found')
       }
 
-      // AIT-194 — if topic is still active, try to execute the cron prompt.
-      // The adapter had no active session, so agent-chat creates one and sends.
-      if (originTopicActive && originTopicId && payload.prompt) {
-        tryExecuteCronPrompt(
-          originTopicId,
-          payload.prompt,
-          payload.cronId,
-          payload.runId,
-        ).catch((err) => {
-          logger.error({ err, cronId: payload.cronId, topicId: originTopicId },
-            'cron.triggered: tryExecuteCronPrompt failed')
-        })
-      }
-
       break
     }
 
@@ -1170,6 +1092,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       const originTopicAvailable = Boolean(originTopic && !originTopic.archived)
       const runs = await cronRepo.listCronRuns(job.id)
       const runningRun = runs.find((r) => r.id === payload.runId) ?? runs.find((r) => r.status === 'running')
+      const existingRun = runs.find((r) => r.id === payload.runId)
       let resultMessageId: string | null = null
       if (job.origin_topic_id) {
         resultMessageId = await appendCronCompletionMessage({
@@ -1186,6 +1109,21 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
         await cronRepo.updateCronRun(runningRun.id, {
           status: payload.status,
           finished_at: payload.completedAt,
+          summary: payload.summary,
+          duration_ms: payload.durationMs ?? payload.duration ?? null,
+          ...(resultMessageId ? { result_message_id: resultMessageId } : {}),
+        })
+      } else if (!existingRun) {
+        const createdRun = await cronRepo.createCronRun({
+          cronId: job.id,
+          runId: payload.runId,
+          triggeredAt: payload.completedAt,
+        })
+        await cronRepo.updateCronRun(createdRun.id, {
+          status: payload.status,
+          finished_at: payload.completedAt,
+          summary: payload.summary,
+          duration_ms: payload.durationMs ?? payload.duration ?? null,
           ...(resultMessageId ? { result_message_id: resultMessageId } : {}),
         })
       }
