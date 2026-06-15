@@ -182,9 +182,9 @@ function toJobDomain(row: Record<string, unknown>): CronJob {
     prompt: row.prompt as string,
     tags: parseTags(row.tagsJson),
     status: row.status as CronJob['status'],
-    next_run_at: (row.nextRunAt as number) || null,
-    created_at: row.createdAt as number,
-    updated_at: row.updatedAt as number,
+    next_run_at: nullableNumber(row.nextRunAt),
+    created_at: numberValue(row.createdAt),
+    updated_at: numberValue(row.updatedAt),
   }
 }
 
@@ -202,11 +202,21 @@ function toRunDomain(row: Record<string, unknown>): CronRun {
   return {
     id: row.id as string,
     cron_id: row.cronId as string,
-    triggered_at: row.triggeredAt as number,
-    finished_at: (row.finishedAt as number) || null,
+    triggered_at: numberValue(row.triggeredAt),
+    finished_at: nullableNumber(row.finishedAt),
     status: row.status as CronRun['status'],
     result_message_id: (row.resultMessageId as string) || null,
     summary: (row.summary as string) || null,
-    duration_ms: (row.durationMs as number) || null,
+    duration_ms: nullableNumber(row.durationMs),
   }
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isFinite(n) ? n : null
+}
+
+function numberValue(value: unknown): number {
+  return nullableNumber(value) ?? 0
 }

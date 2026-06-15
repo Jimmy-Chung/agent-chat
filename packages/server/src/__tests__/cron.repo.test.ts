@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { setupTestDb, teardownTestDb } from './db-helper'
 import * as cronRepo from '../db/repos/cron.repo'
 import * as topicRepo from '../db/repos/topic.repo'
+import { getD1 } from '../db/migrate'
 
 describe('CronRepo', () => {
   let topicId: string
@@ -229,5 +230,47 @@ describe('CronRepo', () => {
 
     const runs = await cronRepo.listCronRuns(job.id)
     expect(runs.length).toBe(2)
+  })
+
+  it('normalizes numeric cron run columns returned as strings', async () => {
+    const job = await cronRepo.createCronJob({
+      originTopicId: topicId,
+      piCronId: 'pi-cron-run-string-duration',
+      cronExpr: '0 * * * *',
+      prompt: 'String duration run',
+    })
+
+    await getD1()
+      .prepare(`
+        INSERT INTO cron_runs (
+          id,
+          cron_id,
+          triggered_at,
+          finished_at,
+          status,
+          result_message_id,
+          summary,
+          duration_ms
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        'run-string-duration',
+        job.id,
+        '1700000000000',
+        '1700000005000',
+        'success',
+        'msg-string-duration',
+        'Finished',
+        '5000',
+      )
+      .run()
+
+    const runs = await cronRepo.listCronRuns(job.id)
+    expect(runs[0]).toEqual(expect.objectContaining({
+      triggered_at: 1700000000000,
+      finished_at: 1700000005000,
+      duration_ms: 5000,
+    }))
   })
 })

@@ -3,6 +3,7 @@ import { setupTestDb, teardownTestDb } from './db-helper'
 import * as artifactRepo from '../db/repos/artifact.repo'
 import * as topicRepo from '../db/repos/topic.repo'
 import * as messageRepo from '../db/repos/message.repo'
+import { getD1 } from '../db/migrate'
 
 describe('ArtifactRepo', () => {
   let topicId: string
@@ -178,5 +179,49 @@ describe('ArtifactRepo', () => {
 
     await topicRepo.deleteTopic(topicB.id)
     expect(await artifactRepo.countActiveMessageRefs(artifact.id)).toBe(1)
+  })
+
+  it('normalizes numeric artifact columns returned as strings', async () => {
+    const topic = await topicRepo.createTopic({
+      name: 'Artifact Numeric Strings',
+      kind: 'normal',
+      agentType: 'general',
+    })
+
+    await getD1()
+      .prepare(`
+        INSERT INTO artifacts (
+          id,
+          topic_id,
+          origin_topic_id,
+          name,
+          mime,
+          size_bytes,
+          r2_key,
+          source,
+          upload_status,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        'artifact-string-numbers',
+        topic.id,
+        null,
+        'string-numbers.txt',
+        'text/plain',
+        '42',
+        'uploads/string-numbers.txt',
+        'uploaded',
+        'uploaded',
+        '1700000000000',
+      )
+      .run()
+
+    const list = await artifactRepo.listArtifactsByTopic(topic.id)
+    expect(list[0]).toEqual(expect.objectContaining({
+      size_bytes: 42,
+      created_at: 1700000000000,
+    }))
   })
 })
