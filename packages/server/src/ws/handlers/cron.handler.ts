@@ -85,13 +85,16 @@ async function syncCronsFromPi(pi: PiClient): Promise<void> {
     const existing = await cronRepo.getCronJobByPiCronId(c.cronId)
     if (existing) {
       await cronRepo.updateCronJob(existing.id, {
+        ...(originTopicId && existing.origin_topic_id !== originTopicId
+          ? { origin_topic_id: originTopicId }
+          : {}),
         status: c.status as 'active' | 'paused' | 'error',
         cron_expr: c.cronExpr,
         prompt: c.prompt,
         next_run_at: c.nextRunAt,
         tags: c.tags,
       })
-    } else if (originTopicId) {
+    } else {
       await cronRepo.createCronJob({
         originTopicId,
         piCronId: c.cronId,
@@ -101,11 +104,12 @@ async function syncCronsFromPi(pi: PiClient): Promise<void> {
         status: c.status as 'active' | 'paused' | 'error',
         nextRunAt: c.nextRunAt,
       })
-    } else {
-      logger.warn(
-        { cronId: c.cronId, originSessionId: c.originSessionId },
-        'Cron missing origin topic during sync',
-      )
+      if (!originTopicId) {
+        logger.warn(
+          { cronId: c.cronId, originSessionId: c.originSessionId },
+          'Cron synced without origin topic',
+        )
+      }
     }
   }
 }

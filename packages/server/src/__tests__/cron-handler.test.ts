@@ -251,6 +251,47 @@ describe('Cron handler — WS cron.pause/delete/edit', () => {
     expect(synced?.origin_topic_id).toBe(topic.id)
   })
 
+  it('cron.sync: keeps crons whose origin topic is missing', async () => {
+    const { registerCronHandlers } = await import('../ws/handlers/cron.handler')
+    const hub = {
+      on: vi.fn(),
+      sendToClient: vi.fn(),
+      broadcast: mockHub.broadcast,
+    }
+    registerCronHandlers(hub as any, mockPi as any, mockHub as any)
+
+    const syncHandler = await getRegisteredCronHandler(hub, 'client:cron.sync')
+
+    mockPi.rpcGlobal.mockResolvedValue([
+      {
+        cronId: 'pi-orphan-sync',
+        originSessionId: 'missing-session',
+        cronExpr: '0 * * * *',
+        prompt: 'Orphan sync',
+        status: 'active',
+        nextRunAt: 1700000000000,
+      },
+    ])
+
+    await syncHandler('socket-sync', { d: {} })
+
+    const synced = await cronRepo.getCronJobByPiCronId('pi-orphan-sync')
+    expect(synced).toBeDefined()
+    expect(synced?.origin_topic_id).toBeNull()
+
+    expect(hub.sendToClient).toHaveBeenCalledWith('socket-sync', expect.objectContaining({
+      type: 'cron.list',
+      data: expect.objectContaining({
+        crons: expect.arrayContaining([
+          expect.objectContaining({
+            cronId: 'pi-orphan-sync',
+            originTopicId: null,
+          }),
+        ]),
+      }),
+    }))
+  })
+
   it('cron.pause: updates DB status and broadcasts cron.upserted', async () => {
     const { registerCronHandlers } = await import('../ws/handlers/cron.handler')
     const hub = {

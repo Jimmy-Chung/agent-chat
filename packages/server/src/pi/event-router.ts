@@ -861,17 +861,19 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
     }
 
     case 'cron.created': {
-      const originTopicId = payload.originTopicId ?? await findTopicIdBySession(payload.originSessionId)
+      const originTopicId = payload.originTopicId ?? await findTopicIdBySession(payload.originSessionId) ?? null
       if (!originTopicId) {
         logger.warn(
           { originSessionId: payload.originSessionId },
-          'Cron created but origin session not found',
+          'Cron created without origin topic',
         )
-        return
       }
       const existing = await cronRepo.getCronJobByPiCronId(payload.cronId)
       if (existing) {
         await cronRepo.updateCronJob(existing.id, {
+          ...(originTopicId && existing.origin_topic_id !== originTopicId
+            ? { origin_topic_id: originTopicId }
+            : {}),
           status: payload.status,
           cron_expr: payload.cronExpr,
           prompt: payload.prompt,

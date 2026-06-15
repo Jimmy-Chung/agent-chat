@@ -53,10 +53,11 @@ export async function listCronJobs(): Promise<CronJob[]> {
 export async function updateCronJob(
   id: string,
   data: Partial<
-    Pick<CronJob, 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id' | 'tags'>
+    Pick<CronJob, 'origin_topic_id' | 'status' | 'next_run_at' | 'cron_expr' | 'prompt' | 'pi_cron_id' | 'tags'>
   >,
 ): Promise<CronJob | undefined> {
   const updates: Record<string, unknown> = { updatedAt: Date.now() }
+  if (data.origin_topic_id !== undefined) updates.originTopicId = data.origin_topic_id
   if (data.status !== undefined) updates.status = data.status
   if (data.next_run_at !== undefined) updates.nextRunAt = data.next_run_at
   if (data.cron_expr !== undefined) updates.cronExpr = data.cron_expr
