@@ -14,6 +14,8 @@ import {
   finalizeStreamingMessagesAfterDisconnectForTests,
   setStreamDisconnectFinalizeTimeoutForTests,
   setPiEventReorderWindowForTests,
+  setRouteEventTimeoutForTests,
+  checkStuckSessionQueues,
   routePiEvents,
   mapAgentState,
   toUserFacingAgentErrorMessage,
@@ -34,11 +36,18 @@ function createMockHub() {
 
 function createMockPiClient() {
   const emitter = new EventEmitter()
+  const lastSeqBySession = new Map<string, number>()
   return {
     on: emitter.on.bind(emitter),
     emit: emitter.emit.bind(emitter),
     rpc: vi.fn(),
-    markSeqRouted: vi.fn(),
+    markSeqRouted: vi.fn((sessionId: string, seq: number) => {
+      const current = lastSeqBySession.get(sessionId) ?? 0
+      if (seq > current) lastSeqBySession.set(sessionId, seq)
+    }),
+    getLastSeq: vi.fn((sessionId: string) => lastSeqBySession.get(sessionId) ?? 0),
+    setLastSeqForTests: (sessionId: string, seq: number) => lastSeqBySession.set(sessionId, seq),
+    reconnectSession: vi.fn(async () => {}),
   }
 }
 
@@ -675,6 +684,117 @@ describe('Event router — session.health', () => {
     expect(stored).toBeDefined()
     expect(stored!.topic_id).toBe(topic.id)
     expect(stored!.kind).toBe('choice')
+  })
+})
+
+describe('Event router — AIT-261 reconnect resilience', () => {
+  let mockHub: ReturnType<typeof createMockHub>
+  let mockPi: ReturnType<typeof createMockPiClient>
+
+  beforeEach(async () => {
+    await setupTestDb()
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    routePiEvents(mockPi as any, mockHub as any)
+  })
+
+  afterEach(() => {
+    setPiEventReorderWindowForTests(150)
+    setRouteEventTimeoutForTests(null)
+    teardownTestDb()
+  })
+
+  it('reseeds the reorder buffer at lastSeq+1 after a reconnect, without waiting for the gap-flush timeout', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Reconnect Reseed', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-reseed-1' })
+
+    // A long reorder window — if the buffer fell back to nextSeq=null + gap-flush,
+    // this event would sit unrouted until the window expires.
+    setPiEventReorderWindowForTests(10_000)
+
+    // Simulate having already routed up through seq 5 before the reconnect.
+    mockPi.setLastSeqForTests('sess-reseed-1', 5)
+    mockPi.emit('session.recreated', { sessionId: 'sess-reseed-1' })
+
+    // Adapter resumes the stream at seq 6 — not seq===1 and not message.start,
+    // so the old guess-based buffer init would have set nextSeq=null.
+    mockPi.emit('event', {
+      seq: 6,
+      sessionId: 'sess-reseed-1',
+      ts: Date.now(),
+      payload: { kind: 'agent.status', state: 'idle' },
+    } satisfies PIEvent)
+
+    await new Promise((r) => setTimeout(r, 30))
+
+    const events = mockHub.getBroadcastEvents()
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent.status',
+      data: expect.objectContaining({ topicId: topic.id, state: 'idle' }),
+    }))
+  })
+
+  it('does not stall the session queue when a single routeEvent hangs', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Hung Route Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-hang-1' })
+
+    setRouteEventTimeoutForTests(20)
+
+    let calls = 0
+    const originalListTopics = topicRepo.listTopics.bind(topicRepo)
+    const listTopicsSpy = vi.spyOn(topicRepo, 'listTopics').mockImplementation(() => {
+      calls += 1
+      if (calls === 1) return new Promise(() => {}) // never resolves — simulates a hung lookup
+      return originalListTopics()
+    })
+
+    try {
+      // First event triggers the hung routeEvent.
+      mockPi.emit('event', {
+        seq: 1,
+        sessionId: 'sess-hang-1',
+        ts: Date.now(),
+        payload: { kind: 'agent.status', state: 'idle' },
+      } satisfies PIEvent)
+
+      // Second event must still route once the first one times out, instead of
+      // being stuck behind a session queue promise that never settles.
+      mockPi.emit('event', {
+        seq: 2,
+        sessionId: 'sess-hang-1',
+        ts: Date.now(),
+        payload: { kind: 'agent.status', state: 'idle' },
+      } satisfies PIEvent)
+
+      await new Promise((r) => setTimeout(r, 100))
+
+      expect(mockPi.markSeqRouted).not.toHaveBeenCalledWith('sess-hang-1', 1)
+      expect(mockPi.markSeqRouted).toHaveBeenCalledWith('sess-hang-1', 2)
+    } finally {
+      listTopicsSpy.mockRestore()
+    }
+  })
+
+  it('checkStuckSessionQueues reconnects a session whose queue has not progressed', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Stuck Queue Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-stuck-1' })
+
+    // Enqueue an event but check for stuck queues before it has had a chance to
+    // make progress — threshold 0 treats "no progress yet" as stuck immediately.
+    mockPi.emit('event', {
+      seq: 1,
+      sessionId: 'sess-stuck-1',
+      ts: Date.now(),
+      payload: { kind: 'agent.status', state: 'idle' },
+    } satisfies PIEvent)
+
+    const stuck = checkStuckSessionQueues(mockPi as any, 0)
+
+    expect(stuck).toContain('sess-stuck-1')
+    expect(mockPi.reconnectSession).toHaveBeenCalledWith('sess-stuck-1')
+
+    // Let the originally-enqueued event finish so it doesn't leak into other tests.
+    await new Promise((r) => setTimeout(r, 50))
   })
 })
 

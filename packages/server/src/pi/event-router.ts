@@ -188,6 +188,22 @@ const currentAssistantBySession = new Map<string, string>()
 const sessionQueues = new Map<string, Promise<void>>()
 const sessionReorderBuffers = new Map<string, SessionReorderBuffer>()
 let piEventReorderWindowMs = 150
+// AIT-261 — a single routeEvent() that never settles (e.g. a hung D1 call) would
+// otherwise stall the per-session promise chain forever: every later event is
+// chained with .then() onto a promise that never resolves, so nothing for that
+// session ever routes again even though the adapter keeps sending events fine.
+// Bound each routeEvent with a timeout so the chain always advances.
+const ROUTE_EVENT_TIMEOUT_MS = 10_000
+
+export function setRouteEventTimeoutForTests(ms: number | null): void {
+  routeEventTimeoutOverrideMs = ms
+}
+
+let routeEventTimeoutOverrideMs: number | null = null
+
+function resolveRouteEventTimeoutMs(): number {
+  return routeEventTimeoutOverrideMs ?? ROUTE_EVENT_TIMEOUT_MS
+}
 
 interface SessionReorderBuffer {
   pending: Map<number, PIEvent>
@@ -450,6 +466,13 @@ export function routePiEvents(
   })
 }
 
+// AIT-261 — last time a session's queue made progress (an event finished routing,
+// successfully, with an error, or via timeout), and how many events are currently
+// enqueued but not yet drained. checkStuckSessionQueues() uses these to detect a
+// session whose queue stopped advancing despite events still arriving.
+const sessionQueueLastProgressAt = new Map<string, number>()
+const sessionQueuePendingCount = new Map<string, number>()
+
 function enqueueRouteEvent(
   pi: PiClient,
   event: PIEvent,
@@ -457,19 +480,83 @@ function enqueueRouteEvent(
   config?: AppConfig,
   options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): void {
+  sessionQueuePendingCount.set(event.sessionId, (sessionQueuePendingCount.get(event.sessionId) ?? 0) + 1)
+
   const prev = sessionQueues.get(event.sessionId) ?? Promise.resolve()
   const next = prev
     .then(async () => {
-      await routeEvent(event, broadcaster, config)
-      if (event.seq > 0 && event.payload.kind !== 'session.health') {
+      const timeoutMs = resolveRouteEventTimeoutMs()
+      let outcome: 'pending' | 'ok' | 'error' = 'pending'
+      const routePromise = routeEvent(event, broadcaster, config)
+        .then(() => {
+          outcome = 'ok'
+        })
+        .catch((err) => {
+          outcome = 'error'
+          logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
+        })
+      const timeout = new Promise<void>((resolve) => {
+        setTimeout(resolve, timeoutMs)
+      })
+      await Promise.race([routePromise, timeout])
+      if (outcome === 'pending') {
+        logger.error(
+          { sessionId: event.sessionId, kind: event.payload.kind, seq: event.seq, timeoutMs },
+          'routeEvent timed out; advancing session queue without marking seq routed',
+        )
+        return
+      }
+      if (outcome === 'ok' && event.seq > 0 && event.payload.kind !== 'session.health') {
         pi.markSeqRouted(event.sessionId, event.seq)
       }
     })
     .catch((err) => {
       logger.error({ err, kind: event.payload.kind }, 'Error routing PI event')
     })
+    .finally(() => {
+      sessionQueueLastProgressAt.set(event.sessionId, Date.now())
+      const remaining = (sessionQueuePendingCount.get(event.sessionId) ?? 1) - 1
+      if (remaining <= 0) sessionQueuePendingCount.delete(event.sessionId)
+      else sessionQueuePendingCount.set(event.sessionId, remaining)
+    })
   sessionQueues.set(event.sessionId, next)
   options?.waitUntil?.(next)
+}
+
+// AIT-261 — self-healing watchdog: if a session has events queued but the queue
+// hasn't advanced in `thresholdMs`, the per-session promise chain is presumed
+// stuck (e.g. an isolate eviction abandoned a still-pending routeEvent before its
+// own timeout fired). Drop our in-memory queue/reorder state for that session and
+// reconnect, which re-attaches from the last successfully-routed seq.
+export const STUCK_SESSION_QUEUE_THRESHOLD_MS = 30_000
+
+export function checkStuckSessionQueues(
+  pi: PiClient,
+  thresholdMs = STUCK_SESSION_QUEUE_THRESHOLD_MS,
+): string[] {
+  const now = Date.now()
+  const stuckSessionIds: string[] = []
+  for (const [sessionId, pending] of sessionQueuePendingCount) {
+    if (pending <= 0) continue
+    const lastProgress = sessionQueueLastProgressAt.get(sessionId) ?? 0
+    if (now - lastProgress <= thresholdMs) continue
+
+    stuckSessionIds.push(sessionId)
+    logger.error({ sessionId, pending, stalledForMs: now - lastProgress }, 'PI session queue stuck; reconnecting')
+
+    sessionQueues.delete(sessionId)
+    sessionQueuePendingCount.delete(sessionId)
+    sessionQueueLastProgressAt.delete(sessionId)
+    seenSeqBySession.delete(sessionId)
+    const buffer = sessionReorderBuffers.get(sessionId)
+    if (buffer?.timer) clearTimeout(buffer.timer)
+    sessionReorderBuffers.delete(sessionId)
+
+    pi.reconnectSession(sessionId).catch((err) => {
+      logger.warn({ err, sessionId }, 'Failed to reconnect stuck PI session')
+    })
+  }
+  return stuckSessionIds
 }
 
 function enqueueReorderedEvent(
@@ -481,9 +568,17 @@ function enqueueReorderedEvent(
 ): void {
   let buffer = sessionReorderBuffers.get(event.sessionId)
   if (!buffer) {
+    // AIT-261 — after a reconnect/recreate, the adapter resumes the stream right
+    // after the last seq we've successfully routed (attachSession lastSeq+1).
+    // Seed nextSeq from that deterministically instead of guessing from the
+    // first event's seq/kind — a guess of `null` here relies entirely on
+    // scheduleReorderGapFlush's setTimeout to ever unblock the buffer.
+    const lastRoutedSeq = pi.getLastSeq(event.sessionId)
     buffer = {
       pending: new Map<number, PIEvent>(),
-      nextSeq: event.seq === 1 || event.payload.kind === 'message.start' ? event.seq : null,
+      nextSeq: lastRoutedSeq > 0
+        ? lastRoutedSeq + 1
+        : (event.seq === 1 || event.payload.kind === 'message.start' ? event.seq : null),
       timer: null,
     }
     sessionReorderBuffers.set(event.sessionId, buffer)

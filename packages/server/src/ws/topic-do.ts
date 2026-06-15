@@ -16,7 +16,7 @@ import type { Artifact, TodoItem } from '@agent-chat/protocol'
 import type { AppConfig } from '../config'
 import { errorDetail } from '../error-detail'
 import { didPiAdapterConfigChange, PiClient } from '../pi/client'
-import { routePiEvents } from '../pi/event-router'
+import { routePiEvents, checkStuckSessionQueues } from '../pi/event-router'
 import { logger } from '../logger'
 import { logGatewayEvent } from '../server-logs'
 import { initDb } from '../db/migrate'
@@ -228,6 +228,10 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
 
   // ─── Alarm: keep alive while clients are connected ────────────────────────
   async alarm(): Promise<void> {
+    // AIT-261 — reconnect any PI session whose event queue stopped advancing,
+    // independent of whether any WS clients are currently connected.
+    if (this.piClient) checkStuckSessionQueues(this.piClient)
+
     const sockets = this.ctx.getWebSockets()
     if (sockets.length > 0) {
       // Send a ping to all connected clients to keep the connection alive

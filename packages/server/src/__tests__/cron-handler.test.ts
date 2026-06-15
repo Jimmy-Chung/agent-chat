@@ -23,6 +23,8 @@ function createMockPiClient() {
     emit: emitter.emit.bind(emitter),
     rpc: vi.fn(),
     rpcGlobal: vi.fn(),
+    markSeqRouted: vi.fn(),
+    getLastSeq: vi.fn(() => 0),
   }
 }
 
