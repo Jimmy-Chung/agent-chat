@@ -845,6 +845,51 @@ describe('Event router — cron.run.completed', () => {
   })
 })
 
+describe('Event router — cron.created', () => {
+  let mockHub: ReturnType<typeof createMockHub>
+  let mockPi: ReturnType<typeof createMockPiClient>
+
+  beforeEach(async () => {
+    await setupTestDb()
+    mockHub = createMockHub()
+    mockPi = createMockPiClient()
+    routePiEvents(mockPi as any, mockHub as any)
+  })
+
+  afterEach(() => {
+    teardownTestDb()
+  })
+
+  it('keeps cron.created events whose origin topic is missing', async () => {
+    const event: PIEvent = {
+      seq: 1,
+      sessionId: 'missing-session',
+      ts: Date.now(),
+      payload: {
+        kind: 'cron.created',
+        cronId: 'pi-orphan-created',
+        originSessionId: 'missing-session',
+        cronExpr: '0 * * * *',
+        prompt: 'Orphan created',
+        status: 'active',
+        nextRunAt: 1700000000000,
+      },
+    }
+
+    mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
+
+    const job = await cronRepo.getCronJobByPiCronId('pi-orphan-created')
+    expect(job).toBeDefined()
+    expect(job?.origin_topic_id).toBeNull()
+
+    const broadcast = mockHub.getBroadcastEvents().find((e) => e.type === 'cron.upserted')
+    expect(broadcast).toBeDefined()
+    expect((broadcast!.data as Record<string, unknown>).cronId).toBe('pi-orphan-created')
+    expect((broadcast!.data as Record<string, unknown>).originTopicId).toBeNull()
+  })
+})
+
 describe('Event router — message.end derives agent.status idle (AIT-137)', () => {
   let mockHub: ReturnType<typeof createMockHub>
   let mockPi: ReturnType<typeof createMockPiClient>
