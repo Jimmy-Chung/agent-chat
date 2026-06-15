@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-15 [v1.10.72] — fix: 消除空 assistant 气泡 + 注意力工具片段污染
+
+- 修复聊天里偶发的空 assistant 气泡：未完成的 `tool_input` 流式片段被持久化成无 `name` 的 `tool_use` part，`hasVisibleContent` 误判为可见、渲染器却返回 null，留下空壳气泡。现 `MessageBubble.hasVisibleContent` 对 `tool_use`（要求 `toolUseId`+`name`）/`file_diff`（要求 `path`）的可见性判定与 `MessagePartRenderer` 对齐。
+- 修复注意力节点污染：`storeToRawEvents` 跳过无 `name` 的 tool_use 片段，并丢弃空 `output` 的孤儿 `tool_result`，避免生成 `name:'工具'` 的空工具事件。
+- 补回归测试：无名 `tool_input` 片段不产事件、有 output 的孤儿结果仍兜底。
+
 ## 2026-06-15 [v1.10.71] — feat: 移动端注意力面板（S17 全屏交互）
 
 - 移动端隐藏 Inspector 里的 Attention 入口（tab 与折叠态 strip），改由话题头部的 focus 准星标记作为唯一入口进入全屏注意力面板。

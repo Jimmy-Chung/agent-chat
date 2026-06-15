@@ -1,23 +1,27 @@
 'use client'
 
-import { useRef, useState, useDeferredValue } from 'react'
-import type { Message, MessagePart, MessageReference } from '@agent-chat/protocol'
-import { ThinkingBlock } from './ThinkingBlock'
-import { ToolCard, type ToolCallInfo, type ToolResultInfo } from './ToolCard'
-import { DiffCard } from './DiffCard'
-import { InteractionCard } from './InteractionCard'
-import { UsageBadge } from './UsageBadge'
-import { CronIndicator } from './CronIndicator'
-import { MarkdownRenderer } from './MarkdownRenderer'
-import { useMessageStore } from '@/stores/message-store'
-import { formatMessageTime } from '@/lib/message-time'
-import { getWsClient } from '@/lib/ws-client'
 import {
   buildMessageReference,
   parseMessageReferences,
   referenceRoleLabel,
   summarizeReference,
 } from '@/lib/message-references'
+import { formatMessageTime } from '@/lib/message-time'
+import { getWsClient } from '@/lib/ws-client'
+import { useMessageStore } from '@/stores/message-store'
+import type {
+  Message,
+  MessagePart,
+  MessageReference,
+} from '@agent-chat/protocol'
+import { useDeferredValue, useRef, useState } from 'react'
+import { CronIndicator } from './CronIndicator'
+import { DiffCard } from './DiffCard'
+import { InteractionCard } from './InteractionCard'
+import { MarkdownRenderer } from './MarkdownRenderer'
+import { ThinkingBlock } from './ThinkingBlock'
+import { type ToolCallInfo, ToolCard, type ToolResultInfo } from './ToolCard'
+import { UsageBadge } from './UsageBadge'
 
 interface MessageBubbleProps {
   message: Message
@@ -52,20 +56,33 @@ export function MessageBubble({
   const longPressTimerRef = useRef<number | null>(null)
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
-  const rawStreamingText = useMessageStore(
-    (s) => (message.status === 'streaming' ? s.streamingText[message.id] ?? '' : ''),
+  const rawStreamingText = useMessageStore((s) =>
+    message.status === 'streaming' ? (s.streamingText[message.id] ?? '') : '',
   )
   const streamingText = useDeferredValue(rawStreamingText)
   const hasPersistedTextPart = parts.some((part) => {
     if (part.kind !== 'text') return false
     const parsed = safeParseContent<unknown>(part.content_json)
-    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    const text =
+      typeof parsed === 'string'
+        ? parsed
+        : ((parsed as Record<string, unknown>)?.content as string | undefined)
     return Boolean(text?.trim())
   })
-  const visiblePartCount = parts.filter((part) => hasVisibleContent(part, isUser)).length
-  const hasStreamingContent = message.status === 'streaming' && isLast && !isUser && !hasPersistedTextPart && streamingText.trim().length > 0
+  const visiblePartCount = parts.filter((part) =>
+    hasVisibleContent(part, isUser),
+  ).length
+  const hasStreamingContent =
+    message.status === 'streaming' &&
+    isLast &&
+    !isUser &&
+    !hasPersistedTextPart &&
+    streamingText.trim().length > 0
   const shouldShowBubble = !isUser
-    ? visiblePartCount > 0 || hasStreamingContent || !!approval || !!cronTriggered
+    ? visiblePartCount > 0 ||
+      hasStreamingContent ||
+      !!approval ||
+      !!cronTriggered
     : visiblePartCount > 0
   const time = formatMessageTime(message.started_at)
 
@@ -74,13 +91,19 @@ export function MessageBubble({
   }
 
   const isStreaming = hasStreamingContent
-  const showInlineStreamingPulse = message.status === 'streaming' && isLast && !isUser && !hasStreamingContent && visiblePartCount > 0
+  const showInlineStreamingPulse =
+    message.status === 'streaming' &&
+    isLast &&
+    !isUser &&
+    !hasStreamingContent &&
+    visiblePartCount > 0
   const hasVisibleBody = visiblePartCount > 0 || hasStreamingContent
   const showTimestamp = hasVisibleBody && (hovered || touchTimeVisible)
   const showRetryDot = isUser && message.status === 'needs_retry'
   const showRetryLoading = isUser && message.status === 'retrying'
   const ownReferences = parseMessageReferences(parts)
-  const visibleReferences = ownReferences.length > 0 ? ownReferences : inheritedReferences
+  const visibleReferences =
+    ownReferences.length > 0 ? ownReferences : inheritedReferences
   const quoteReference = buildMessageReference(message, parts)
 
   const handleRetry = () => {
@@ -95,21 +118,30 @@ export function MessageBubble({
 
   const handleQuote = () => {
     if (!quoteReference) return
-    useMessageStore.getState().addComposerReference(message.topic_id, quoteReference)
+    useMessageStore
+      .getState()
+      .addComposerReference(message.topic_id, quoteReference)
   }
 
   // System messages: inline purple text, no bubble
   if (isSystem) {
     return (
       <div className="flex justify-center px-4 py-1">
-        <div className="role-bubble-system text-xs">{parts.map((p) => {
-          if (p.kind === 'text') {
-            const parsed = safeParseContent<unknown>(p.content_json)
-            const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
-            return text ? <span key={p.id}>{text}</span> : null
-          }
-          return null
-        })}</div>
+        <div className="role-bubble-system text-xs">
+          {parts.map((p) => {
+            if (p.kind === 'text') {
+              const parsed = safeParseContent<unknown>(p.content_json)
+              const text =
+                typeof parsed === 'string'
+                  ? parsed
+                  : ((parsed as Record<string, unknown>)?.content as
+                      | string
+                      | undefined)
+              return text ? <span key={p.id}>{text}</span> : null
+            }
+            return null
+          })}
+        </div>
       </div>
     )
   }
@@ -144,7 +176,9 @@ export function MessageBubble({
         setTouchTimeVisible(false)
       }}
     >
-      <div className={`flex max-w-[80%] min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      <div
+        className={`flex max-w-[80%] min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'}`}
+      >
         {/* Cron indicator */}
         {cronTriggered && !isUser && (
           <CronIndicator
@@ -159,7 +193,9 @@ export function MessageBubble({
           <InteractionCard
             interactionId={approval.interactionId}
             topicId={message.topic_id}
-            interactionKind={(approval.interactionKind as 'approval' | 'choice') ?? 'approval'}
+            interactionKind={
+              (approval.interactionKind as 'approval' | 'choice') ?? 'approval'
+            }
             prompt={approval.prompt}
             options={approval.options}
             status={approval.status}
@@ -169,7 +205,9 @@ export function MessageBubble({
 
         {/* Bubble */}
         {hasVisibleBody && (
-          <div className={`message-bubble-shell ${isUser ? 'is-user' : 'is-assistant'}`}>
+          <div
+            className={`message-bubble-shell ${isUser ? 'is-user' : 'is-assistant'}`}
+          >
             {quoteReference && hovered && (
               <button
                 type="button"
@@ -196,10 +234,14 @@ export function MessageBubble({
             {showRetryLoading && <span className="message-retry-loading" />}
             <div
               className={isUser ? 'role-bubble-user' : 'role-bubble-assistant'}
-              style={!isUser && message.stop_reason === 'error' ? {
-                border: '1px solid rgba(255,69,58,0.40)',
-                background: 'rgba(255,69,58,0.08)',
-              } : undefined}
+              style={
+                !isUser && message.stop_reason === 'error'
+                  ? {
+                      border: '1px solid rgba(255,69,58,0.40)',
+                      background: 'rgba(255,69,58,0.08)',
+                    }
+                  : undefined
+              }
             >
               {visibleReferences.length > 0 && (
                 <MessageReferences references={visibleReferences} />
@@ -221,15 +263,11 @@ export function MessageBubble({
               )}
 
               {/* Streaming indicator */}
-              {showInlineStreamingPulse && (
-                <span className="stream-pulse" />
-              )}
+              {showInlineStreamingPulse && <span className="stream-pulse" />}
             </div>
 
             {showTimestamp && (
-              <span className="message-edge-timestamp">
-                {time}
-              </span>
+              <span className="message-edge-timestamp">{time}</span>
             )}
             {usage && !isUser && hovered && (
               <div className="pointer-events-none absolute -bottom-6 left-0">
@@ -242,7 +280,6 @@ export function MessageBubble({
             )}
           </div>
         )}
-
       </div>
     </div>
   )
@@ -255,7 +292,9 @@ function MessageReferences({ references }: { references: MessageReference[] }) {
         <button
           key={`${ref.messageId}-${index}`}
           type="button"
-          onClick={() => useMessageStore.getState().focusMessage(ref.topicId, ref.messageId)}
+          onClick={() =>
+            useMessageStore.getState().focusMessage(ref.topicId, ref.messageId)
+          }
           className="grid min-w-0 cursor-pointer rounded-lg px-2.5 py-2 text-left"
           style={{
             background: 'rgba(10,132,255,0.10)',
@@ -264,10 +303,16 @@ function MessageReferences({ references }: { references: MessageReference[] }) {
           }}
           title="跳转到引用消息"
         >
-          <span className="mb-1 text-[10px] font-semibold" style={{ color: '#7CB6FF', letterSpacing: '0.04em' }}>
+          <span
+            className="mb-1 text-[10px] font-semibold"
+            style={{ color: '#7CB6FF', letterSpacing: '0.04em' }}
+          >
             引用 {referenceRoleLabel(ref.role)}
           </span>
-          <span className="min-w-0 text-xs leading-5" style={{ overflowWrap: 'anywhere' }}>
+          <span
+            className="min-w-0 text-xs leading-5"
+            style={{ overflowWrap: 'anywhere' }}
+          >
             {summarizeReference(ref)}
           </span>
         </button>
@@ -287,14 +332,20 @@ function MessagePartRenderer({
 }) {
   if (part.kind === 'text') {
     const parsed = safeParseContent<unknown>(part.content_json)
-    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    const text =
+      typeof parsed === 'string'
+        ? parsed
+        : ((parsed as Record<string, unknown>)?.content as string | undefined)
     if (!text?.trim()) return null
     return <MarkdownRenderer content={text} />
   }
 
   if (part.kind === 'thinking') {
     const parsed = safeParseContent<unknown>(part.content_json)
-    const content = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    const content =
+      typeof parsed === 'string'
+        ? parsed
+        : ((parsed as Record<string, unknown>)?.content as string | undefined)
     if (!content?.trim()) return null
     return <ThinkingBlock content={content} />
   }
@@ -303,13 +354,7 @@ function MessagePartRenderer({
     const call = safeParseContent<ToolCallInfo>(part.content_json)
     if (!call?.toolUseId || !call.name) return null
     const result = toolResults[call.toolUseId]
-    return (
-      <ToolCard
-        call={call}
-        result={result}
-        isRunning={!result}
-      />
-    )
+    return <ToolCard call={call} result={result} isRunning={!result} />
   }
 
   if (part.kind === 'tool_result') {
@@ -317,7 +362,11 @@ function MessagePartRenderer({
   }
 
   if (part.kind === 'file_diff' && !isUser) {
-    const diff = safeParseContent<{ path: string; before: string; after: string }>(part.content_json)
+    const diff = safeParseContent<{
+      path: string
+      before: string
+      after: string
+    }>(part.content_json)
     if (!diff?.path) return null
     return <DiffCard path={diff.path} before={diff.before} after={diff.after} />
   }
@@ -328,22 +377,34 @@ function MessagePartRenderer({
 function hasVisibleContent(part: MessagePart, isUser: boolean): boolean {
   if (part.kind === 'text') {
     const parsed = safeParseContent<unknown>(part.content_json)
-    const text = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    const text =
+      typeof parsed === 'string'
+        ? parsed
+        : ((parsed as Record<string, unknown>)?.content as string | undefined)
     return Boolean(text?.trim())
   }
 
   if (part.kind === 'thinking') {
     const parsed = safeParseContent<unknown>(part.content_json)
-    const content = typeof parsed === 'string' ? parsed : (parsed as Record<string, unknown>)?.content as string | undefined
+    const content =
+      typeof parsed === 'string'
+        ? parsed
+        : ((parsed as Record<string, unknown>)?.content as string | undefined)
     return Boolean(content?.trim())
   }
 
   if (part.kind === 'tool_use') {
-    return true
+    // 必须与 MessagePartRenderer 的 tool_use 校验一致：未完成的 tool_input
+    // 流式片段（{kind:'tool_input',toolUseId,partial}）没有 name，渲染器会返回
+    // null。若这里仍当作可见，会渲染出一个空气泡（BUG：空 assistant 气泡）。
+    const call = safeParseContent<ToolCallInfo>(part.content_json)
+    return Boolean(call?.toolUseId && call.name)
   }
 
   if (part.kind === 'file_diff') {
-    return !isUser
+    if (isUser) return false
+    const diff = safeParseContent<{ path?: string }>(part.content_json)
+    return Boolean(diff?.path)
   }
 
   return false
@@ -359,7 +420,17 @@ function safeParseContent<T>(json: string): T | null {
 
 function QuoteIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M3 21c3 0 7-1 7-8V5H4v8h3c0 3-1 5-4 5v3z" />
       <path d="M14 21c3 0 7-1 7-8V5h-6v8h3c0 3-1 5-4 5v3z" />
     </svg>

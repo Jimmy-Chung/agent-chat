@@ -57,6 +57,13 @@ function safeParse<T>(json: string): T | null {
   }
 }
 
+/** tool_result 的 output 是否承载有效信息（空串/空白/null → 无信息）。 */
+function toolOutputHasContent(output: unknown): boolean {
+  if (output == null) return false
+  if (typeof output === 'string') return output.trim().length > 0
+  return true
+}
+
 /** text / thinking part 的内容可能是裸字符串或 { content }。 */
 function parseTextLike(json: string): string {
   const parsed = safeParse<unknown>(json)
@@ -78,19 +85,36 @@ export function classifyUserKind(text: string): UserMessageKind {
   const t = text.trim()
   if (!t) return 'instruction'
   // 证据：粘贴的日志 / 报错 / 大段输出
-  if (/(error|exception|stack trace|报错|日志|^\s*at\s)/im.test(t) && t.length > 40) return 'evidence'
+  if (
+    /(error|exception|stack trace|报错|日志|^\s*at\s)/im.test(t) &&
+    t.length > 40
+  )
+    return 'evidence'
   // 选择 / 低信号确认
-  if (/^(ok|okay|好的?|可以|是|否|yes|no|继续|对|嗯+|行|\d+|[a-d])$/i.test(t)) return 'choice'
+  if (/^(ok|okay|好的?|可以|是|否|yes|no|继续|对|嗯+|行|\d+|[a-d])$/i.test(t))
+    return 'choice'
   // 提问
-  if (/[?？]\s*$/.test(t) || /(为什么|为啥|怎么|如何|是不是|能不能|可不可以|吗|what|why|how|whether)/i.test(t))
+  if (
+    /[?？]\s*$/.test(t) ||
+    /(为什么|为啥|怎么|如何|是不是|能不能|可不可以|吗|what|why|how|whether)/i.test(
+      t,
+    )
+  )
     return 'question'
   // 提议
-  if (/(建议|不如|我觉得|我想|应该|要不|可以考虑|let's|let us|propose|suggest)/i.test(t)) return 'proposal'
+  if (
+    /(建议|不如|我觉得|我想|应该|要不|可以考虑|let's|let us|propose|suggest)/i.test(
+      t,
+    )
+  )
+    return 'proposal'
   return 'instruction'
 }
 
 /** 把 plan 文本快照拆成条目（按行，去掉常见 bullet / 序号前缀）。 */
-export function planTextToItems(plan: string): Array<{ id: string; text: string; status: string; depth: number }> {
+export function planTextToItems(
+  plan: string,
+): Array<{ id: string; text: string; status: string; depth: number }> {
   return plan
     .split('\n')
     .map((line) => {
@@ -99,7 +123,12 @@ export function planTextToItems(plan: string): Array<{ id: string; text: string;
       return { text, depth }
     })
     .filter((x) => x.text.length > 0)
-    .map((x, i) => ({ id: `plan_${i + 1}`, text: x.text, status: 'pending', depth: x.depth }))
+    .map((x, i) => ({
+      id: `plan_${i + 1}`,
+      text: x.text,
+      status: 'pending',
+      depth: x.depth,
+    }))
 }
 
 /** Message.role → RawEvent.role：只有真实用户消息记为 'user'；system/cron 不记为 user/assistant。 */
@@ -113,15 +142,21 @@ function mapRole(role: Message['role']): 'user' | 'assistant' | undefined {
  * 目标锚点 = topic 第一条 role='user' 消息的文本。
  * normalized_goal 首版直接取原文（LLM 归一化在 S2/S3）。
  */
-export function extractGoalAnchor(input: StoreToRawEventsInput): GoalAnchor | null {
+export function extractGoalAnchor(
+  input: StoreToRawEventsInput,
+): GoalAnchor | null {
   const sorted = [...input.messages].sort(sortMessages)
   for (const msg of sorted) {
     if (msg.role !== 'user') continue
     const parts = (input.partsByMessage[msg.id] ?? [])
       .filter((p) => p.kind === 'text')
       .sort((a, b) => a.ordinal - b.ordinal)
-    const text = parts.map((p) => parseTextLike(p.content_json)).join('\n').trim()
-    if (text) return { raw_query: text, normalized_goal: text, ts: msg.started_at }
+    const text = parts
+      .map((p) => parseTextLike(p.content_json))
+      .join('\n')
+      .trim()
+    if (text)
+      return { raw_query: text, normalized_goal: text, ts: msg.started_at }
   }
   return null
 }
@@ -156,7 +191,9 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
     maxTs = Math.max(maxTs, baseTs, msg.finished_at ?? 0)
     messageTsById.set(msg.id, baseTs)
     messageTurnById.set(msg.id, msg.turn_id)
-    const parts = [...(input.partsByMessage[msg.id] ?? [])].sort((a, b) => a.ordinal - b.ordinal)
+    const parts = [...(input.partsByMessage[msg.id] ?? [])].sort(
+      (a, b) => a.ordinal - b.ordinal,
+    )
 
     for (const part of parts) {
       // 同一消息内用 ordinal 做亚序，保证 ts 单调、turn 内顺序稳定
@@ -190,6 +227,10 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
         })
       } else if (part.kind === 'tool_use') {
         const call = safeParse<ToolCallContent>(part.content_json)
+        // 跳过未完成的 tool_input 流式片段（{kind:'tool_input',toolUseId,partial}）：
+        // 它没有 name/input，只是残留片段，落进来会变成 name:'工具' 的空工具事件，
+        // 污染注意力节点生成（与聊天里的空气泡同源）。
+        if (!call?.name) continue
         const evt: RawEvent = {
           id: part.id,
           ts,
@@ -197,19 +238,26 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
           role,
           message_id: msg.id,
           turn_id: msg.turn_id ?? undefined,
-          payload: { name: call?.name ?? '工具', input: call?.input, toolUseId: call?.toolUseId },
+          payload: {
+            name: call.name,
+            input: call.input,
+            toolUseId: call.toolUseId,
+          },
         }
         events.push(evt)
-        if (call?.toolUseId) toolUseById.set(call.toolUseId, evt)
+        if (call.toolUseId) toolUseById.set(call.toolUseId, evt)
       } else if (part.kind === 'tool_result') {
         // 不单独成事件：output 归并到对应 tool_use 事件（按 toolUseId 配对）
         const res = safeParse<ToolResultContent>(part.content_json)
-        const target = res?.toolUseId ? toolUseById.get(res.toolUseId) : undefined
+        const target = res?.toolUseId
+          ? toolUseById.get(res.toolUseId)
+          : undefined
         if (target) {
           target.payload.output = res?.output
           target.payload.isError = res?.isError ?? false
-        } else if (res) {
-          // 孤儿结果（无匹配 tool_use）：补一个工具事件承载，避免丢信息
+        } else if (res && (res.isError || toolOutputHasContent(res.output))) {
+          // 孤儿结果（无匹配 tool_use）：补一个工具事件承载，避免丢信息。
+          // 但空 output 且非错误的孤儿（多半来自被跳过的 tool_input 片段）无信息可承载，丢弃。
           events.push({
             id: part.id,
             ts,
@@ -217,7 +265,12 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
             role,
             message_id: msg.id,
             turn_id: msg.turn_id ?? undefined,
-            payload: { name: '(result)', output: res.output, isError: res.isError ?? false, toolUseId: res.toolUseId },
+            payload: {
+              name: '(result)',
+              output: res.output,
+              isError: res.isError ?? false,
+              toolUseId: res.toolUseId,
+            },
           })
         }
       } else if (part.kind === 'file_diff') {
@@ -238,9 +291,16 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
   const snapshotTs = maxTs || Date.now()
 
   for (const inter of input.interactions ?? []) {
-    const baseTs = (inter.messageId ? messageTsById.get(inter.messageId) : undefined) ?? snapshotTs
-    const turnId = inter.messageId ? messageTurnById.get(inter.messageId) ?? undefined : undefined
-    const options = inter.options?.map((option) => compactText(option, 160)).filter(Boolean) ?? []
+    const baseTs =
+      (inter.messageId ? messageTsById.get(inter.messageId) : undefined) ??
+      snapshotTs
+    const turnId = inter.messageId
+      ? (messageTurnById.get(inter.messageId) ?? undefined)
+      : undefined
+    const options =
+      inter.options
+        ?.map((option) => compactText(option, 160))
+        .filter(Boolean) ?? []
     events.push({
       id: `interaction_request_${inter.interactionId}`,
       ts: baseTs + 0.25,
@@ -252,7 +312,9 @@ export function storeToRawEvents(input: StoreToRawEventsInput): RawEvent[] {
         text: [
           `需要用户${inter.interactionKind === 'choice' ? '选择' : '确认'}：${compactText(inter.prompt, 300)}`,
           options.length ? `候选项：${options.join('；')}` : '',
-        ].filter(Boolean).join('\n'),
+        ]
+          .filter(Boolean)
+          .join('\n'),
         assistant_action: interactionAction(inter.interactionKind),
         interaction_id: inter.interactionId,
         interaction_kind: inter.interactionKind,
