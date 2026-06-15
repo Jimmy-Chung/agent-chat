@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-15 [v1.10.76] — fix: PI 事件路由 session 队列重连后永久卡死 (AIT-261)
+
+- `enqueueRouteEvent` 增加单事件超时（10s）+ 故障隔离：单次 `routeEvent` 卡住不再永久阻塞该 session 的事件队列。
+- 重连/重建 session 后，reorder buffer 的 `nextSeq` 改为按 `getLastSeq(sessionId) + 1` 确定性重建，不再依赖"首个事件是否 seq===1"的猜测和不可靠的 gap-flush 定时器。
+- 新增自愈巡检 `checkStuckSessionQueues`，挂载到话题心跳 `alarm()`：检测 session 事件队列 >30s 未推进时自动重连重建。
+
 ## 2026-06-15 [v1.10.75] — fix: 产物与定时任务列表 WS 数字字段归一
 
 - 修复 D1/SQLite numeric 字段以字符串返回时，`cron.list` 的运行历史 `duration` 被前端 Zod 拒收导致定时任务列表为空的问题。
