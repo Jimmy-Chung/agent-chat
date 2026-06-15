@@ -142,7 +142,7 @@ export function registerArtifactHandlers(
       }
     } else {
       const artifacts = await artifactRepo.listArtifactsByTopic(data.topicId)
-      if (artifacts.length > 0 && hub.sendToClient) {
+      if (hub.sendToClient) {
         hub.sendToClient(conn, {
           type: 'artifact.list',
           data: { artifacts: artifacts.map(artifactToPayload) },

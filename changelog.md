@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-15 [v1.10.75] — fix: 产物与定时任务列表 WS 数字字段归一
+
+- 修复 D1/SQLite numeric 字段以字符串返回时，`cron.list` 的运行历史 `duration` 被前端 Zod 拒收导致定时任务列表为空的问题。
+- 修复 `artifact.list` 中 `size_bytes` / `created_at` 类型不稳定导致产物列表帧解析失败的问题。
+- 切换到无产物话题时也下发空 `artifact.list`，确保前端产物状态及时清空。
+
 ## 2026-06-15 [v1.10.73] — fix: cron 无主结果认领与执行历史
 
 - `cron.run.completed` 即使没有对应 `cron.triggered` 预记录，也会补建 run history，并持久化 summary / duration，避免 adapter 直接投结果时丢失执行记录。

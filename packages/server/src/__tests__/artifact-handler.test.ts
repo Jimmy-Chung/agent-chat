@@ -143,7 +143,7 @@ describe('Artifact handler — topic.select artifact list', () => {
     expect(sent[0].data.artifacts[0].download_url).toBeUndefined()
   })
 
-  it('returns nothing for topic with no artifacts', async () => {
+  it('returns an empty list for topic with no artifacts', async () => {
     const topic = await topicRepo.createTopic({ name: 'Empty', kind: 'normal', agentType: 'general' })
 
     const selectCall = mockHub.on.mock.calls.find((c: string[]) => c[0] === 'client:topic.select')
@@ -151,6 +151,9 @@ describe('Artifact handler — topic.select artifact list', () => {
 
     await selectHandler({ ws: 'mock-ws' }, { d: { topicId: topic.id } })
 
-    expect(mockHub.getSentToClient()).toHaveLength(0)
+    const sent = mockHub.getSentToClient()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].type).toBe('artifact.list')
+    expect(sent[0].data.artifacts).toEqual([])
   })
 })

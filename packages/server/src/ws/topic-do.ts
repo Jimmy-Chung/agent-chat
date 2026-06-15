@@ -631,9 +631,7 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
             this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => this.artifactToPayload(a)) })
           } else {
             const artifacts = await artifactRepo.listArtifactsByTopic(d.topicId)
-            if (artifacts.length > 0) {
-              this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => this.artifactToPayload(a)) })
-            }
+            this.sendTo(ws, 'artifact.list', { artifacts: artifacts.map(a => this.artifactToPayload(a)) })
           }
         } catch (err) {
           logger.warn({ err, topicId: d.topicId }, 'Failed to load artifacts on topic.select')

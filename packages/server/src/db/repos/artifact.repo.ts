@@ -177,13 +177,23 @@ function toDomain(row: Record<string, unknown>): Artifact {
     origin_topic_id: (row.originTopicId as string) || null,
     name: row.name as string,
     mime: (row.mime as string) || null,
-    size_bytes: (row.sizeBytes as number) || null,
+    size_bytes: nullableNumber(row.sizeBytes),
     r2_key: row.r2Key as string,
     source: row.source as Artifact['source'],
     upload_status: ((row.uploadStatus as Artifact['upload_status'] | undefined) ?? 'uploaded'),
     failure_code: (row.failureCode as string) || null,
     failure_message: (row.failureMessage as string) || null,
-    created_at: row.createdAt as number,
+    created_at: numberValue(row.createdAt),
     metadata_json: (row.metadataJson as string) || null,
   }
+}
+
+function nullableNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isFinite(n) ? n : null
+}
+
+function numberValue(value: unknown): number {
+  return nullableNumber(value) ?? 0
 }
