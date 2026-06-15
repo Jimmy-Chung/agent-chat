@@ -231,7 +231,7 @@ export function AttentionSopExportModal({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+      className="fixed inset-0 z-[70] flex items-stretch justify-center px-0 md:items-center md:px-4"
       style={{
         background: 'rgba(3,5,10,.58)',
         backdropFilter: 'blur(5px)',
@@ -240,11 +240,13 @@ export function AttentionSopExportModal({
       onClick={onClose}
     >
       <div
-        className="flex h-[86vh] max-h-[86vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[14px]"
+        className="flex h-full w-full flex-col overflow-hidden rounded-none md:h-[86vh] md:max-h-[86vh] md:max-w-[980px] md:rounded-[14px]"
         style={{
           background: 'var(--bg-0)',
           border: '1px solid var(--hairline-2)',
           boxShadow: '0 24px 80px rgba(0,0,0,.62)',
+          paddingTop: 'var(--safe-top)',
+          paddingBottom: 'var(--safe-bottom)',
         }}
         onClick={(event) => event.stopPropagation()}
       >
