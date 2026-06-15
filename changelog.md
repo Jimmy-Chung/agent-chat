@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-15 [v1.10.71] — feat: 移动端注意力面板（S17 全屏交互）
+
+- 移动端隐藏 Inspector 里的 Attention 入口（tab 与折叠态 strip），改由话题头部的 focus 准星标记作为唯一入口进入全屏注意力面板。
+- 全尺寸流程图占满手机屏：支持双指缩放、右侧 +/百分比/− 缩放控件、右下角 minimap 缩略图（视窗框跟随）。
+- 节点详情、更新目标、导出 SOP 在移动端统一改为盖在流程图上的全屏浮层；点节点弹出对齐 PC 右栏的完整信息，Focus 后自动收起面板回到聊天。
+- AttentionDrawer 头部对齐设计稿：倒数第二个按钮为「导出 SOP」图标、末位为收起。桌面端（≥lg）行为保持不变。
+
 ## 2026-06-14 [v1.10.70] — fix: Codex stale thread session recovery
 
 - 修复旧话题恢复时 Codex thread 已失效导致 `[codex_error] thread not found` 后仍继续使用旧 `pi_session_id` 的问题。

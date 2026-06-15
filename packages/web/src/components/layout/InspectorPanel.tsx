@@ -1,18 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useTopicStore } from '@/stores/topic-store'
-import { useArtifactStore } from '@/stores/artifact-store'
-import { useMessageStore } from '@/stores/message-store'
-import { useUiStore } from '@/stores/ui-store'
-import { useCronStore } from '@/stores/cron-store'
-import { getWsClient } from '@/lib/ws-client'
-import { useAttentionTrace, type AttentionTrace } from '@/lib/attention'
-import { buildMindMapProjection, type MindMapNode } from '@/lib/attention/mind-map-projector'
-import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
-import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
-import { AttentionSopExportModal } from '@/components/attention/AttentionSopExportModal'
 import { ArtifactAccessButton } from '@/components/artifacts/ArtifactAccess'
+import { AttentionSopExportModal } from '@/components/attention/AttentionSopExportModal'
+import { AttentionXPanel } from '@/components/attention/AttentionXPanel'
+import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
+import { type AttentionTrace, useAttentionTrace } from '@/lib/attention'
+import {
+  type MindMapNode,
+  buildMindMapProjection,
+} from '@/lib/attention/mind-map-projector'
+import { getWsClient } from '@/lib/ws-client'
+import { useArtifactStore } from '@/stores/artifact-store'
+import { useCronStore } from '@/stores/cron-store'
+import { useMessageStore } from '@/stores/message-store'
+import { useTopicStore } from '@/stores/topic-store'
+import { useUiStore } from '@/stores/ui-store'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const EMPTY_ARTIFACTS: import('@agent-chat/protocol').Artifact[] = []
 
@@ -25,25 +28,40 @@ export function InspectorPanel() {
   const attentionCloseTimerRef = useRef<number | null>(null)
   const activeTopicId = useTopicStore((s) => s.activeTopicId)
   const artifacts = useArtifactStore((s) =>
-    activeTopicId ? (s.byTopic[activeTopicId] ?? EMPTY_ARTIFACTS) : EMPTY_ARTIFACTS,
+    activeTopicId
+      ? (s.byTopic[activeTopicId] ?? EMPTY_ARTIFACTS)
+      : EMPTY_ARTIFACTS,
   )
   const todosByTopic = useMessageStore((s) => s.todosByTopic)
   const planByTopic = useMessageStore((s) => s.planByTopic)
   const toggleInspector = useUiStore((s) => s.toggleInspector)
   const inspectorCollapsed = useUiStore((s) => s.inspectorCollapsed)
+  const isMobile = useUiStore((s) => s.isMobile)
 
   const todos = activeTopicId ? (todosByTopic[activeTopicId] ?? []) : []
   const plan = activeTopicId ? planByTopic[activeTopicId] : null
   const allCrons = useCronStore((s) => s.crons)
   const crons = useMemo(
-    () => (activeTopicId ? allCrons.filter((cron) => cron.originTopicId === activeTopicId) : []),
+    () =>
+      activeTopicId
+        ? allCrons.filter((cron) => cron.originTopicId === activeTopicId)
+        : [],
     [activeTopicId, allCrons],
   )
-  useEffect(() => () => {
-    if (attentionCloseTimerRef.current != null) {
-      window.clearTimeout(attentionCloseTimerRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (attentionCloseTimerRef.current != null) {
+        window.clearTimeout(attentionCloseTimerRef.current)
+      }
+    },
+    [],
+  )
+
+  // 移动端隐藏 Attention 入口（改由话题头部的 focus 标记进入全屏面板），
+  // 避免停留在已隐藏的 tab 上。
+  useEffect(() => {
+    if (isMobile && tab === 'attention') setTab('todo')
+  }, [isMobile, tab])
 
   const openAttentionOverlay = () => {
     if (attentionCloseTimerRef.current != null) {
@@ -76,17 +94,96 @@ export function InspectorPanel() {
           backdropFilter: 'blur(40px) saturate(180%)',
         }}
       >
-        <StripIcon label="Attention" active={tab === 'attention'} onClick={() => { setTab('attention'); toggleInspector?.() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
+        {!isMobile && (
+          <StripIcon
+            label="Attention"
+            active={tab === 'attention'}
+            onClick={() => {
+              setTab('attention')
+              toggleInspector?.()
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M3 12h4M17 12h4M12 3v4M12 17v4" />
+            </svg>
+          </StripIcon>
+        )}
+        <StripIcon
+          label="Todo"
+          active={tab === 'todo'}
+          onClick={() => {
+            setTab('todo')
+            toggleInspector?.()
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 11 12 14 22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
         </StripIcon>
-        <StripIcon label="Todo" active={tab === 'todo'} onClick={() => { setTab('todo'); toggleInspector?.() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+        <StripIcon
+          label="Artifacts"
+          active={tab === 'artifacts'}
+          onClick={() => {
+            setTab('artifacts')
+            toggleInspector?.()
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 7l9-4 9 4v10l-9 4-9-4z" />
+            <path d="M3 7l9 4 9-4" />
+            <path d="M12 11v10" />
+          </svg>
         </StripIcon>
-        <StripIcon label="Artifacts" active={tab === 'artifacts'} onClick={() => { setTab('artifacts'); toggleInspector?.() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4" /><path d="M12 11v10" /></svg>
-        </StripIcon>
-        <StripIcon label="Cron" active={tab === 'cron'} onClick={() => { setTab('cron'); toggleInspector?.() }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="7" /><path d="M12 9v4l2.5 2" /></svg>
+        <StripIcon
+          label="Cron"
+          active={tab === 'cron'}
+          onClick={() => {
+            setTab('cron')
+            toggleInspector?.()
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="13" r="7" />
+            <path d="M12 9v4l2.5 2" />
+          </svg>
         </StripIcon>
       </div>
     )
@@ -106,20 +203,86 @@ export function InspectorPanel() {
         className="flex items-center px-1.5"
         style={{ height: 44, borderBottom: '1px solid var(--hairline)' }}
       >
-        <TabBtn active={tab === 'attention'} onClick={() => setTab('attention')}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M3 12h4M17 12h4M12 3v4M12 17v4" /></svg>
-          Attention
-        </TabBtn>
-        <TabBtn active={tab === 'todo'} onClick={() => setTab('todo')} count={todos.length}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+        {!isMobile && (
+          <TabBtn
+            active={tab === 'attention'}
+            onClick={() => setTab('attention')}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M3 12h4M17 12h4M12 3v4M12 17v4" />
+            </svg>
+            Attention
+          </TabBtn>
+        )}
+        <TabBtn
+          active={tab === 'todo'}
+          onClick={() => setTab('todo')}
+          count={todos.length}
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 11 12 14 22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
           Todo
         </TabBtn>
-        <TabBtn active={tab === 'artifacts'} onClick={() => setTab('artifacts')} count={artifacts.length}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z" /><path d="M3 7l9 4 9-4" /><path d="M12 11v10" /></svg>
+        <TabBtn
+          active={tab === 'artifacts'}
+          onClick={() => setTab('artifacts')}
+          count={artifacts.length}
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 7l9-4 9 4v10l-9 4-9-4z" />
+            <path d="M3 7l9 4 9-4" />
+            <path d="M12 11v10" />
+          </svg>
           Artifacts
         </TabBtn>
-        <TabBtn active={tab === 'cron'} onClick={() => setTab('cron')} count={crons.length}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="7" /><path d="M12 9v4l2.5 2" /></svg>
+        <TabBtn
+          active={tab === 'cron'}
+          onClick={() => setTab('cron')}
+          count={crons.length}
+        >
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="13" r="7" />
+            <path d="M12 9v4l2.5 2" />
+          </svg>
           Cron
         </TabBtn>
         <button
@@ -134,7 +297,18 @@ export function InspectorPanel() {
           style={{ color: 'var(--fg-dim)' }}
           title="折叠"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
         </button>
       </div>
 
@@ -175,27 +349,47 @@ function AttentionInspectorAttention({
     <>
       <AttentionInspectorTab attention={attention} onExpand={onExpand} />
       {expanded && (
-        <AttentionInspectorOverlay topicId={topicId} attention={attention} closing={closing} onClose={onClose} />
+        <AttentionInspectorOverlay
+          topicId={topicId}
+          attention={attention}
+          closing={closing}
+          onClose={onClose}
+        />
       )}
     </>
   )
 }
 
-export function AttentionInspectorTab({ attention, onExpand }: { attention: AttentionTrace; onExpand: () => void }) {
-  const { nodes, goalAnchor, planItems, llmUnavailableReason, isLoadingSnapshot } = attention
-  const projection = useMemo(() => buildMindMapProjection(nodes, goalAnchor, planItems), [nodes, goalAnchor, planItems])
+export function AttentionInspectorTab({
+  attention,
+  onExpand,
+}: { attention: AttentionTrace; onExpand: () => void }) {
+  const {
+    nodes,
+    goalAnchor,
+    planItems,
+    llmUnavailableReason,
+    isLoadingSnapshot,
+  } = attention
+  const projection = useMemo(
+    () => buildMindMapProjection(nodes, goalAnchor, planItems),
+    [nodes, goalAnchor, planItems],
+  )
   const currentNode =
     projection.nodes.find((node) => node.current) ??
     [...projection.nodes].reverse().find((node) => node.kind !== 'goal') ??
     projection.nodes[0] ??
     null
   const nonGoalNodes = projection.nodes.filter((node) => node.kind !== 'goal')
-  const currentIndex = currentNode ? nonGoalNodes.findIndex((node) => node.id === currentNode.id) : -1
-  const lineMode = currentIndex <= 0
-    ? 'first'
-    : currentIndex === nonGoalNodes.length - 1
-      ? 'last'
-      : 'middle'
+  const currentIndex = currentNode
+    ? nonGoalNodes.findIndex((node) => node.id === currentNode.id)
+    : -1
+  const lineMode =
+    currentIndex <= 0
+      ? 'first'
+      : currentIndex === nonGoalNodes.length - 1
+        ? 'last'
+        : 'middle'
 
   return (
     <div className="relative flex min-h-full flex-col overflow-hidden">
@@ -203,80 +397,176 @@ export function AttentionInspectorTab({ attention, onExpand }: { attention: Atte
         type="button"
         onClick={onExpand}
         className="relative mx-3 mt-3 flex min-h-[360px] flex-1 items-center justify-center overflow-hidden rounded-lg text-left"
-        style={{ border: '1px solid var(--hairline)', background: 'rgba(0,0,0,0.14)' }}
+        style={{
+          border: '1px solid var(--hairline)',
+          background: 'rgba(0,0,0,0.14)',
+        }}
       >
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-[34%]" style={{ background: 'linear-gradient(270deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))' }} />
-        <div className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(111,227,154,0.16), transparent 32%), radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '100% 100%, 24px 24px' }} />
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-[34%]"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))',
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-[34%]"
+          style={{
+            background:
+              'linear-gradient(270deg, rgba(21,23,28,0.96), rgba(21,23,28,0.42), rgba(21,23,28,0))',
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 50% 50%, rgba(111,227,154,0.16), transparent 32%), radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)',
+            backgroundSize: '100% 100%, 24px 24px',
+          }}
+        />
         {isLoadingSnapshot && !nodes.length ? (
-          <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+          <div
+            className="relative z-[3] px-5 text-center text-[12px] leading-5"
+            style={{ color: 'var(--fg-dim)' }}
+          >
             加载注意力节点快照…
           </div>
         ) : llmUnavailableReason && nodes.length === 0 ? (
-          <div className="relative z-[3] px-5 text-center text-[12px] leading-5" style={{ color: 'var(--fg-dim)' }}>
+          <div
+            className="relative z-[3] px-5 text-center text-[12px] leading-5"
+            style={{ color: 'var(--fg-dim)' }}
+          >
             LLM 不可用（{llmUnavailableReason}），请检查配置。
           </div>
         ) : currentNode ? (
-          <AttentionMiniNode key={currentNode.id} node={currentNode} lineMode={lineMode} />
+          <AttentionMiniNode
+            key={currentNode.id}
+            node={currentNode}
+            lineMode={lineMode}
+          />
         ) : (
-          <div className="relative z-[3] px-5 text-center text-[12px]" style={{ color: 'var(--fg-dim)' }}>
+          <div
+            className="relative z-[3] px-5 text-center text-[12px]"
+            style={{ color: 'var(--fg-dim)' }}
+          >
             暂无注意力节点
           </div>
         )}
       </button>
-      <div className="px-4 py-3 text-[10.5px]" style={{ color: 'var(--fg-muted)' }}>
+      <div
+        className="px-4 py-3 text-[10.5px]"
+        style={{ color: 'var(--fg-muted)' }}
+      >
         点击展开查看完整动态树和消息明细
       </div>
     </div>
   )
 }
 
-function AttentionMiniNode({ node, lineMode }: { node: MindMapNode; lineMode: 'first' | 'middle' | 'last' }) {
-  const color = node.kind === 'goal'
-    ? '#6FE39A'
-    : node.relation === 'branch'
-      ? '#F7A26B'
-      : '#7DB7FF'
+function AttentionMiniNode({
+  node,
+  lineMode,
+}: { node: MindMapNode; lineMode: 'first' | 'middle' | 'last' }) {
+  const color =
+    node.kind === 'goal'
+      ? '#6FE39A'
+      : node.relation === 'branch'
+        ? '#F7A26B'
+        : '#7DB7FF'
   const showLeftLine = lineMode === 'middle' || lineMode === 'last'
   const showRightLine = lineMode === 'first' || lineMode === 'middle'
 
   return (
     <div className="relative z-[3] flex w-full items-center justify-center">
-      {showLeftLine && <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(125,183,255,0), rgba(125,183,255,0.55))' }} />}
+      {showLeftLine && (
+        <div
+          className="h-px flex-1"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(125,183,255,0), rgba(125,183,255,0.55))',
+          }}
+        />
+      )}
       {!showLeftLine && <div className="flex-1" />}
       <div
         className="relative w-[230px] shrink-0 rounded-lg px-3 py-3"
         style={{
-          background: node.kind === 'goal' ? 'rgba(111,227,154,0.12)' : 'var(--glass-modal, rgba(20,22,27,0.92))',
+          background:
+            node.kind === 'goal'
+              ? 'rgba(111,227,154,0.12)'
+              : 'var(--glass-modal, rgba(20,22,27,0.92))',
           border: `1px solid ${node.current ? 'rgba(111,227,154,0.52)' : 'var(--hairline-2)'}`,
           boxShadow: node.current
             ? '0 0 0 2px rgba(111,227,154,0.38), 0 0 34px rgba(111,227,154,0.22), 0 16px 42px rgba(0,0,0,0.42)'
             : '0 16px 42px rgba(0,0,0,0.42)',
-          animation: 'attention-mini-enter 260ms cubic-bezier(0.22,1,0.36,1) both, attention-pulse 1.6s ease-in-out infinite',
+          animation:
+            'attention-mini-enter 260ms cubic-bezier(0.22,1,0.36,1) both, attention-pulse 1.6s ease-in-out infinite',
         }}
       >
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ background: color }}
+          />
           <span className="text-[10px]" style={{ color }}>
-            {node.current ? '当前节点' : node.kind === 'aggregate' ? '聚合节点' : '注意力节点'}
+            {node.current
+              ? '当前节点'
+              : node.kind === 'aggregate'
+                ? '聚合节点'
+                : '注意力节点'}
           </span>
-          {node.relation === 'branch' && <span className="ml-auto text-[10px]" style={{ color: '#F7A26B' }}>支线</span>}
+          {node.relation === 'branch' && (
+            <span className="ml-auto text-[10px]" style={{ color: '#F7A26B' }}>
+              支线
+            </span>
+          )}
         </div>
-        <div className="mt-2 text-[13px] font-semibold leading-snug" style={{ color: 'var(--fg-strong)' }}>
+        <div
+          className="mt-2 text-[13px] font-semibold leading-snug"
+          style={{ color: 'var(--fg-strong)' }}
+        >
           {node.title}
         </div>
-        <div className="mt-1 text-[10.5px] leading-snug" style={{ color: 'var(--fg-dim)' }}>
+        <div
+          className="mt-1 text-[10.5px] leading-snug"
+          style={{ color: 'var(--fg-dim)' }}
+        >
           {node.subtitle}
         </div>
       </div>
-      {showRightLine && <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(125,183,255,0.55), rgba(125,183,255,0))' }} />}
+      {showRightLine && (
+        <div
+          className="h-px flex-1"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(125,183,255,0.55), rgba(125,183,255,0))',
+          }}
+        />
+      )}
       {!showRightLine && <div className="flex-1" />}
     </div>
   )
 }
 
-export function AttentionInspectorOverlay({ topicId, attention, closing, onClose }: { topicId: string; attention: AttentionTrace; closing: boolean; onClose: () => void }) {
-  const { nodes, goalAnchor, planItems, rawEvents, isAnalyzing, llmUnavailableReason } = attention
+export function AttentionInspectorOverlay({
+  topicId,
+  attention,
+  closing,
+  onClose,
+}: {
+  topicId: string
+  attention: AttentionTrace
+  closing: boolean
+  onClose: () => void
+}) {
+  const {
+    nodes,
+    goalAnchor,
+    planItems,
+    rawEvents,
+    isAnalyzing,
+    llmUnavailableReason,
+  } = attention
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [showSopExport, setShowSopExport] = useState(false)
 
@@ -325,27 +615,47 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
           zIndex: 5,
         }}
       >
-        <div style={{
-          width: 26, height: 26, borderRadius: 7,
-          background: 'rgba(10,132,255,.16)',
-          border: '1px solid rgba(10,132,255,.32)',
-          display: 'grid', placeItems: 'center',
-          color: '#6cb1ff',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06),0 0 14px rgba(10,132,255,.20)',
-          flexShrink: 0,
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
-            <circle cx="12" cy="12" r="3.4"/>
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            background: 'rgba(10,132,255,.16)',
+            border: '1px solid rgba(10,132,255,.32)',
+            display: 'grid',
+            placeItems: 'center',
+            color: '#6cb1ff',
+            boxShadow:
+              'inset 0 1px 0 rgba(255,255,255,.06),0 0 14px rgba(10,132,255,.20)',
+            flexShrink: 0,
+          }}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+            <circle cx="12" cy="12" r="3.4" />
           </svg>
         </div>
 
-        <span className="text-[14px] font-semibold" style={{ color: 'var(--fg-strong)', letterSpacing: '-.01em' }}>
+        <span
+          className="text-[14px] font-semibold"
+          style={{ color: 'var(--fg-strong)', letterSpacing: '-.01em' }}
+        >
           Attention
         </span>
 
         {isAnalyzing && (
-          <span className="text-[11px]" style={{ color: '#F7C26B' }}>分析中…</span>
+          <span className="text-[11px]" style={{ color: '#F7C26B' }}>
+            分析中…
+          </span>
         )}
 
         <div className="ml-auto flex items-center gap-2">
@@ -354,7 +664,11 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
             onClick={() => setShowSopExport(true)}
             title="导出 SOP"
             className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] font-medium transition-colors"
-            style={{ color: '#8fc6ff', background: 'rgba(10,132,255,.12)', border: '1px solid rgba(10,132,255,.28)' }}
+            style={{
+              color: '#8fc6ff',
+              background: 'rgba(10,132,255,.12)',
+              border: '1px solid rgba(10,132,255,.28)',
+            }}
           >
             导出 SOP
           </button>
@@ -365,10 +679,22 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
             title="收起"
             aria-label="收起"
             className="flex h-7 w-7 items-center justify-center rounded-[7px] transition-colors"
-            style={{ color: 'var(--fg-dim)', background: 'var(--glass-1)', border: '1px solid var(--hairline)' }}
+            style={{
+              color: 'var(--fg-dim)',
+              background: 'var(--glass-1)',
+              border: '1px solid var(--hairline)',
+            }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-              <polyline points="9 6 15 12 9 18"/>
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+            >
+              <polyline points="9 6 15 12 9 18" />
             </svg>
           </button>
         </div>
@@ -403,20 +729,43 @@ export function AttentionInspectorOverlay({ topicId, attention, closing, onClose
   )
 }
 
-function StripIcon({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: React.ReactNode }) {
+function StripIcon({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       onClick={onClick}
       title={label}
       className="flex items-center justify-center rounded-md p-1.5 transition-colors"
-      style={{ color: active ? 'var(--fg-strong)' : 'var(--fg-dim)', background: active ? 'var(--glass-1)' : 'transparent' }}
+      style={{
+        color: active ? 'var(--fg-strong)' : 'var(--fg-dim)',
+        background: active ? 'var(--glass-1)' : 'transparent',
+      }}
     >
       {children}
     </button>
   )
 }
 
-function TabBtn({ active, onClick, count, children }: { active: boolean; onClick: () => void; count?: number; children: React.ReactNode }) {
+function TabBtn({
+  active,
+  onClick,
+  count,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  count?: number
+  children: React.ReactNode
+}) {
   return (
     <button
       onClick={onClick}
@@ -435,7 +784,9 @@ function TabBtn({ active, onClick, count, children }: { active: boolean; onClick
         <span
           className="grid h-4 place-items-center rounded-full px-1.5 text-[10px]"
           style={{
-            background: active ? 'rgba(10,132,255,0.25)' : 'rgba(255,255,255,0.10)',
+            background: active
+              ? 'rgba(10,132,255,0.25)'
+              : 'rgba(255,255,255,0.10)',
             color: active ? '#6cb1ff' : 'var(--fg-regular)',
             fontFeatureSettings: '"tnum"',
           }}
@@ -451,14 +802,22 @@ function TodoTab({
   todos,
   defaultShowCompleted = false,
 }: {
-  todos: Array<{ id: string; content: string; status: string; activeForm?: string }>
+  todos: Array<{
+    id: string
+    content: string
+    status: string
+    activeForm?: string
+  }>
   defaultShowCompleted?: boolean
 }) {
   const [showCompleted, setShowCompleted] = useState(defaultShowCompleted)
 
   if (todos.length === 0) {
     return (
-      <div className="flex items-center justify-center p-6" style={{ color: 'var(--fg-dim)' }}>
+      <div
+        className="flex items-center justify-center p-6"
+        style={{ color: 'var(--fg-dim)' }}
+      >
         <p className="text-sm">暂无 Todo</p>
       </div>
     )
@@ -469,7 +828,12 @@ function TodoTab({
 
   return (
     <div className="p-4">
-      <p className="mb-3 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}>Plan · Todo</p>
+      <p
+        className="mb-3 text-[10px] font-semibold uppercase"
+        style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}
+      >
+        Plan · Todo
+      </p>
       <div className="space-y-2.5">
         {activeTodos.map((todo) => (
           <TodoCard key={todo.id} todo={todo} />
@@ -481,12 +845,20 @@ function TodoTab({
               type="button"
               onClick={() => setShowCompleted((value) => !value)}
               className="flex w-full items-center justify-between rounded-2xl px-3 py-2 text-left"
-              style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)', color: 'var(--fg-dim)' }}
+              style={{
+                background: 'rgba(255,255,255,.04)',
+                border: '1px solid var(--hairline)',
+                color: 'var(--fg-dim)',
+              }}
               aria-expanded={showCompleted}
               aria-controls="completed-todos"
             >
-              <span className="text-[12px] font-medium">已完成 {completedTodos.length}</span>
-              <span className="text-[12px]">{showCompleted ? '收起' : '展开'}</span>
+              <span className="text-[12px] font-medium">
+                已完成 {completedTodos.length}
+              </span>
+              <span className="text-[12px]">
+                {showCompleted ? '收起' : '展开'}
+              </span>
             </button>
 
             {showCompleted && (
@@ -503,17 +875,46 @@ function TodoTab({
   )
 }
 
-function TodoCard({ todo, completed = false }: {
+function TodoCard({
+  todo,
+  completed = false,
+}: {
   todo: { id: string; content: string; status: string; activeForm?: string }
   completed?: boolean
 }) {
   return (
-    <div className="rounded-2xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)' }}>
+    <div
+      className="rounded-2xl px-3 py-2.5"
+      style={{
+        background: 'rgba(255,255,255,.04)',
+        border: '1px solid var(--hairline)',
+      }}
+    >
       <div className="flex items-start gap-2">
-        <span className="mt-1 inline-block h-2 w-2 rounded-full" style={{ background: todo.status === 'completed' ? '#6FE39A' : todo.status === 'in_progress' ? '#7CB6FF' : 'var(--fg-dim)' }} />
+        <span
+          className="mt-1 inline-block h-2 w-2 rounded-full"
+          style={{
+            background:
+              todo.status === 'completed'
+                ? '#6FE39A'
+                : todo.status === 'in_progress'
+                  ? '#7CB6FF'
+                  : 'var(--fg-dim)',
+          }}
+        />
         <div className="min-w-0 flex-1">
-          <div className="text-sm" style={{ color: completed ? 'var(--fg-dim)' : 'var(--fg-regular)', textDecoration: completed ? 'line-through' : 'none' }}>{todo.content}</div>
-          <div className="mt-1 text-[11px]" style={{ color: 'var(--fg-dim)' }}>{todo.activeForm ?? todo.status}</div>
+          <div
+            className="text-sm"
+            style={{
+              color: completed ? 'var(--fg-dim)' : 'var(--fg-regular)',
+              textDecoration: completed ? 'line-through' : 'none',
+            }}
+          >
+            {todo.content}
+          </div>
+          <div className="mt-1 text-[11px]" style={{ color: 'var(--fg-dim)' }}>
+            {todo.activeForm ?? todo.status}
+          </div>
         </div>
       </div>
     </div>
@@ -534,7 +935,13 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
         text: line.replace(/^\s*[-*]\s+\[[ xX]\]\s+/, '').trim(),
         checked: /^\s*[-*]\s+\[[xX]\]\s+/.test(line),
       }))
-      .filter((item) => item.text.length > 0 && /^\s*[-*]\s+\[[ xX]\]\s+/.test(plan.split('\n')[Number(item.id.split('-')[0])]!))
+      .filter(
+        (item) =>
+          item.text.length > 0 &&
+          /^\s*[-*]\s+\[[ xX]\]\s+/.test(
+            plan.split('\n')[Number(item.id.split('-')[0])]!,
+          ),
+      )
   }, [plan])
 
   const effectiveChecklist = checklist.map((item) => ({
@@ -542,13 +949,22 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
     checked: checkedItems[item.id] ?? item.checked,
   }))
 
-  const completedCount = effectiveChecklist.filter((item) => item.checked).length
-  const progress = effectiveChecklist.length > 0 ? Math.round((completedCount / effectiveChecklist.length) * 100) : 0
-  const estimatedMinutes = effectiveChecklist.length > 0 ? effectiveChecklist.length * 8 : null
+  const completedCount = effectiveChecklist.filter(
+    (item) => item.checked,
+  ).length
+  const progress =
+    effectiveChecklist.length > 0
+      ? Math.round((completedCount / effectiveChecklist.length) * 100)
+      : 0
+  const estimatedMinutes =
+    effectiveChecklist.length > 0 ? effectiveChecklist.length * 8 : null
 
   if (!plan) {
     return (
-      <div className="flex items-center justify-center p-6" style={{ color: 'var(--fg-dim)' }}>
+      <div
+        className="flex items-center justify-center p-6"
+        style={{ color: 'var(--fg-dim)' }}
+      >
         <p className="text-sm">暂无 Plan</p>
       </div>
     )
@@ -556,20 +972,49 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="rounded-2xl p-3.5" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)' }}>
+      <div
+        className="rounded-2xl p-3.5"
+        style={{
+          background: 'rgba(255,255,255,.04)',
+          border: '1px solid var(--hairline)',
+        }}
+      >
         <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-[12px] font-medium" style={{ color: 'var(--fg-strong)' }}>进度追踪</span>
-          <span className="text-[12px]" style={{ color: 'var(--fg-dim)', fontFeatureSettings: '"tnum"' }}>{progress}%</span>
+          <span
+            className="text-[12px] font-medium"
+            style={{ color: 'var(--fg-strong)' }}
+          >
+            进度追踪
+          </span>
+          <span
+            className="text-[12px]"
+            style={{ color: 'var(--fg-dim)', fontFeatureSettings: '"tnum"' }}
+          >
+            {progress}%
+          </span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,.08)' }}>
+        <div
+          className="h-2 overflow-hidden rounded-full"
+          style={{ background: 'rgba(255,255,255,.08)' }}
+        >
           <div
             className="h-full rounded-full"
-            style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #4DA3FF, #7CB6FF)' }}
+            style={{
+              width: `${progress}%`,
+              background: 'linear-gradient(90deg, #4DA3FF, #7CB6FF)',
+            }}
           />
         </div>
-        <div className="mt-2 flex items-center justify-between text-[11px]" style={{ color: 'var(--fg-dim)' }}>
-          <span>{completedCount}/{effectiveChecklist.length || 0} 项完成</span>
-          <span>{estimatedMinutes ? `est. ${estimatedMinutes} min` : 'est. —'}</span>
+        <div
+          className="mt-2 flex items-center justify-between text-[11px]"
+          style={{ color: 'var(--fg-dim)' }}
+        >
+          <span>
+            {completedCount}/{effectiveChecklist.length || 0} 项完成
+          </span>
+          <span>
+            {estimatedMinutes ? `est. ${estimatedMinutes} min` : 'est. —'}
+          </span>
         </div>
       </div>
 
@@ -579,21 +1024,37 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
             <button
               key={item.id}
               type="button"
-              onClick={() => setCheckedItems((prev) => ({ ...prev, [item.id]: !item.checked }))}
+              onClick={() =>
+                setCheckedItems((prev) => ({
+                  ...prev,
+                  [item.id]: !item.checked,
+                }))
+              }
               className="flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left"
-              style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)' }}
+              style={{
+                background: 'rgba(255,255,255,.04)',
+                border: '1px solid var(--hairline)',
+              }}
             >
               <span
                 className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded"
                 style={{
-                  background: item.checked ? 'rgba(48,209,88,.18)' : 'transparent',
+                  background: item.checked
+                    ? 'rgba(48,209,88,.18)'
+                    : 'transparent',
                   border: `1px solid ${item.checked ? 'rgba(48,209,88,.32)' : 'var(--hairline-2)'}`,
                   color: '#6FE39A',
                 }}
               >
                 {item.checked ? '✓' : ''}
               </span>
-              <span className="text-sm" style={{ color: item.checked ? 'var(--fg-dim)' : 'var(--fg-regular)', textDecoration: item.checked ? 'line-through' : 'none' }}>
+              <span
+                className="text-sm"
+                style={{
+                  color: item.checked ? 'var(--fg-dim)' : 'var(--fg-regular)',
+                  textDecoration: item.checked ? 'line-through' : 'none',
+                }}
+              >
                 {item.text}
               </span>
             </button>
@@ -602,8 +1063,19 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
       )}
 
       <div>
-        <p className="mb-3 text-[10px] font-semibold uppercase" style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}>Plan</p>
-        <div className="rounded-2xl p-3.5 overflow-hidden" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)' }}>
+        <p
+          className="mb-3 text-[10px] font-semibold uppercase"
+          style={{ color: 'var(--fg-dim)', letterSpacing: '0.08em' }}
+        >
+          Plan
+        </p>
+        <div
+          className="rounded-2xl p-3.5 overflow-hidden"
+          style={{
+            background: 'rgba(255,255,255,.04)',
+            border: '1px solid var(--hairline)',
+          }}
+        >
           <MarkdownRenderer content={plan} />
         </div>
       </div>
@@ -611,10 +1083,15 @@ function PlanTab({ plan }: { plan: string | null | undefined }) {
   )
 }
 
-function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol').Artifact[] }) {
+function ArtifactsTab({
+  artifacts,
+}: { artifacts: import('@agent-chat/protocol').Artifact[] }) {
   if (artifacts.length === 0) {
     return (
-      <div className="flex items-center justify-center p-6" style={{ color: 'var(--fg-dim)' }}>
+      <div
+        className="flex items-center justify-center p-6"
+        style={{ color: 'var(--fg-dim)' }}
+      >
         <p className="text-sm">当前话题暂无产物</p>
       </div>
     )
@@ -625,11 +1102,24 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
       {artifacts.map((a) => (
         <div key={a.id} className="glass-1 p-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs" style={{ color: 'var(--fg-dim)' }}>{mimeIcon(a.mime)}</span>
-            <span className="truncate text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{a.name}</span>
+            <span className="text-xs" style={{ color: 'var(--fg-dim)' }}>
+              {mimeIcon(a.mime)}
+            </span>
+            <span
+              className="truncate text-sm font-medium"
+              style={{ color: 'var(--fg-strong)' }}
+            >
+              {a.name}
+            </span>
           </div>
           {artifactPath(a) && (
-            <div className="mt-1.5 truncate text-[11px]" style={{ color: 'var(--fg-code)', fontFamily: 'var(--font-mono)' }}>
+            <div
+              className="mt-1.5 truncate text-[11px]"
+              style={{
+                color: 'var(--fg-code)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
               {artifactPath(a)}
             </div>
           )}
@@ -639,8 +1129,16 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
             </div>
           )}
           <div className="mt-1.5 flex items-center gap-3">
-            {a.mime && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{a.mime}</span>}
-            {a.size_bytes != null && <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>{formatSize(a.size_bytes)}</span>}
+            {a.mime && (
+              <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>
+                {a.mime}
+              </span>
+            )}
+            {a.size_bytes != null && (
+              <span className="text-[11px]" style={{ color: 'var(--fg-dim)' }}>
+                {formatSize(a.size_bytes)}
+              </span>
+            )}
             <span
               className="rounded px-1.5 py-0.5 text-[11px]"
               style={artifactSourceStyle(a.source)}
@@ -658,16 +1156,27 @@ function ArtifactsTab({ artifacts }: { artifacts: import('@agent-chat/protocol')
   )
 }
 
-function artifactSourceStyle(source: import('@agent-chat/protocol').Artifact['source']): React.CSSProperties {
+function artifactSourceStyle(
+  source: import('@agent-chat/protocol').Artifact['source'],
+): React.CSSProperties {
   return source === 'generated'
-    ? { background: 'rgba(247, 194, 107, 0.16)', color: '#d89b32', border: '1px solid rgba(247, 194, 107, 0.28)' }
-    : { background: 'rgba(48, 209, 88, 0.14)', color: '#2ea85b', border: '1px solid rgba(48, 209, 88, 0.26)' }
+    ? {
+        background: 'rgba(247, 194, 107, 0.16)',
+        color: '#d89b32',
+        border: '1px solid rgba(247, 194, 107, 0.28)',
+      }
+    : {
+        background: 'rgba(48, 209, 88, 0.14)',
+        color: '#2ea85b',
+        border: '1px solid rgba(48, 209, 88, 0.26)',
+      }
 }
 
 function CronTab({ topicId }: { topicId: string | null }) {
   const allCrons = useCronStore((s) => s.crons)
   const crons = useMemo(
-    () => (topicId ? allCrons.filter((cron) => cron.originTopicId === topicId) : []),
+    () =>
+      topicId ? allCrons.filter((cron) => cron.originTopicId === topicId) : [],
     [topicId, allCrons],
   )
   const runs = useCronStore((s) => s.runs)
@@ -678,7 +1187,10 @@ function CronTab({ topicId }: { topicId: string | null }) {
 
   if (crons.length === 0) {
     return (
-      <div className="flex items-center justify-center p-6" style={{ color: 'var(--fg-dim)' }}>
+      <div
+        className="flex items-center justify-center p-6"
+        style={{ color: 'var(--fg-dim)' }}
+      >
         <p className="text-sm">暂无 Cron</p>
       </div>
     )
@@ -689,26 +1201,66 @@ function CronTab({ topicId }: { topicId: string | null }) {
       {crons.map((cron) => {
         const latestRun = runs
           .filter((run) => run.cronId === cron.cronId)
-          .sort((a, b) => (b.completedAt ?? b.firedAt) - (a.completedAt ?? a.firedAt))[0]
+          .sort(
+            (a, b) =>
+              (b.completedAt ?? b.firedAt) - (a.completedAt ?? a.firedAt),
+          )[0]
 
         return (
-          <div key={cron.cronId} className="rounded-2xl p-3" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid var(--hairline)' }}>
+          <div
+            key={cron.cronId}
+            className="rounded-2xl p-3"
+            style={{
+              background: 'rgba(255,255,255,.04)',
+              border: '1px solid var(--hairline)',
+            }}
+          >
             <div className="flex items-center justify-between gap-2">
-              <div className="truncate text-sm font-medium" style={{ color: 'var(--fg-strong)' }}>{cron.prompt}</div>
-              <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'rgba(255,255,255,.08)', color: 'var(--fg-dim)' }}>{cron.status}</span>
+              <div
+                className="truncate text-sm font-medium"
+                style={{ color: 'var(--fg-strong)' }}
+              >
+                {cron.prompt}
+              </div>
+              <span
+                className="rounded-full px-2 py-0.5 text-[11px]"
+                style={{
+                  background: 'rgba(255,255,255,.08)',
+                  color: 'var(--fg-dim)',
+                }}
+              >
+                {cron.status}
+              </span>
             </div>
-            <div className="mt-2 text-[12px]" style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}>{cron.cronExpr}</div>
+            <div
+              className="mt-2 text-[12px]"
+              style={{ color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)' }}
+            >
+              {cron.cronExpr}
+            </div>
             {cron.tags && cron.tags.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {cron.tags.map((tag) => (
-                  <span key={tag} className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: 'rgba(10,132,255,.10)', border: '1px solid rgba(10,132,255,.22)', color: '#7CB6FF' }}>
+                  <span
+                    key={tag}
+                    className="rounded-full px-2 py-0.5 text-[11px]"
+                    style={{
+                      background: 'rgba(10,132,255,.10)',
+                      border: '1px solid rgba(10,132,255,.22)',
+                      color: '#7CB6FF',
+                    }}
+                  >
                     {tag}
                   </span>
                 ))}
               </div>
             )}
-            <div className="mt-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>
-              最近结果：{latestRun?.summary ?? formatRunStatus(latestRun?.status)}
+            <div
+              className="mt-2 text-[12px]"
+              style={{ color: 'var(--fg-dim)' }}
+            >
+              最近结果：
+              {latestRun?.summary ?? formatRunStatus(latestRun?.status)}
             </div>
           </div>
         )
@@ -717,7 +1269,9 @@ function CronTab({ topicId }: { topicId: string | null }) {
   )
 }
 
-function artifactPath(artifact: import('@agent-chat/protocol').Artifact): string | null {
+function artifactPath(
+  artifact: import('@agent-chat/protocol').Artifact,
+): string | null {
   if (!artifact.metadata_json) return null
   try {
     const metadata = JSON.parse(artifact.metadata_json) as { path?: unknown }
