@@ -94,6 +94,7 @@ describe('CronStore', () => {
   it('completeRun updates run status and fields', () => {
     useCronStore.getState().addRun(makeRun({ id: 'r1' }))
     useCronStore.getState().completeRun('r1', {
+      cronId: 'c1',
       status: 'success',
       summary: 'Completed',
       duration: 5000,
@@ -106,15 +107,38 @@ describe('CronStore', () => {
     expect(run.completedAt).toBe(1700000005000)
   })
 
-  it('completeRun is no-op for non-existent runId', () => {
+  it('completeRun creates a history entry for non-existent runId', () => {
     useCronStore.getState().addRun(makeRun({ id: 'r1' }))
     useCronStore.getState().completeRun('nonexistent', {
+      cronId: 'c1',
       status: 'failed',
       summary: null,
       duration: null,
       completedAt: Date.now(),
     })
-    const run = useCronStore.getState().runs[0]
-    expect(run.status).toBeUndefined()
+    const { runs } = useCronStore.getState()
+    expect(runs).toHaveLength(2)
+    expect(runs[1]).toEqual(expect.objectContaining({
+      id: 'nonexistent',
+      cronId: 'c1',
+      status: 'failed',
+      summary: null,
+    }))
+  })
+
+  it('setRuns replaces persisted run history', () => {
+    useCronStore.getState().addRun(makeRun({ id: 'old-run' }))
+    useCronStore.getState().setRuns([
+      makeRun({
+        id: 'history-run',
+        status: 'success',
+        summary: 'Historical result',
+        completedAt: 1700000005000,
+      }),
+    ])
+    const { runs } = useCronStore.getState()
+    expect(runs).toHaveLength(1)
+    expect(runs[0].id).toBe('history-run')
+    expect(runs[0].summary).toBe('Historical result')
   })
 })

@@ -165,6 +165,8 @@ export const cronRuns = sqliteTable('cron_runs', {
     enum: ['running', 'success', 'failed', 'timeout'],
   }).notNull(),
   resultMessageId: text('result_message_id'),
+  summary: text('summary'),
+  durationMs: integer('duration_ms'),
 })
 
 // ─── interactions ───────────────────────────────────────────────────

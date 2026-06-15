@@ -71,7 +71,7 @@ export async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_artifacts_topic ON artifacts(topic_id);
       CREATE TABLE IF NOT EXISTS message_artifact_refs (message_id TEXT NOT NULL, artifact_id TEXT NOT NULL, PRIMARY KEY (message_id, artifact_id));
       CREATE TABLE IF NOT EXISTS cron_jobs (id TEXT PRIMARY KEY, origin_topic_id TEXT, pi_cron_id TEXT NOT NULL, cron_expr TEXT NOT NULL, prompt TEXT NOT NULL, tags_json TEXT, status TEXT NOT NULL, next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS cron_runs (id TEXT PRIMARY KEY, cron_id TEXT NOT NULL, triggered_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, result_message_id TEXT);
+      CREATE TABLE IF NOT EXISTS cron_runs (id TEXT PRIMARY KEY, cron_id TEXT NOT NULL, triggered_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL, result_message_id TEXT, summary TEXT, duration_ms INTEGER);
       CREATE TABLE IF NOT EXISTS interactions (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, message_id TEXT, kind TEXT NOT NULL, prompt TEXT NOT NULL, options_json TEXT, status TEXT NOT NULL, response_json TEXT, created_at INTEGER NOT NULL, resolved_at INTEGER);
       CREATE TABLE IF NOT EXISTS topic_runtime_events (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, kind TEXT NOT NULL, ts INTEGER NOT NULL, message_id TEXT, payload_json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS idx_topic_runtime_events_topic_ts ON topic_runtime_events(topic_id, ts);
@@ -103,6 +103,8 @@ export async function runMigrations() {
 
     if (!applied) {
       try { await d1.prepare(`ALTER TABLE cron_jobs ADD COLUMN tags_json TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE cron_runs ADD COLUMN summary TEXT`).run() } catch { /* column may already exist */ }
+      try { await d1.prepare(`ALTER TABLE cron_runs ADD COLUMN duration_ms INTEGER`).run() } catch { /* column may already exist */ }
       await d1
         .prepare(`INSERT OR IGNORE INTO ${MIGRATION_TABLE} (hash, created_at) VALUES (?, ?)`)
         .bind(hash, Date.now())

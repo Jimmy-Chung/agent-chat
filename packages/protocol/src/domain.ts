@@ -128,6 +128,8 @@ export interface CronRun {
   finished_at: number | null
   status: 'running' | 'success' | 'failed' | 'timeout'
   result_message_id: string | null
+  summary: string | null
+  duration_ms: number | null
 }
 
 export interface Interaction {

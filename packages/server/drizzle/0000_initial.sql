@@ -83,7 +83,9 @@ CREATE TABLE IF NOT EXISTS cron_runs (
   triggered_at INTEGER NOT NULL,
   finished_at INTEGER,
   status TEXT NOT NULL,
-  result_message_id TEXT
+  result_message_id TEXT,
+  summary TEXT,
+  duration_ms INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS interactions (

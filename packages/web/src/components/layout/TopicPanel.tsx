@@ -981,6 +981,10 @@ function CronAdminView() {
         const latestRun = runs
           .filter((run) => run.cronId === c.cronId)
           .sort((a, b) => (b.completedAt ?? b.firedAt) - (a.completedAt ?? a.firedAt))[0]
+        const recentRuns = runs
+          .filter((run) => run.cronId === c.cronId)
+          .sort((a, b) => (b.completedAt ?? b.firedAt) - (a.completedAt ?? a.firedAt))
+          .slice(0, 5)
         const topic = c.originTopicId ? topics.find((t) => t.id === c.originTopicId) : undefined
         const errorSummary = c.status === 'error' ? latestRun?.summary ?? '最近一次执行失败，请检查话题上下文与 Agent 输出。' : null
 
@@ -1039,6 +1043,23 @@ function CronAdminView() {
               <div className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2" style={{ color: 'var(--fg-dim)' }}>
                 <div>最近结果：{formatRunStatus(latestRun.status)}</div>
                 <div>耗时：{formatDuration(latestRun.duration)}</div>
+              </div>
+            )}
+
+            {recentRuns.length > 0 && (
+              <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,.035)', border: '1px solid var(--hairline)' }}>
+                <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--fg-dim)' }}>执行历史</div>
+                <div className="space-y-2">
+                  {recentRuns.map((run) => (
+                    <div key={run.id} className="grid gap-1 text-[12px] sm:grid-cols-[120px_80px_1fr]" style={{ color: 'var(--fg-dim)' }}>
+                      <div>{formatDateTime(run.completedAt ?? run.firedAt)}</div>
+                      <div>{formatRunStatus(run.status)}</div>
+                      <div className="min-w-0 truncate" title={run.summary ?? undefined}>
+                        {run.summary?.trim() || formatDuration(run.duration)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
