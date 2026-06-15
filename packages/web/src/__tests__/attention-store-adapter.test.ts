@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest'
 import type { Message, MessagePart } from '@agent-chat/protocol'
+import { describe, expect, it } from 'vitest'
 import {
-  storeToRawEvents,
-  extractGoalAnchor,
-  aggregate,
   type StoreToRawEventsInput,
+  aggregate,
+  extractGoalAnchor,
+  storeToRawEvents,
 } from '../lib/attention'
 
 // ── fixtures ──────────────────────────────────────────────────────────────
@@ -29,14 +29,22 @@ function makeMessage(over: Partial<Message> = {}): Message {
 }
 
 let _pid = 0
-function part(messageId: string, kind: MessagePart['kind'], content: unknown, ordinal = 0): MessagePart {
+function part(
+  messageId: string,
+  kind: MessagePart['kind'],
+  content: unknown,
+  ordinal = 0,
+): MessagePart {
   _pid++
   return {
     id: `part-${_pid}`,
     message_id: messageId,
     ordinal,
     kind,
-    content_json: typeof content === 'string' ? JSON.stringify({ content }) : JSON.stringify(content),
+    content_json:
+      typeof content === 'string'
+        ? JSON.stringify({ content })
+        : JSON.stringify(content),
   }
 }
 
@@ -60,7 +68,10 @@ describe('TC-AIT-219-01 RawEvent 分类', () => {
       buildInput([
         { msg: u, parts: [part('u', 'text', '帮我修一个 bug')] },
         { msg: a, parts: [part('a', 'text', '好的，我来看看')] },
-        { msg: s, parts: [part('s', 'text', '<system-notice>x</system-notice>')] },
+        {
+          msg: s,
+          parts: [part('s', 'text', '<system-notice>x</system-notice>')],
+        },
         { msg: c, parts: [part('c', 'text', '定时任务触发')] },
       ]),
     )
@@ -85,7 +96,11 @@ describe('TC-AIT-219-02 Turn 切分', () => {
     const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
     for (let i = 1; i <= 3; i++) {
       const u = makeMessage({ id: `u${i}`, role: 'user', turn_id: `t${i}` })
-      const a = makeMessage({ id: `a${i}`, role: 'assistant', turn_id: `t${i}` })
+      const a = makeMessage({
+        id: `a${i}`,
+        role: 'assistant',
+        turn_id: `t${i}`,
+      })
       rows.push({ msg: u, parts: [part(`u${i}`, 'text', `用户问题 ${i}`)] })
       rows.push({ msg: a, parts: [part(`a${i}`, 'text', `回答 ${i}`)] })
     }
@@ -106,8 +121,18 @@ describe('TC-AIT-219-03 工具配对', () => {
         {
           msg: a,
           parts: [
-            part('a', 'tool_use', { toolUseId: 'tu1', name: 'Read', input: { path: '/x' } }, 0),
-            part('a', 'tool_result', { toolUseId: 'tu1', output: 'file contents', isError: false }, 1),
+            part(
+              'a',
+              'tool_use',
+              { toolUseId: 'tu1', name: 'Read', input: { path: '/x' } },
+              0,
+            ),
+            part(
+              'a',
+              'tool_result',
+              { toolUseId: 'tu1', output: 'file contents', isError: false },
+              1,
+            ),
           ],
         },
       ]),
@@ -118,19 +143,71 @@ describe('TC-AIT-219-03 工具配对', () => {
     expect(toolEvents[0].payload.output).toBe('file contents')
     expect(toolEvents[0].payload.isError).toBe(false)
     // 没有单独的 tool_result 事件
-    expect(events.some((e) => e.id === 'part-3' && e.kind !== 'tool_use')).toBe(false)
+    expect(events.some((e) => e.id === 'part-3' && e.kind !== 'tool_use')).toBe(
+      false,
+    )
   })
 
   it('孤儿 tool_result（无匹配 tool_use）补一个工具事件，不丢信息', () => {
     const a = makeMessage({ id: 'a', role: 'assistant', turn_id: 't1' })
     const events = storeToRawEvents(
       buildInput([
-        { msg: a, parts: [part('a', 'tool_result', { toolUseId: 'orphan', output: 'z' }, 0)] },
+        {
+          msg: a,
+          parts: [
+            part('a', 'tool_result', { toolUseId: 'orphan', output: 'z' }, 0),
+          ],
+        },
       ]),
     )
     const tools = events.filter((e) => e.kind === 'tool_use')
     expect(tools).toHaveLength(1)
     expect(tools[0].payload.output).toBe('z')
+  })
+
+  // 回归：未完成的 tool_input 流式片段（被持久化成 tool_use part 但没有 name）
+  // 不能进注意力，否则会变成 name:'工具' 的空工具事件污染节点（与聊天空气泡同源）。
+  it('未完成的 tool_input 片段（无 name）不生成 tool_use 事件', () => {
+    const a = makeMessage({ id: 'a', role: 'assistant', turn_id: 't1' })
+    // 真实生产数据形态：{kind:'tool_input',toolUseId,partial:'"}'}
+    const fragment = part(
+      'a',
+      'tool_use',
+      { kind: 'tool_input', toolUseId: 'toolu_x', partial: '"}' },
+      0,
+    )
+    const result = part(
+      'a',
+      'tool_result',
+      { toolUseId: 'toolu_x', output: '', isError: false },
+      1,
+    )
+    const events = storeToRawEvents(
+      buildInput([{ msg: a, parts: [fragment, result] }]),
+    )
+    // 片段被跳过；空 output 的孤儿 tool_result 也无信息可承载 → 整条消息不产出任何工具事件
+    expect(events.some((e) => e.id === fragment.id)).toBe(false)
+    expect(events.some((e) => e.kind === 'tool_use')).toBe(false)
+  })
+
+  it('有 output 的孤儿 tool_result 仍兜底成工具事件（不误杀）', () => {
+    const a = makeMessage({ id: 'a', role: 'assistant', turn_id: 't1' })
+    const events = storeToRawEvents(
+      buildInput([
+        {
+          msg: a,
+          parts: [
+            part(
+              'a',
+              'tool_result',
+              { toolUseId: 'orphan2', output: '有内容', isError: false },
+              0,
+            ),
+          ],
+        },
+      ]),
+    )
+    expect(events.filter((e) => e.kind === 'tool_use')).toHaveLength(1)
   })
 })
 
@@ -149,7 +226,9 @@ describe('TC-AIT-219-04 todos/plan 映射', () => {
     )
     const todoEvt = events.find((e) => e.kind === 'todo')
     const planEvt = events.find((e) => e.kind === 'plan')
-    expect((todoEvt?.payload.input as { todos: unknown[] }).todos).toHaveLength(2)
+    expect((todoEvt?.payload.input as { todos: unknown[] }).todos).toHaveLength(
+      2,
+    )
     expect((planEvt?.payload.items as unknown[]).length).toBe(2)
 
     const { planItems } = aggregate(events)
@@ -157,7 +236,9 @@ describe('TC-AIT-219-04 todos/plan 映射', () => {
     expect(texts).toContain('写代码')
     expect(texts).toContain('第一步')
     // in_progress 状态保留
-    expect(planItems.find((p) => p.text === '写代码')?.status).toBe('in_progress')
+    expect(planItems.find((p) => p.text === '写代码')?.status).toBe(
+      'in_progress',
+    )
   })
 
   it('最新快照覆盖：只反映传入的当前 todos', () => {
@@ -167,7 +248,11 @@ describe('TC-AIT-219-04 todos/plan 映射', () => {
         todos: [{ id: '9', content: '最新任务', status: 'completed' }],
       }),
     )
-    const todos = (events.find((e) => e.kind === 'todo')?.payload.input as { todos: Array<{ content: string }> }).todos
+    const todos = (
+      events.find((e) => e.kind === 'todo')?.payload.input as {
+        todos: Array<{ content: string }>
+      }
+    ).todos
     expect(todos).toHaveLength(1)
     expect(todos[0].content).toBe('最新任务')
   })
@@ -176,27 +261,46 @@ describe('TC-AIT-219-04 todos/plan 映射', () => {
 // ── TC-AIT-229-01：adapter 选择进入注意力轨迹 ───────────────────────────────
 describe('TC-AIT-229-01 交互选择映射', () => {
   it('interaction request/response 会转成 assistant 提问与 user choice 事件', () => {
-    const u = makeMessage({ id: 'u', role: 'user', turn_id: 't1', started_at: 1000 })
-    const a = makeMessage({ id: 'a', role: 'assistant', turn_id: 't1', started_at: 2000 })
+    const u = makeMessage({
+      id: 'u',
+      role: 'user',
+      turn_id: 't1',
+      started_at: 1000,
+    })
+    const a = makeMessage({
+      id: 'a',
+      role: 'assistant',
+      turn_id: 't1',
+      started_at: 2000,
+    })
     const events = storeToRawEvents(
-      buildInput([
-        { msg: u, parts: [part('u', 'text', '帮我搭一个平台')] },
-        { msg: a, parts: [part('a', 'text', '请选择技术栈')] },
-      ], {
-        interactions: [{
-          interactionId: 'toolu_choice_1',
-          messageId: 'a',
-          topicId: 'topic-1',
-          interactionKind: 'choice',
-          prompt: '技术栈用哪套？',
-          options: ['Next.js — 前后端一体', 'Hono — API 优先'],
-          status: 'resolved',
-          response: 'Next.js — 前后端一体',
-        }],
-      }),
+      buildInput(
+        [
+          { msg: u, parts: [part('u', 'text', '帮我搭一个平台')] },
+          { msg: a, parts: [part('a', 'text', '请选择技术栈')] },
+        ],
+        {
+          interactions: [
+            {
+              interactionId: 'toolu_choice_1',
+              messageId: 'a',
+              topicId: 'topic-1',
+              interactionKind: 'choice',
+              prompt: '技术栈用哪套？',
+              options: ['Next.js — 前后端一体', 'Hono — API 优先'],
+              status: 'resolved',
+              response: 'Next.js — 前后端一体',
+            },
+          ],
+        },
+      ),
     )
-    const request = events.find((e) => e.id === 'interaction_request_toolu_choice_1')
-    const response = events.find((e) => e.id === 'interaction_response_toolu_choice_1')
+    const request = events.find(
+      (e) => e.id === 'interaction_request_toolu_choice_1',
+    )
+    const response = events.find(
+      (e) => e.id === 'interaction_response_toolu_choice_1',
+    )
     expect(request?.role).toBe('assistant')
     expect(request?.payload.assistant_action).toBe('options')
     expect(request?.payload.text).toContain('技术栈用哪套')
@@ -205,7 +309,11 @@ describe('TC-AIT-229-01 交互选择映射', () => {
     expect(response?.payload.text).toContain('Next.js')
 
     const { candidates } = aggregate(events)
-    expect(candidates.some((c) => c.user_kind === 'choice' && c.user_message.includes('Next.js'))).toBe(true)
+    expect(
+      candidates.some(
+        (c) => c.user_kind === 'choice' && c.user_message.includes('Next.js'),
+      ),
+    ).toBe(true)
   })
 })
 
@@ -215,8 +323,17 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
     for (let i = 1; i <= 20; i++) {
       const u = makeMessage({ id: `u${i}`, role: 'user', turn_id: `t${i}` })
-      const a = makeMessage({ id: `a${i}`, role: 'assistant', turn_id: `t${i}` })
-      rows.push({ msg: u, parts: [part(`u${i}`, 'text', `第 ${i} 个独立问题，需要单独处理的内容 ${i}`)] })
+      const a = makeMessage({
+        id: `a${i}`,
+        role: 'assistant',
+        turn_id: `t${i}`,
+      })
+      rows.push({
+        msg: u,
+        parts: [
+          part(`u${i}`, 'text', `第 ${i} 个独立问题，需要单独处理的内容 ${i}`),
+        ],
+      })
       rows.push({ msg: a, parts: [part(`a${i}`, 'text', `回答 ${i}`)] })
     }
     const { candidates } = aggregate(storeToRawEvents(buildInput(rows)))
@@ -228,9 +345,19 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
     for (let i = 1; i <= 8; i++) {
       const u = makeMessage({ id: `su${i}`, role: 'user', turn_id: `st${i}` })
-      const a = makeMessage({ id: `sa${i}`, role: 'assistant', turn_id: `st${i}` })
-      rows.push({ msg: u, parts: [part(`su${i}`, 'text', `token 中心平台接入第 ${i} 轮补充`)] })
-      rows.push({ msg: a, parts: [part(`sa${i}`, 'text', `平台接入方案第 ${i} 段回答`)] })
+      const a = makeMessage({
+        id: `sa${i}`,
+        role: 'assistant',
+        turn_id: `st${i}`,
+      })
+      rows.push({
+        msg: u,
+        parts: [part(`su${i}`, 'text', `token 中心平台接入第 ${i} 轮补充`)],
+      })
+      rows.push({
+        msg: a,
+        parts: [part(`sa${i}`, 'text', `平台接入方案第 ${i} 段回答`)],
+      })
     }
     const { candidates } = aggregate(storeToRawEvents(buildInput(rows)))
     expect(candidates).toHaveLength(8)
@@ -250,9 +377,21 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     const rows: Array<{ msg: Message; parts: MessagePart[] }> = []
     for (let i = 1; i <= 20; i++) {
       const u = makeMessage({ id: `bu${i}`, role: 'user', turn_id: `bt${i}` })
-      const a = makeMessage({ id: `ba${i}`, role: 'assistant', turn_id: `bt${i}` })
-      rows.push({ msg: u, parts: [part(`bu${i}`, 'text', `token 中心平台注册流程第 ${i} 步补充说明`)] })
-      rows.push({ msg: a, parts: [part(`ba${i}`, 'text', `平台注册方案第 ${i} 段回答`)] })
+      const a = makeMessage({
+        id: `ba${i}`,
+        role: 'assistant',
+        turn_id: `bt${i}`,
+      })
+      rows.push({
+        msg: u,
+        parts: [
+          part(`bu${i}`, 'text', `token 中心平台注册流程第 ${i} 步补充说明`),
+        ],
+      })
+      rows.push({
+        msg: a,
+        parts: [part(`ba${i}`, 'text', `平台注册方案第 ${i} 段回答`)],
+      })
     }
     const { candidates } = aggregate(storeToRawEvents(buildInput(rows)))
     expect(candidates.length).toBeGreaterThan(1)
@@ -266,7 +405,7 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
     const u2 = makeMessage({ id: 'u2', role: 'user', turn_id: 't2' })
     const input = buildInput([
       { msg: s, parts: [part('s', 'text', '系统提示')] },
-      { msg: u1, parts: [part('u1', 'text', '我的原始目标：修复登录') ] },
+      { msg: u1, parts: [part('u1', 'text', '我的原始目标：修复登录')] },
       { msg: u2, parts: [part('u2', 'text', '再补一句')] },
     ])
     const anchor = extractGoalAnchor(input)
@@ -279,8 +418,22 @@ describe('TC-AIT-219-05 候选数上限 + 目标锚点', () => {
 describe('TC-AIT-219-06 增量稳定', () => {
   it('追加第 3 个回合后，前两个候选节点 id/user_message 不变', () => {
     const mk = (i: number) => [
-      { msg: makeMessage({ id: `u${i}`, role: 'user' as const, turn_id: `t${i}` }), parts: [part(`u${i}`, 'text', `问题 ${i}`)] },
-      { msg: makeMessage({ id: `a${i}`, role: 'assistant' as const, turn_id: `t${i}` }), parts: [part(`a${i}`, 'text', `答 ${i}`)] },
+      {
+        msg: makeMessage({
+          id: `u${i}`,
+          role: 'user' as const,
+          turn_id: `t${i}`,
+        }),
+        parts: [part(`u${i}`, 'text', `问题 ${i}`)],
+      },
+      {
+        msg: makeMessage({
+          id: `a${i}`,
+          role: 'assistant' as const,
+          turn_id: `t${i}`,
+        }),
+        parts: [part(`a${i}`, 'text', `答 ${i}`)],
+      },
     ]
     const rows2 = [...mk(1), ...mk(2)]
     const first = aggregate(storeToRawEvents(buildInput(rows2))).candidates
