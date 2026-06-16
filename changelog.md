@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-16 [v1.10.77] — fix: cron.run.completed 协议枚举不匹配导致 WS 重连风暴
+
+- adapter 新增 `cron.run.completed` 状态值 `"completed"`，server schema 未包含该值导致解析抛 ZodError，触发 AIT-150 ③ 的重连逻辑，形成"parse 失败 → WS 关闭 → 重连 → 重放同一事件 → 再次 parse 失败"的无限重连风暴，进而导致 session.health 事件积压、D1 查询积压、话题聊天记录不加载。
+- 修复一：`cronRunCompletedPayloadSchema` 的 `status` 枚举增加 `"completed"`（存库时映射为 `"success"`）。
+- 修复二：pi/client.ts 消息解析错误区分 ZodError（schema 演进）与帧格式错误；ZodError 仅 warn + 跳过，不触发重连，增强协议向前兼容性。
+
 ## 2026-06-15 [v1.10.76] — fix: PI 事件路由 session 队列重连后永久卡死 (AIT-261)
 
 - `enqueueRouteEvent` 增加单事件超时（10s）+ 故障隔离：单次 `routeEvent` 卡住不再永久阻塞该 session 的事件队列。

@@ -200,7 +200,7 @@ export const cronRunCompletedPayloadSchema = z.object({
   originSessionId: z.string().optional(),
   runtime: z.string().optional(),
   providerGroup: z.string().optional(),
-  status: z.enum(['success', 'failed', 'timeout']),
+  status: z.enum(['success', 'failed', 'timeout', 'completed']),
   summary: z.string().nullable(),
   duration: z.number().nullable(),
   durationMs: z.number().optional(),
