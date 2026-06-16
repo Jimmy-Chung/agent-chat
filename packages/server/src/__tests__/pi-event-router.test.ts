@@ -927,6 +927,47 @@ describe('Event router — cron.run.completed', () => {
     expect((broadcast.data as Record<string, unknown>).status).toBe('timeout')
   })
 
+  it('handles cron.run.completed with completed status (adapter alias for success)', async () => {
+    const topic = await topicRepo.createTopic({ name: 'Cron Completed Topic', kind: 'normal', agentType: 'general' })
+    await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-cron-completed' })
+
+    const job = await cronRepo.createCronJob({
+      originTopicId: topic.id,
+      piCronId: 'pi-cron-completed',
+      cronExpr: '0 * * * *',
+      prompt: 'Completed alias',
+    })
+
+    const run = await cronRepo.createCronRun({ cronId: job.id, triggeredAt: 1700000000000 })
+
+    const event: PIEvent = {
+      seq: 1,
+      sessionId: 'sess-cron-completed',
+      ts: Date.now(),
+      payload: {
+        kind: 'cron.run.completed',
+        cronId: job.pi_cron_id,
+        runId: run.id,
+        status: 'completed',
+        summary: 'Done',
+        duration: 3000,
+        completedAt: 1700000003000,
+      },
+    }
+
+    mockPi.emit('event', event)
+    await new Promise((r) => setTimeout(r, 50))
+
+    // DB normalizes 'completed' → 'success'
+    const updatedRun = (await cronRepo.listCronRuns(job.id))[0]
+    expect(updatedRun.status).toBe('success')
+
+    // Broadcast preserves original adapter value
+    const broadcast = mockHub.getBroadcastEvents().find((e) => e.type === 'cron.run.completed')!
+    expect(broadcast.type).toBe('cron.run.completed')
+    expect((broadcast.data as Record<string, unknown>).status).toBe('completed')
+  })
+
   it('broadcasts global-only completion when origin topic is archived', async () => {
     const topic = await topicRepo.createTopic({ name: 'Archived Cron Topic', kind: 'normal', agentType: 'general' })
     await topicRepo.updateTopic(topic.id, { pi_session_id: 'sess-archived-cron' })
