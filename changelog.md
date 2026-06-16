@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-16 [v1.10.78] — test: 补全 cron.run.completed 'completed' 状态回归测试
+
+- 新增 `pi-event-router.test.ts` 测试用例，验证 adapter 发送 `status: 'completed'` 时：存库归一为 `'success'`、WS 广播保留原始值 `'completed'`。
+- CI 通过（v1.10.77 CI 因 miniflare SQLite WAL 文件锁偶发失败，非代码问题）。
+
 ## 2026-06-16 [v1.10.77] — fix: cron.run.completed 协议枚举不匹配导致 WS 重连风暴
 
 - adapter 新增 `cron.run.completed` 状态值 `"completed"`，server schema 未包含该值导致解析抛 ZodError，触发 AIT-150 ③ 的重连逻辑，形成"parse 失败 → WS 关闭 → 重连 → 重放同一事件 → 再次 parse 失败"的无限重连风暴，进而导致 session.health 事件积压、D1 查询积压、话题聊天记录不加载。
