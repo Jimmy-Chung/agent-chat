@@ -178,7 +178,14 @@ class PiSessionConn extends EventEmitter {
             payloadKind: typeof d?.payload?.kind === 'string' ? d.payload.kind : undefined,
             sessionId: this.sessionId,
           }, 'Failed to parse PI message')
-          // AIT-150 ③ — protocol errors indicate a broken connection; close and signal
+          // AIT-150 ③ — framing/decoding errors indicate a broken stream; reconnect.
+          // Zod schema validation failures (e.g. new enum values from adapter after an
+          // upgrade) are NOT broken-stream indicators — skip the event, don't reconnect.
+          const isSchemaValidationError =
+            err instanceof Error &&
+            (err.name === 'ZodError' ||
+              (err as { issues?: unknown }).issues !== undefined)
+          if (isSchemaValidationError) return
           this.emit('event', {
             seq: 0,
             sessionId: this.sessionId,

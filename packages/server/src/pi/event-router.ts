@@ -73,8 +73,8 @@ export interface PushPayload {
   url?: string
 }
 
-function cronCompletionTitle(status: 'success' | 'failed' | 'timeout'): string {
-  if (status === 'success') return '定时任务完成'
+function cronCompletionTitle(status: 'success' | 'failed' | 'timeout' | 'completed'): string {
+  if (status === 'success' || status === 'completed') return '定时任务完成'
   if (status === 'timeout') return '定时任务超时'
   return '定时任务失败'
 }
@@ -86,7 +86,7 @@ function cronCompletionBody(summary: string | null | undefined, prompt: string):
 async function appendCronCompletionMessage(input: {
   topicId: string
   runId: string
-  status: 'success' | 'failed' | 'timeout'
+  status: 'success' | 'failed' | 'timeout' | 'completed'
   summary: string | null
   prompt: string
   completedAt: number
@@ -1190,6 +1190,8 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       const runs = await cronRepo.listCronRuns(job.id)
       const runningRun = runs.find((r) => r.id === payload.runId) ?? runs.find((r) => r.status === 'running')
       const existingRun = runs.find((r) => r.id === payload.runId)
+      // Normalize adapter "completed" (newer adapter versions) → "success" for DB storage
+      const dbStatus = (payload.status === 'completed' ? 'success' : payload.status) as 'success' | 'failed' | 'timeout'
       let resultMessageId: string | null = null
       if (job.origin_topic_id) {
         resultMessageId = await appendCronCompletionMessage({
@@ -1204,7 +1206,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
       }
       if (runningRun) {
         await cronRepo.updateCronRun(runningRun.id, {
-          status: payload.status,
+          status: dbStatus,
           finished_at: payload.completedAt,
           summary: payload.summary,
           duration_ms: payload.durationMs ?? payload.duration ?? null,
@@ -1217,7 +1219,7 @@ async function routeEvent(event: PIEvent, hub: EventBroadcaster, config?: AppCon
           triggeredAt: payload.completedAt,
         })
         await cronRepo.updateCronRun(createdRun.id, {
-          status: payload.status,
+          status: dbStatus,
           finished_at: payload.completedAt,
           summary: payload.summary,
           duration_ms: payload.durationMs ?? payload.duration ?? null,
