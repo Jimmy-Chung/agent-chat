@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { mergeCronRuns } from '@/lib/cron-runs'
 
 interface CronJob {
   cronId: string
@@ -31,21 +32,42 @@ interface CronRun {
   completedAt?: number
 }
 
+// AIT-264 — a single adapter-sourced run record for the history view.
+interface CronRunDetail {
+  runId: string
+  cronId: string
+  firedAt: number
+  completedAt?: number
+  status: 'running' | 'success' | 'failed'
+  durationMs?: number | null
+  error?: string | null
+  providerGroup?: string
+}
+
+// Accumulated, paginated run history per cron.
+interface CronRunHistory {
+  runs: CronRunDetail[]
+  nextCursor?: string
+}
+
 interface CronState {
   crons: CronJob[]
   runs: CronRun[]
+  runHistory: Record<string, CronRunHistory>
   setCrons: (crons: CronJob[]) => void
   setRuns: (runs: CronRun[]) => void
   upsertCron: (cron: CronJob) => void
   removeCron: (cronId: string) => void
   addRun: (run: CronRun) => void
   completeRun: (runId: string, data: { cronId: string; localCronId?: string; triggeredAt?: number; firedAt?: number; status: string; summary: string | null; duration: number | null; completedAt: number }) => void
+  mergeRunHistory: (cronId: string, runs: CronRunDetail[], nextCursor?: string) => void
 }
 
 export const useCronStore = create<CronState>()(
   immer((set) => ({
     crons: [],
     runs: [],
+    runHistory: {},
 
     setCrons: (crons) => {
       set((s) => {
@@ -110,7 +132,17 @@ export const useCronStore = create<CronState>()(
         }
       })
     },
+
+    mergeRunHistory: (cronId, runs, nextCursor) => {
+      set((s) => {
+        const existing = s.runHistory[cronId]?.runs ?? []
+        s.runHistory[cronId] = {
+          runs: mergeCronRuns(existing, runs),
+          nextCursor,
+        }
+      })
+    },
   })),
 )
 
-export type { CronJob, CronRun }
+export type { CronJob, CronRun, CronRunDetail, CronRunHistory }

@@ -117,7 +117,8 @@ export function createMockServer(
       ws.send(encodeFrame(reply))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      const reply = createFrame('rpc.error', { code: 'RPC_ERROR', message }, id)
+      const code = (err as { code?: string }).code ?? 'RPC_ERROR'
+      const reply = createFrame('rpc.error', { code, message }, id)
       ws.send(encodeFrame(reply))
     }
   }
@@ -178,6 +179,26 @@ export function createMockServer(
       }
       case 'listCrons': {
         return cronSim.listCrons()
+      }
+      case 'listCronRuns': {
+        return cronSim.listCronRuns({
+          cronId: params.cronId,
+          limit: params.limit,
+          cursor: params.cursor,
+        })
+      }
+      case 'updateCron': {
+        return cronSim.updateCron(params.cronId, {
+          cronExpr: params.cronExpr,
+          prompt: params.prompt,
+          tags: params.tags,
+          status: params.status,
+        })
+      }
+      case '__seedCronRuns': {
+        // Test-only: seed deterministic run history for e2e (AIT-264).
+        cronSim.seedRuns(params.cronId, params.runs ?? [])
+        return { ok: true }
       }
       case 'pauseCron': {
         cronSim.pauseCron(params.cronId)

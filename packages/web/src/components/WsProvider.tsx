@@ -87,6 +87,39 @@ function describeError(detail: AgentChatErrorDetail): { tone: 'error' | 'warning
     }
   }
 
+  // AIT-263 / AIT-264 — cron management errors.
+  if (detail.code === 'cron_invalid') {
+    return {
+      tone: 'warning',
+      title: '定时任务参数无效',
+      description: detail.message ?? 'cron 表达式或参数非法，原任务未改动。',
+    }
+  }
+
+  if (detail.code === 'cron_not_found') {
+    return {
+      tone: 'warning',
+      title: '定时任务不存在',
+      description: detail.message ?? '该任务可能已被删除。',
+    }
+  }
+
+  if (detail.code === 'pi_unavailable') {
+    return {
+      tone: 'error',
+      title: 'PI Adapter 未连接',
+      description: detail.message ?? '请稍后重试。',
+    }
+  }
+
+  if (detail.code === 'cron_update_failed' || detail.code === 'cron_runs_failed') {
+    return {
+      tone: 'error',
+      title: '定时任务操作失败',
+      description: detail.message,
+    }
+  }
+
   return null
 }
 

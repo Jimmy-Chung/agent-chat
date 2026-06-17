@@ -1,7 +1,7 @@
+import { createFrame, encodeFrame } from '@agent-chat/protocol'
+import pino from 'pino'
 import type { WebSocket } from 'ws'
 import type { ScenarioRunner } from './scenario-runner'
-import { encodeFrame, createFrame } from '@agent-chat/protocol'
-import pino from 'pino'
 
 const log = pino({ name: 'cron-simulator' })
 
@@ -10,10 +10,29 @@ export interface CronEntry {
   originSessionId: string
   cronExpr: string
   prompt: string
+  tags?: string[]
   status: 'active' | 'paused' | 'error'
   lastRunAt?: number
   nextRunAt?: number
   timer?: ReturnType<typeof setTimeout>
+}
+
+export interface CronRunRecord {
+  runId: string
+  cronId: string
+  originSessionId: string
+  firedAt: number
+  completedAt?: number
+  status: 'running' | 'completed' | 'failed'
+  success?: boolean
+  durationMs?: number
+  error?: string
+}
+
+// A cron expression must have 5 or 6 space-separated fields.
+function isValidCronExpr(expr: string): boolean {
+  const fields = expr.trim().split(/\s+/)
+  return fields.length === 5 || fields.length === 6
 }
 
 export interface CronSimulator {
@@ -23,9 +42,25 @@ export interface CronSimulator {
     prompt: string,
   ): { cronId: string; nextRunAt: number }
   listCrons(): CronEntry[]
+  listCronRuns(params: { cronId?: string; limit?: number; cursor?: string }): {
+    runs: CronRunRecord[]
+    nextCursor?: string
+  }
+  updateCron(
+    cronId: string,
+    patch: {
+      cronExpr?: string
+      prompt?: string
+      tags?: string[]
+      status?: CronEntry['status']
+    },
+  ): CronEntry
   pauseCron(cronId: string): boolean
   resumeCron(cronId: string): boolean
   deleteCron(cronId: string): boolean
+  // Test affordance: seed run history deterministically without needing a live
+  // session/timer (used by e2e for AIT-264).
+  seedRuns(cronId: string, runs: Array<Partial<CronRunRecord>>): void
   getRunner(): ScenarioRunner
   setSessionWs(sessionId: string, ws: WebSocket | null): void
   getSessionSeq(sessionId: string): number
@@ -41,6 +76,7 @@ export function createCronSimulator(
   setSeq: (sessionId: string, seq: number) => void,
 ): CronSimulator {
   const crons = new Map<string, CronEntry>()
+  const runRecords: CronRunRecord[] = []
   let idCounter = 0
 
   function scheduleNext(entry: CronEntry) {
@@ -87,17 +123,32 @@ export function createCronSimulator(
       completedAt: Date.now(),
     }
     if (ws.readyState === 1) {
-      const frame = createFrame('event', {
-        seq: newSeq,
-        sessionId: entry.originSessionId,
-        ts: Date.now(),
-        payload: completedPayload,
-      }, undefined, newSeq)
+      const frame = createFrame(
+        'event',
+        {
+          seq: newSeq,
+          sessionId: entry.originSessionId,
+          ts: Date.now(),
+          payload: completedPayload,
+        },
+        undefined,
+        newSeq,
+      )
       ws.send(encodeFrame(frame))
       setSeq(entry.originSessionId, newSeq + 1)
     }
 
     entry.lastRunAt = Date.now()
+    runRecords.push({
+      runId,
+      cronId,
+      originSessionId: entry.originSessionId,
+      firedAt: startTime,
+      completedAt: Date.now(),
+      status: 'completed',
+      success: true,
+      durationMs: Date.now() - startTime,
+    })
     scheduleNext(entry)
   }
 
@@ -129,6 +180,69 @@ export function createCronSimulator(
       lastRunAt: e.lastRunAt,
       nextRunAt: e.nextRunAt,
     }))
+  }
+
+  function listCronRuns(params: {
+    cronId?: string
+    limit?: number
+    cursor?: string
+  }): {
+    runs: CronRunRecord[]
+    nextCursor?: string
+  } {
+    let list = runRecords.slice().sort((a, b) => b.firedAt - a.firedAt)
+    if (params.cronId) list = list.filter((r) => r.cronId === params.cronId)
+    const limit = Math.min(params.limit ?? 50, 200)
+    const offset = params.cursor ? Number.parseInt(params.cursor, 10) || 0 : 0
+    const page = list.slice(offset, offset + limit)
+    const nextOffset = offset + page.length
+    return {
+      runs: page,
+      ...(nextOffset < list.length ? { nextCursor: String(nextOffset) } : {}),
+    }
+  }
+
+  function updateCron(
+    cronId: string,
+    patch: {
+      cronExpr?: string
+      prompt?: string
+      tags?: string[]
+      status?: CronEntry['status']
+    },
+  ): CronEntry {
+    const entry = crons.get(cronId)
+    if (!entry) {
+      throw Object.assign(new Error('cron not found'), { code: 'cron_invalid' })
+    }
+    if (patch.cronExpr !== undefined && !isValidCronExpr(patch.cronExpr)) {
+      throw Object.assign(new Error('invalid cron expression'), {
+        code: 'cron_invalid',
+      })
+    }
+    if (patch.cronExpr !== undefined) entry.cronExpr = patch.cronExpr
+    if (patch.prompt !== undefined) entry.prompt = patch.prompt
+    if (patch.tags !== undefined) entry.tags = patch.tags
+    if (patch.status !== undefined) entry.status = patch.status
+    // Any update resets the timer and recomputes nextRunAt.
+    if (entry.status === 'active') scheduleNext(entry)
+    return { ...entry, timer: undefined }
+  }
+
+  function seedRuns(cronId: string, runs: Array<Partial<CronRunRecord>>): void {
+    runs.forEach((r, i) => {
+      runRecords.push({
+        runId: r.runId ?? `seed-${cronId}-${i}`,
+        cronId,
+        originSessionId: r.originSessionId ?? 'seed-session',
+        firedAt: r.firedAt ?? Date.now() - i * 1000,
+        completedAt: r.completedAt,
+        status: r.status ?? 'completed',
+        success: r.success,
+        durationMs: r.durationMs,
+        error: r.error,
+      })
+    })
   }
 
   function pauseCron(cronId: string): boolean {
@@ -166,6 +280,9 @@ export function createCronSimulator(
   return {
     createCron,
     listCrons,
+    listCronRuns,
+    updateCron,
+    seedRuns,
     pauseCron,
     resumeCron,
     deleteCron,
