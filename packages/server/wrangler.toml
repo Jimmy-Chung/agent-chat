@@ -26,6 +26,9 @@ bucket_name = "agent-chat-artifacts"
 name = "TOPIC_DO"
 class_name = "TopicDurableObject"
 
+[triggers]
+crons = ["0 17 * * *"]
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["TopicDurableObject"]

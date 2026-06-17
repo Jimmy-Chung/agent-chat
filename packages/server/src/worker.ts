@@ -9,7 +9,7 @@ import { initR2 } from './r2/client'
 import { getD1 } from './db/migrate'
 import { handleArtifactAccessRequest } from './r2/artifact-access'
 import { createPushRoutes } from './routes/push'
-import { getLogs, clearLogs } from './server-logs'
+import { getLogs, clearLogs, flushLogsToR2, flushAllHistoricalLogsToR2, getLogsFromR2 } from './server-logs'
 import { createPairingRoutes, issueJitJwt } from './pairing/routes'
 import { createAttentionRoutes } from './routes/attention'
 import { piWsToHttpBase } from '@agent-chat/protocol'
@@ -114,6 +114,33 @@ app.get('/server-logs', async (c) => {
 app.post('/server-logs/clear', async (c) => {
   await clearLogs()
   return c.json({ ok: true, cleared: true })
+})
+
+// Read archived logs from R2 by UTC date (YYYY-MM-DD)
+app.get('/server-logs/archive/:date', async (c) => {
+  const r2 = (c.env as { R2?: R2Bucket }).R2
+  if (!r2) return c.json({ error: 'R2 not available' }, 503)
+  const date = c.req.param('date')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return c.json({ error: 'Invalid date format' }, 400)
+  const entries = await getLogsFromR2(r2, date)
+  return c.json({ ok: true, date, count: entries.length, entries })
+})
+
+// Manually trigger flush of yesterday's logs to R2 (for ops use)
+app.post('/server-logs/flush', async (c) => {
+  const r2 = (c.env as { R2?: R2Bucket }).R2
+  if (!r2) return c.json({ error: 'R2 not available' }, 503)
+  const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
+  const result = await flushLogsToR2(r2, yesterday)
+  return c.json({ ok: true, ...result })
+})
+
+// One-time migration: flush all historical logs (older than today) to R2 by date, then clear D1
+app.post('/server-logs/migrate-to-r2', async (c) => {
+  const r2 = (c.env as { R2?: R2Bucket }).R2
+  if (!r2) return c.json({ error: 'R2 not available' }, 503)
+  const result = await flushAllHistoricalLogsToR2(r2)
+  return c.json({ ok: true, ...result })
 })
 
 // Proxy: fetch adapter /api/agent-chat/v1/adapter-status
@@ -363,6 +390,17 @@ app.delete('/api/agent-chat/v1/providers/:id', async (c) => {
 export { TopicDurableObject } from './ws/topic-do'
 
 export default {
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    try {
+      await initialize(env)
+      if (!env.R2) return
+      const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
+      await flushLogsToR2(env.R2, yesterday)
+    } catch {
+      // scheduled handler must not throw
+    }
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       await initialize(env)

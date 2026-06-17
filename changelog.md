@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-17 [v1.10.79] — feat: audit_log 日志按天归档到 R2，释放 D1 空间
+
+- D1 `audit_log` 表改为只保留当天日志，每日凌晨 1 点 CST (17:00 UTC) 通过 Cloudflare Cron Trigger 将前一天日志写入 R2 `logs/YYYY-MM-DD.jsonl` 后从 D1 删除。
+- 新增 `POST /server-logs/migrate-to-r2`：一次性将表内所有历史日志按天分文件推到 R2 并清空 D1，用于存量迁移。
+- 新增 `GET /server-logs/archive/:date`：按 UTC 日期从 R2 读取归档日志。
+- 新增 `POST /server-logs/flush`：手动触发昨日日志归档（运维用）。
+
 ## 2026-06-16 [v1.10.78] — test: 补全 cron.run.completed 'completed' 状态回归测试
 
 - 新增 `pi-event-router.test.ts` 测试用例，验证 adapter 发送 `status: 'completed'` 时：存库归一为 `'success'`、WS 广播保留原始值 `'completed'`。

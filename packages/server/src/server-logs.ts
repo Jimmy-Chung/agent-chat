@@ -1,4 +1,4 @@
-import { desc, eq, and, gte, lte } from 'drizzle-orm'
+import { desc, eq, and, gte, lte, lt } from 'drizzle-orm'
 import { getDb } from './db/migrate'
 import { auditLog } from './db/schema'
 
@@ -148,4 +148,93 @@ export async function clearLogs() {
     .delete(auditLog)
     .where(eq(auditLog.kind, 'server-log'))
     .run()
+}
+
+// ─── R2 archival ──────────────────────────────────────────────────────────────
+
+function utcDateStr(ts: number): string {
+  return new Date(ts).toISOString().slice(0, 10)
+}
+
+function dayBounds(dateStr: string): { startTs: number; endTs: number } {
+  return {
+    startTs: new Date(`${dateStr}T00:00:00.000Z`).getTime(),
+    endTs: new Date(`${dateStr}T23:59:59.999Z`).getTime(),
+  }
+}
+
+export async function flushLogsToR2(
+  r2: R2Bucket,
+  dateStr: string,
+): Promise<{ date: string; flushed: number }> {
+  const { startTs, endTs } = dayBounds(dateStr)
+
+  const rows = await getDb()
+    .select()
+    .from(auditLog)
+    .where(and(eq(auditLog.kind, 'server-log'), gte(auditLog.ts, startTs), lte(auditLog.ts, endTs)))
+    .orderBy(auditLog.ts)
+    .all()
+
+  if (rows.length > 0) {
+    const jsonl = rows.map((r) => r.detailJson ?? '{}').join('\n')
+    await r2.put(`logs/${dateStr}.jsonl`, jsonl, {
+      httpMetadata: { contentType: 'application/x-ndjson' },
+    })
+    await getDb()
+      .delete(auditLog)
+      .where(and(eq(auditLog.kind, 'server-log'), gte(auditLog.ts, startTs), lte(auditLog.ts, endTs)))
+      .run()
+  }
+
+  return { date: dateStr, flushed: rows.length }
+}
+
+export async function flushAllHistoricalLogsToR2(
+  r2: R2Bucket,
+): Promise<{ dates: string[]; total: number }> {
+  // Find distinct UTC dates of all logs older than today
+  const todayStart = new Date(utcDateStr(Date.now()) + 'T00:00:00.000Z').getTime()
+  const rows = await getDb()
+    .select()
+    .from(auditLog)
+    .where(and(eq(auditLog.kind, 'server-log'), lt(auditLog.ts, todayStart)))
+    .orderBy(auditLog.ts)
+    .all()
+
+  if (rows.length === 0) return { dates: [], total: 0 }
+
+  // Group by date
+  const byDate = new Map<string, string[]>()
+  for (const row of rows) {
+    const d = utcDateStr(row.ts)
+    if (!byDate.has(d)) byDate.set(d, [])
+    byDate.get(d)!.push(row.detailJson ?? '{}')
+  }
+
+  // Write each day to R2
+  for (const [date, lines] of byDate) {
+    await r2.put(`logs/${date}.jsonl`, lines.join('\n'), {
+      httpMetadata: { contentType: 'application/x-ndjson' },
+    })
+  }
+
+  // Clear all flushed rows from D1
+  await getDb()
+    .delete(auditLog)
+    .where(and(eq(auditLog.kind, 'server-log'), lt(auditLog.ts, todayStart)))
+    .run()
+
+  return { dates: [...byDate.keys()], total: rows.length }
+}
+
+export async function getLogsFromR2(r2: R2Bucket, dateStr: string): Promise<ServerLogEntry[]> {
+  const obj = await r2.get(`logs/${dateStr}.jsonl`)
+  if (!obj) return []
+  const text = await obj.text()
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => parseEntry(line))
+    .filter((e): e is ServerLogEntry => e !== null)
 }
