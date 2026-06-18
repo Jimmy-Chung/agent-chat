@@ -235,6 +235,27 @@ export const cronTriggeredSchema = z.object({
   originTopicActive: z.boolean(),
 })
 
+// AIT-264 — a single run record in the adapter-sourced history page.
+// `status` is normalized for display: a finished run is success/failed
+// (adapter's completed + success bool collapsed); running runs stay running
+// and the client applies orphan tolerance based on `firedAt`.
+const cronRunDetailSchema = z.object({
+  runId: z.string(),
+  cronId: z.string(),
+  firedAt: z.number(),
+  completedAt: z.number().optional(),
+  status: z.enum(['running', 'success', 'failed']),
+  durationMs: z.number().nullable().optional(),
+  error: z.string().nullable().optional(),
+  providerGroup: z.string().optional(),
+})
+
+export const cronRunsSchema = z.object({
+  cronId: z.string(),
+  runs: z.array(cronRunDetailSchema),
+  nextCursor: z.string().optional(),
+})
+
 export const artifactAddedSchema = artifactSchema
 
 export const artifactDeletedSchema = z.object({
@@ -437,6 +458,7 @@ export type ServerEvent =
   | { type: 'cron.list'; data: z.infer<typeof cronListSchema> }
   | { type: 'cron.upserted'; data: z.infer<typeof cronUpsertedSchema> }
   | { type: 'cron.triggered'; data: z.infer<typeof cronTriggeredSchema> }
+  | { type: 'cron.runs'; data: z.infer<typeof cronRunsSchema> }
   | { type: 'artifact.added'; data: z.infer<typeof artifactAddedSchema> }
   | { type: 'artifact.deleted'; data: z.infer<typeof artifactDeletedSchema> }
   | { type: 'artifact.moved'; data: z.infer<typeof artifactMovedSchema> }
@@ -479,6 +501,7 @@ export const serverEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'cron.list': cronListSchema,
   'cron.upserted': cronUpsertedSchema,
   'cron.triggered': cronTriggeredSchema,
+  'cron.runs': cronRunsSchema,
   'artifact.added': artifactAddedSchema,
   'artifact.deleted': artifactDeletedSchema,
   'artifact.moved': artifactMovedSchema,
@@ -624,6 +647,14 @@ export const cronEditSchema = z.object({
 
 export const cronSyncSchema = z.object({})
 
+// AIT-264 — client requests a page of run history for a single cron from the
+// adapter (via server relay to `listCronRuns`).
+export const cronRunsQuerySchema = z.object({
+  cronId: z.string(),
+  limit: z.number().int().positive().max(200).optional(),
+  cursor: z.string().optional(),
+})
+
 export const artifactUploadInitSchema = z.object({
   name: z.string(),
   mime: z.string().optional().default('application/octet-stream'),
@@ -715,6 +746,7 @@ export type ClientEvent =
   | { type: 'cron.delete'; data: z.infer<typeof cronDeleteSchema> }
   | { type: 'cron.edit'; data: z.infer<typeof cronEditSchema> }
   | { type: 'cron.sync'; data: z.infer<typeof cronSyncSchema> }
+  | { type: 'cron.runs.query'; data: z.infer<typeof cronRunsQuerySchema> }
   | {
       type: 'artifact.upload.init'
       data: z.infer<typeof artifactUploadInitSchema>
@@ -762,6 +794,7 @@ export const clientEventDataSchemas: Record<string, z.ZodTypeAny> = {
   'cron.delete': cronDeleteSchema,
   'cron.edit': cronEditSchema,
   'cron.sync': cronSyncSchema,
+  'cron.runs.query': cronRunsQuerySchema,
   'artifact.upload.init': artifactUploadInitSchema,
   'artifact.upload.complete': artifactUploadCompleteSchema,
   'artifact.download.init': artifactDownloadInitSchema,

@@ -4,6 +4,8 @@ import {
   createFrame,
   createSessionParamsSchema,
   cronTriggeredPayloadSchema,
+  listCronRunsParamsSchema,
+  listCronRunsResultSchema,
   decodeFrame,
   encodeFrame,
   errorPayloadSchema,
@@ -1112,6 +1114,35 @@ describe('Client event schemas', () => {
       }),
     ).toThrow()
   })
+
+  // AIT-264 — cron run history query/response frames
+  it('parses cron.runs.query with pagination params', () => {
+    const result = clientEventDataSchemas['cron.runs.query'].parse({
+      cronId: 'c1',
+      limit: 20,
+      cursor: '40',
+    })
+    expect(result.cronId).toBe('c1')
+    expect(result.limit).toBe(20)
+  })
+
+  it('rejects cron.runs.query with limit over 200', () => {
+    expect(() => clientEventDataSchemas['cron.runs.query'].parse({ cronId: 'c1', limit: 500 })).toThrow()
+  })
+
+  it('parses cron.runs response with normalized run statuses', () => {
+    const result = serverEventDataSchemas['cron.runs'].parse({
+      cronId: 'c1',
+      runs: [
+        { runId: 'r1', cronId: 'c1', firedAt: 1, completedAt: 2, status: 'success', durationMs: 10 },
+        { runId: 'r2', cronId: 'c1', firedAt: 3, status: 'running' },
+        { runId: 'r3', cronId: 'c1', firedAt: 4, status: 'failed', error: 'boom' },
+      ],
+      nextCursor: '3',
+    })
+    expect(result.runs).toHaveLength(3)
+    expect(result.nextCursor).toBe('3')
+  })
 })
 
 // ─── RPC schemas ──────────────────────────────────────────────────
@@ -1174,6 +1205,26 @@ describe('RPC schemas', () => {
         kind: 'custom',
       }),
     ).toThrow()
+  })
+
+  // AIT-264 — listCronRuns is paginated and the result is an object, not an array
+  it('parses listCronRuns params with pagination', () => {
+    const result = listCronRunsParamsSchema.parse({ cronId: 'c1', limit: 50, cursor: '0' })
+    expect(result.cronId).toBe('c1')
+    expect(result.limit).toBe(50)
+  })
+
+  it('parses listCronRuns result as { runs, nextCursor } with completed status', () => {
+    const result = listCronRunsResultSchema.parse({
+      runs: [
+        { runId: 'r1', cronId: 'c1', firedAt: 1, completedAt: 2, status: 'completed', success: true, durationMs: 5 },
+        { runId: 'r2', cronId: 'c1', firedAt: 3, status: 'running' },
+      ],
+      nextCursor: '2',
+    })
+    expect(result.runs).toHaveLength(2)
+    expect(result.runs[0].status).toBe('completed')
+    expect(result.nextCursor).toBe('2')
   })
 })
 

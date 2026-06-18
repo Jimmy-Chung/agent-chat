@@ -7,7 +7,7 @@ import {
   topicResumeSchema, userActionSchema,
   userMessageRetrySchema, userMessageSchema,
   sopTemplateSaveSchema, sopTemplateDeleteSchema, sopTemplateGenerateSchema, sopTemplateExportFromAttentionSchema,
-  cronPauseSchema, cronDeleteSchema, cronEditSchema,
+  cronPauseSchema, cronDeleteSchema, cronEditSchema, cronRunsQuerySchema,
   searchQuerySchema, artifactUploadInitSchema, artifactUploadCompleteSchema, artifactDownloadInitSchema, artifactDeleteSchema,
   mcpCommandSchema,
   providerRpcSchema,
@@ -475,6 +475,31 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       nextRunAt: job.next_run_at ?? undefined,
       createdAt: job.created_at,
       updatedAt: job.updated_at,
+    }
+  }
+
+  // AIT-264 — normalize an adapter run record into the display shape sent to
+  // the client. The adapter reports lifecycle status (running|completed|failed)
+  // plus a `success` flag; collapse a finished run to success/failed. Running
+  // runs are passed through as-is — the client applies orphan tolerance.
+  private cronRunDetailFromAdapter(r: import('@agent-chat/protocol').CronRunInfo) {
+    const status: 'running' | 'success' | 'failed' =
+      r.status === 'completed'
+        ? r.success === false
+          ? 'failed'
+          : 'success'
+        : r.status === 'failed'
+          ? 'failed'
+          : 'running'
+    return {
+      runId: r.runId,
+      cronId: r.cronId,
+      firedAt: r.firedAt,
+      completedAt: r.completedAt,
+      status,
+      durationMs: r.durationMs ?? null,
+      error: r.error ?? null,
+      providerGroup: r.providerGroup,
     }
   }
 
@@ -1298,29 +1323,69 @@ export class TopicDurableObject extends DurableObject<DOEnv> {
       }
 
       case 'cron.edit': {
+        // AIT-263 — validate against the adapter FIRST. The adapter owns the
+        // schedule and rejects a bad cronExpr / missing cron with `cron_invalid`;
+        // only persist + broadcast after it accepts, so a rejected edit never
+        // corrupts the stored task. nextRunAt is refreshed by the subsequent
+        // `cron.updated` event the adapter broadcasts.
         const data = cronEditSchema.parse(frame.d)
         const job = await cronRepo.getCronJobByCronId(data.cronId)
-        if (!job) break
+        if (!job) {
+          this.sendTo(ws, 'error', { code: 'cron_not_found', message: '定时任务不存在或已删除' })
+          break
+        }
+        const pi = await this.ensurePiClient()
+        if (!pi) {
+          this.sendTo(ws, 'error', { code: 'pi_unavailable', message: 'PI Adapter 未连接，暂时无法保存定时任务' })
+          break
+        }
+        try {
+          await pi.rpcGlobal('updateCron', {
+            cronId: data.cronId,
+            ...(data.cronExpr ? { cronExpr: data.cronExpr } : {}),
+            ...(data.prompt ? { prompt: data.prompt } : {}),
+            ...(data.tags !== undefined ? { tags: data.tags } : {}),
+          })
+        } catch (err) {
+          logger.warn({ err, cronId: data.cronId }, 'Failed to update cron on PI')
+          const code = (err as { code?: string }).code ?? 'cron_update_failed'
+          const message = err instanceof Error ? err.message : 'updateCron failed'
+          this.sendTo(ws, 'error', { code, message })
+          break
+        }
         const updated = await cronRepo.updateCronJob(job.id, {
           ...(data.cronExpr ? { cron_expr: data.cronExpr } : {}),
           ...(data.prompt ? { prompt: data.prompt } : {}),
           ...(data.tags !== undefined ? { tags: data.tags } : {}),
         })
-        if (updated) {
-          const pi = await this.ensurePiClient()
-          if (pi) {
-            try {
-              await pi.rpcGlobal('updateCron', {
-                cronId: data.cronId,
-                ...(data.cronExpr ? { cronExpr: data.cronExpr } : {}),
-                ...(data.prompt ? { prompt: data.prompt } : {}),
-                ...(data.tags !== undefined ? { tags: data.tags } : {}),
-              })
-            } catch (err) {
-              logger.warn({ err }, 'Failed to sync cron edit to PI')
-            }
-          }
-          this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
+        if (updated) this.broadcastAll('cron.upserted', this.cronJobToPayload(updated))
+        break
+      }
+
+      case 'cron.runs.query': {
+        // AIT-264 — relay a page of run history from the adapter (`listCronRuns`).
+        const data = cronRunsQuerySchema.parse(frame.d)
+        const pi = await this.ensurePiClient()
+        if (!pi) {
+          this.sendTo(ws, 'error', { code: 'pi_unavailable', message: 'PI Adapter 未连接，无法加载运行历史' })
+          break
+        }
+        try {
+          const result = await pi.rpcGlobal('listCronRuns', {
+            cronId: data.cronId,
+            ...(data.limit !== undefined ? { limit: data.limit } : {}),
+            ...(data.cursor !== undefined ? { cursor: data.cursor } : {}),
+          })
+          this.sendTo(ws, 'cron.runs', {
+            cronId: data.cronId,
+            runs: result.runs.map((r) => this.cronRunDetailFromAdapter(r)),
+            ...(result.nextCursor !== undefined ? { nextCursor: result.nextCursor } : {}),
+          })
+        } catch (err) {
+          logger.warn({ err, cronId: data.cronId }, 'Failed to list cron runs from PI')
+          const code = (err as { code?: string }).code ?? 'cron_runs_failed'
+          const message = err instanceof Error ? err.message : 'listCronRuns failed'
+          this.sendTo(ws, 'error', { code, message })
         }
         break
       }

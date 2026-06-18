@@ -531,6 +531,25 @@ class WsClient {
         })
         break
 
+      case 'cron.runs': {
+        const d = event.data as {
+          cronId: string
+          runs: Array<{
+            runId: string
+            cronId: string
+            firedAt: number
+            completedAt?: number
+            status: 'running' | 'success' | 'failed'
+            durationMs?: number | null
+            error?: string | null
+            providerGroup?: string
+          }>
+          nextCursor?: string
+        }
+        useCronStore.getState().mergeRunHistory(d.cronId, d.runs, d.nextCursor)
+        break
+      }
+
       case 'cron.triggered': {
         const data = event.data as Record<string, unknown>
         const originTopicActive = data.originTopicActive as boolean
@@ -840,6 +859,19 @@ export function getWsClient(): WsClient {
     instance = new WsClient()
   }
   return instance
+}
+
+// AIT-264 — request a page of cron run history. Results arrive via the
+// `cron.runs` event and are merged into the cron store (de-duped by runId).
+export function queryCronRuns(cronId: string, cursor?: string, limit?: number): boolean {
+  return getWsClient().send({
+    type: 'cron.runs.query',
+    data: {
+      cronId,
+      ...(cursor !== undefined ? { cursor } : {}),
+      ...(limit !== undefined ? { limit } : {}),
+    },
+  })
 }
 
 // ─── MCP command via WS (server proxies to adapter + notifies adapter) ──

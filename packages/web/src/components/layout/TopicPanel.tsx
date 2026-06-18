@@ -6,7 +6,9 @@ import { useTopicStore } from '@/stores/topic-store'
 import { useMessageStore } from '@/stores/message-store'
 import { useUiStore } from '@/stores/ui-store'
 import { useArtifactStore } from '@/stores/artifact-store'
-import { useCronStore } from '@/stores/cron-store'
+import { useCronStore, type CronJob } from '@/stores/cron-store'
+import { cronRunDisplayStatus } from '@/lib/cron-runs'
+import { buildCronEditPayload } from '@/lib/cron-edit'
 import { SopLibraryView } from '@/components/sop/SopLibraryView'
 import { useWsStore } from '@/stores/ws-store'
 import { EmptyState } from './EmptyState'
@@ -17,7 +19,7 @@ import { McpSettingsModal } from '@/components/McpSettingsModal'
 import { AttentionDrawer } from '@/components/attention/AttentionDrawer'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { ArtifactAccessButton } from '@/components/artifacts/ArtifactAccess'
-import { getWsClient } from '@/lib/ws-client'
+import { getWsClient, queryCronRuns } from '@/lib/ws-client'
 import { resolveTopicSopNames, topicSopBadgeLabel } from '@/lib/topic-sop'
 import type { Message } from '@agent-chat/protocol'
 import type { ToolResultInfo } from '@/components/chat/ToolCard'
@@ -898,10 +900,13 @@ function artifactPath(artifact: import('@agent-chat/protocol').Artifact, workspa
 function CronAdminView() {
   const crons = useCronStore((s) => s.crons)
   const runs = useCronStore((s) => s.runs)
+  const runHistory = useCronStore((s) => s.runHistory)
   const topics = useTopicStore((s) => s.topics)
   const wsClient = getWsClient()
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all')
   const [query, setQuery] = useState('')
+  const [editingCron, setEditingCron] = useState<CronJob | null>(null)
+  const [historyCronId, setHistoryCronId] = useState<string | null>(null)
 
   const statusColor: Record<string, string> = {
     active: 'var(--state-ok)',
@@ -1063,6 +1068,13 @@ function CronAdminView() {
               </div>
             )}
 
+            {historyCronId === c.cronId && (
+              <CronRunHistoryPanel
+                history={runHistory[c.cronId]}
+                onLoadMore={(cursor) => queryCronRuns(c.cronId, cursor)}
+              />
+            )}
+
             <div className="mt-4 flex flex-wrap gap-2">
               {c.status === 'active' && (
                 <ActionBtn onClick={() => wsClient.send({ type: 'cron.pause', data: { cronId: c.cronId } })}>
@@ -1079,6 +1091,19 @@ function CronAdminView() {
                   Retry
                 </ActionBtn>
               )}
+              <ActionBtn onClick={() => setEditingCron(c)}>编辑</ActionBtn>
+              <ActionBtn
+                onClick={() => {
+                  if (historyCronId === c.cronId) {
+                    setHistoryCronId(null)
+                    return
+                  }
+                  setHistoryCronId(c.cronId)
+                  queryCronRuns(c.cronId)
+                }}
+              >
+                {historyCronId === c.cronId ? '收起历史' : '历史'}
+              </ActionBtn>
               <ActionBtn danger onClick={() => wsClient.send({ type: 'cron.delete', data: { cronId: c.cronId } })}>
                 删除
               </ActionBtn>
@@ -1086,6 +1111,137 @@ function CronAdminView() {
           </div>
         )
       })}
+
+      {editingCron && (
+        <CronEditModal cron={editingCron} onClose={() => setEditingCron(null)} />
+      )}
+    </div>
+  )
+}
+
+// AIT-264 — adapter-sourced run history for one cron, with pagination and
+// orphan-running tolerance.
+function CronRunHistoryPanel({
+  history,
+  onLoadMore,
+}: {
+  history?: { runs: import('@/stores/cron-store').CronRunDetail[]; nextCursor?: string }
+  onLoadMore: (cursor: string) => void
+}) {
+  const runs = history?.runs ?? []
+  return (
+    <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,.035)', border: '1px solid var(--hairline)' }}>
+      <div className="mb-2 text-[11px] font-medium" style={{ color: 'var(--fg-dim)' }}>运行历史（最新在前）</div>
+      {runs.length === 0 ? (
+        <div className="py-2 text-[12px]" style={{ color: 'var(--fg-dim)' }}>暂无运行记录或正在加载…</div>
+      ) : (
+        <div className="space-y-2">
+          {runs.map((run) => {
+            const display = cronRunDisplayStatus(run)
+            return (
+              <div key={run.runId} className="grid gap-1 text-[12px] sm:grid-cols-[130px_88px_1fr]" style={{ color: 'var(--fg-dim)' }}>
+                <div>{formatDateTime(run.firedAt)}</div>
+                <div style={{ color: runDisplayColor(display) }}>{runDisplayLabel(display)}</div>
+                <div className="min-w-0 truncate" title={run.error ?? undefined}>
+                  {run.error?.trim() || formatDuration(run.durationMs)}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {history?.nextCursor && (
+        <button
+          type="button"
+          onClick={() => onLoadMore(history.nextCursor as string)}
+          className="mt-2 rounded-lg px-2.5 py-1 text-[12px] font-medium"
+          style={{ background: 'rgba(255,255,255,.06)', color: 'var(--fg-regular)', border: '1px solid var(--hairline)' }}
+        >
+          加载更多
+        </button>
+      )}
+    </div>
+  )
+}
+
+function runDisplayLabel(status: ReturnType<typeof cronRunDisplayStatus>): string {
+  if (status === 'success') return '成功'
+  if (status === 'failed') return '失败'
+  if (status === 'interrupted') return '已中断'
+  return '运行中'
+}
+
+function runDisplayColor(status: ReturnType<typeof cronRunDisplayStatus>): string {
+  if (status === 'success') return 'var(--state-ok)'
+  if (status === 'failed') return 'var(--state-danger)'
+  if (status === 'interrupted') return 'var(--state-paused)'
+  return 'var(--fg-dim)'
+}
+
+// AIT-263 — edit a cron's prompt / expression / tags. The adapter validates
+// (rejecting a bad expression without corrupting the task); on success it
+// broadcasts `cron.updated`, which refreshes the list.
+function CronEditModal({ cron, onClose }: { cron: CronJob; onClose: () => void }) {
+  const [prompt, setPrompt] = useState(cron.prompt)
+  const [cronExpr, setCronExpr] = useState(cron.cronExpr)
+  const [tagsText, setTagsText] = useState((cron.tags ?? []).join(', '))
+
+  const submit = () => {
+    const payload = buildCronEditPayload(cron, { prompt, cronExpr, tagsText })
+    // Nothing changed — just close.
+    if (!payload) {
+      onClose()
+      return
+    }
+    getWsClient().send({ type: 'cron.edit', data: payload })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,.5)' }} onClick={onClose}>
+      <div
+        className="glass-1 w-full max-w-lg rounded-2xl p-5"
+        style={{ border: '1px solid var(--hairline)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="mb-3 text-[16px] font-semibold" style={{ color: 'var(--fg-strong)' }}>编辑定时任务</h3>
+        <label className="mb-1 block text-[12px]" style={{ color: 'var(--fg-dim)' }}>运行 Prompt</label>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={4}
+          className="mb-3 w-full rounded-xl px-3 py-2 text-sm outline-none"
+          style={{ background: 'rgba(255,255,255,.04)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
+        />
+        <label className="mb-1 block text-[12px]" style={{ color: 'var(--fg-dim)' }}>Cron 表达式</label>
+        <input
+          value={cronExpr}
+          onChange={(e) => setCronExpr(e.target.value)}
+          className="mb-3 w-full rounded-xl px-3 py-2 text-sm outline-none"
+          style={{ background: 'rgba(255,255,255,.04)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)', fontFamily: 'var(--font-mono)' }}
+        />
+        <label className="mb-1 block text-[12px]" style={{ color: 'var(--fg-dim)' }}>标签（逗号分隔）</label>
+        <input
+          value={tagsText}
+          onChange={(e) => setTagsText(e.target.value)}
+          className="mb-2 w-full rounded-xl px-3 py-2 text-sm outline-none"
+          style={{ background: 'rgba(255,255,255,.04)', color: 'var(--fg-strong)', border: '1px solid var(--hairline)' }}
+        />
+        <p className="mb-4 text-[11px] leading-4" style={{ color: 'var(--fg-dim)' }}>
+          注意：保存会让 adapter 重置计时器并重算「下次执行」时间，即使只改了 Prompt。
+        </p>
+        <div className="flex justify-end gap-2">
+          <ActionBtn onClick={onClose}>取消</ActionBtn>
+          <button
+            type="button"
+            onClick={submit}
+            className="rounded-xl px-3 py-1.5 text-[12px] font-medium"
+            style={{ background: 'rgba(10,132,255,.16)', color: '#7CB6FF', border: '1px solid rgba(108,177,255,.32)' }}
+          >
+            保存
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

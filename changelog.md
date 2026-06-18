@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-17 [v1.10.80] — feat: 定时任务管理支持编辑 prompt + 查看运行历史 (AIT-263 / AIT-264)
+
+- **AIT-263 编辑定时任务**：定时任务管理面板新增「编辑」弹窗，可改运行 prompt / cron 表达式 / 标签（仅提交实际改动的字段）。server `cron.edit` 改为先经 adapter `updateCron` 校验通过再落库——非法 cron 表达式被拒时不破坏原任务，并将 `cron_invalid` 等错误回传前端 toast（原先静默吞掉）。注意：保存会让 adapter 重置计时器并重算「下次执行」时间。
+- **AIT-264 运行历史**：面板新增「历史」展开视图，按 `listCronRuns` 拉取每条 cron 的运行记录，最新在前、`加载更多` 分页（按 runId 去重）；失败记录展示错误与耗时；长时间停留 `running` 的孤儿记录显示「已中断」而非「运行中」。
+- 协议层对齐 adapter：`listCronRuns` 参数补 `originTopicId/originSessionId/limit/cursor`，结果改为 `{ runs, nextCursor }`，run 状态枚举对齐 `running|completed|failed`；新增 `cron.runs.query` / `cron.runs` WS 帧。
+- mock-pi 补 `updateCron` / `listCronRuns`，支持本地链路与 e2e。
+- 测试：新增单测（protocol schema、cron-runs 工具、edit 负载）+ e2e（`e2e/cron-management.spec.ts` 3 passed）。链路回归 R-006/R-007 本次跳过。
+
 ## 2026-06-17 [v1.10.79] — feat: audit_log 日志按天归档到 R2，释放 D1 空间
 
 - D1 `audit_log` 表改为只保留当天日志，每日凌晨 1 点 CST (17:00 UTC) 通过 Cloudflare Cron Trigger 将前一天日志写入 R2 `logs/YYYY-MM-DD.jsonl` 后从 D1 删除。

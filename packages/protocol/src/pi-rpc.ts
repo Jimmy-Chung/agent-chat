@@ -219,6 +219,10 @@ export type ListCronsResult = z.infer<typeof listCronsResultSchema>
 // listCronRuns
 export const listCronRunsParamsSchema = z.object({
   cronId: z.string().optional(),
+  originTopicId: z.string().optional(),
+  originSessionId: z.string().optional(),
+  limit: z.number().optional(),
+  cursor: z.string().optional(),
 })
 
 const cronRunInfoSchema = z.object({
@@ -230,7 +234,9 @@ const cronRunInfoSchema = z.object({
   providerGroup: z.string().optional(),
   firedAt: z.number(),
   completedAt: z.number().optional(),
-  status: z.enum(['running', 'success', 'failed', 'timeout']).optional(),
+  // adapter run lifecycle status: running | completed | failed.
+  // success/failure of a finished run is carried by `success`.
+  status: z.enum(['running', 'completed', 'failed']).optional(),
   success: z.boolean().optional(),
   durationMs: z.number().optional(),
   error: z.string().optional(),
@@ -238,7 +244,10 @@ const cronRunInfoSchema = z.object({
 
 export type CronRunInfo = z.infer<typeof cronRunInfoSchema>
 
-export const listCronRunsResultSchema = z.array(cronRunInfoSchema)
+export const listCronRunsResultSchema = z.object({
+  runs: z.array(cronRunInfoSchema),
+  nextCursor: z.string().optional(),
+})
 
 export type ListCronRunsParams = z.infer<typeof listCronRunsParamsSchema>
 export type ListCronRunsResult = z.infer<typeof listCronRunsResultSchema>
@@ -250,9 +259,12 @@ export const updateCronParamsSchema = z.object({
   prompt: z.string().optional(),
   timezone: z.string().optional(),
   tags: cronTagsSchema.optional(),
+  status: z.enum(['active', 'paused', 'error']).optional(),
 })
 
-export const updateCronResultSchema = okResultSchema
+// adapter returns the full updated entry; we rely on the broadcast `cron.updated`
+// event to refresh the UI, but type the result faithfully.
+export const updateCronResultSchema = cronInfoSchema
 
 export type UpdateCronParams = z.infer<typeof updateCronParamsSchema>
 export type UpdateCronResult = z.infer<typeof updateCronResultSchema>
